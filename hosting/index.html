@@ -37,7 +37,7 @@
     "softwareVersion": "1.0.1",
     "datePublished": "2026-11-14",
     "fileSize": "35.10 MB",
-    "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/latest",
+    "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk",
     "image": "https://hellwar-warzone.web.app/assets/site/hero-gunship.jpg",
     "screenshot": [
       "https://hellwar-warzone.web.app/assets/site/screenshot-sortie.jpg",
@@ -285,8 +285,8 @@
 
         <div class="actions">
           <!-- RELEASE_BUTTONS_START -->
-          <a id="download-apk-btn" class="btn btn-primary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/latest" target="_blank" rel="noopener">
-            Open Official Releases (helicopter-war.apk)
+          <a id="download-apk-btn" class="btn btn-primary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk" download="helicopter-war.apk" rel="noopener">
+            Download helicopter-war.apk (Direct APK)
           </a>
           <a id="all-releases-btn" class="btn btn-secondary" href="https://github.com/gptgamestudio/hellwar-warzone/releases" target="_blank" rel="noopener">
             All GitHub Releases
@@ -296,14 +296,14 @@
 
         <div class="stats-bar">
           <!-- RELEASE_STATS_START -->
-          <div class="stat-item"><span>Latest Version</span><strong id="meta-version">v1.0.1 track</strong></div>
+          <div class="stat-item"><span>Latest Version</span><strong id="meta-version">v1.0.1</strong></div>
           <div class="stat-item"><span>APK File</span><strong id="meta-filename">helicopter-war.apk</strong></div>
           <div class="stat-item"><span>Verified Build Size</span><strong id="meta-size">35.10 MB</strong></div>
           <div class="stat-item"><span>Build Date</span><strong id="meta-date">2026-11-14</strong></div>
           <!-- RELEASE_STATS_END -->
         </div>
         <p class="live-note" id="live-release-status">
-          Checking GitHub Releases for attached <code>helicopter-war.apk</code> asset...
+          Direct APK link ready: <code>helicopter-war.apk</code>. Checking live release metadata...
         </p>
       </div>
 
@@ -404,7 +404,7 @@
       <div class="panel">
         <h2 class="section-title">How to Install Helicopter War APK on Android</h2>
         <ol class="steps" style="margin-top:12px;">
-          <li>Tap the <strong>Download APK</strong> button above to open/download <code>helicopter-war.apk</code> from official GitHub Releases.</li>
+          <li>Tap the <strong>Download helicopter-war.apk (Direct APK)</strong> button above to download the Android installer directly.</li>
           <li>Open <code>helicopter-war.apk</code> in your browser Downloads tab or Android Files app.</li>
           <li>When prompted, tap <strong>Settings</strong> &rarr; turn on <strong>Allow from this source</strong> for your browser.</li>
           <li>Tap <strong>Install</strong>, then launch <strong>Helicopter War</strong> and sign in with Google to sync campaign saves.</li>
@@ -425,6 +425,8 @@
         </p>
         <p style="font-size:0.9rem;color:var(--muted);">
           <strong>Direct Links:</strong>
+          <a href="https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk" download="helicopter-war.apk" rel="noopener">Direct APK (helicopter-war.apk)</a> &middot;
+          <a href="https://gptgamestudio.github.io/hellwar-warzone/" target="_blank" rel="noopener">GitHub Pages Official Site</a> &middot;
           <a href="https://github.com/gptgamestudio/hellwar-warzone/releases" target="_blank" rel="noopener">GitHub Releases</a> &middot;
           <a href="privacy.html">Privacy Policy</a> &middot;
           <a href="app-ads.txt">app-ads.txt</a> &middot;
@@ -468,21 +470,22 @@
             var mb = (apkAsset.size / (1024 * 1024)).toFixed(2) + " MB";
             var pubDate = (release.published_at || "").slice(0, 10) || "Verified";
             btnEl.href = apkAsset.browser_download_url;
-            btnEl.textContent = "Download helicopter-war.apk (" + release.tag_name + " \u00B7 " + mb + ")";
+            btnEl.setAttribute("download", apkAsset.name || "helicopter-war.apk");
+            btnEl.textContent = "Download " + (apkAsset.name || "helicopter-war.apk") + " (" + release.tag_name + " \u00B7 " + mb + ")";
             if (relBtnEl && release.html_url) relBtnEl.href = release.html_url;
             if (verEl) verEl.textContent = release.tag_name;
             if (sizeEl) sizeEl.textContent = mb;
             if (dateEl) dateEl.textContent = pubDate;
             if (statusEl) {
-              statusEl.textContent = "Verified live GitHub Release asset ready: " + apkAsset.name + " (" + mb + ").";
+              statusEl.textContent = "Direct APK download verified & ready: " + apkAsset.name + " (" + mb + ").";
             }
           } else if (statusEl) {
-            statusEl.textContent = "Latest GitHub Release (" + (release.tag_name || "tag") + ") does not have an APK asset attached yet. Trigger Build Android APK workflow on a v* tag to publish helicopter-war.apk.";
+            statusEl.textContent = "Direct download URL configured for helicopter-war.apk (publish/re-run latest release tag in GitHub Actions to attach the APK binary).";
           }
         })
         .catch(function () {
           if (statusEl) {
-            statusEl.textContent = "APK downloads are distributed via GitHub Releases once a version tag workflow completes.";
+            statusEl.textContent = "Direct APK download configured at GitHub Releases latest/download/helicopter-war.apk.";
           }
         });
     })();

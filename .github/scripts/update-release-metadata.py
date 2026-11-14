@@ -65,17 +65,19 @@ def main() -> int:
         readme_block = (
             f"| Field | Details |\n"
             f"|---|---|\n"
+            f"| **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)]({download_url})** |\n"
             f"| **Latest Version** | `{tag}` |\n"
             f"| **APK File** | `helicopter-war.apk` ({apk_mb}) |\n"
             f"| **Release Date** | `{release_date}` |\n"
-            f"| **Direct Download** | [Download helicopter-war.apk]({download_url}) |\n"
-            f"| **Release Page** | [View {tag} Release Notes]({release_url}) |"
+            f"| **Official Website (GitHub Pages)** | [gptgamestudio.github.io/hellwar-warzone](https://gptgamestudio.github.io/hellwar-warzone/) |\n"
+            f"| **Official Website (Firebase)** | [hellwar-warzone.web.app](https://hellwar-warzone.web.app/) |\n"
+            f"| **All Releases** | [View {tag} Release Notes]({release_url}) |"
         )
         readme = replace_block(readme, "RELEASE_INFO", readme_block)
         readme_path.write_text(readme, encoding="utf-8")
 
     html_block = (
-        f'          <a id="download-apk-btn" class="btn btn-primary" href="{download_url}" rel="noopener">\n'
+        f'          <a id="download-apk-btn" class="btn btn-primary" href="{download_url}" download="helicopter-war.apk" rel="noopener">\n'
         f'            Download helicopter-war.apk ({tag} &middot; {apk_mb})\n'
         f'          </a>\n'
         f'          <a id="all-releases-btn" class="btn btn-secondary" href="{release_url}" target="_blank" rel="noopener">\n'

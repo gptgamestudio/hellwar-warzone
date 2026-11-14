@@ -10,7 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://gptgamestudio.github.io/hellwar-warzone/"><strong>Official Download Website</strong></a> &bull;
+  <a href="https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk"><strong>Direct APK Download (helicopter-war.apk)</strong></a> &bull;
+  <a href="https://gptgamestudio.github.io/hellwar-warzone/"><strong>GitHub Pages Official Site</strong></a> &bull;
+  <a href="https://hellwar-warzone.web.app/"><strong>Firebase Official Site</strong></a> &bull;
   <a href="https://github.com/gptgamestudio/hellwar-warzone/releases"><strong>GitHub Releases</strong></a> &bull;
   <a href="https://gptgamestudio.github.io/hellwar-warzone/privacy.html"><strong>Privacy Policy</strong></a>
 </p>
@@ -24,25 +26,26 @@
 <!-- RELEASE_INFO_START -->
 | Field | Details |
 |---|---|
-| **Target Release** | `v1.0.1` |
-| **APK File** | `helicopter-war.apk` (`35.10 MB` verified local build) |
-| **Build Status** | Workflow fixed & verified locally; push to GitHub & trigger `v1.0.1` release tag to publish asset |
-| **Official Download Page** | [gptgamestudio.github.io/hellwar-warzone](https://gptgamestudio.github.io/hellwar-warzone/) |
-| **Releases Page** | [View GitHub Releases](https://github.com/gptgamestudio/hellwar-warzone/releases) |
+| **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)](https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk)** |
+| **Latest Version** | `v1.0.1` (`versionCode 2`) |
+| **APK File** | `helicopter-war.apk` (`35.10 MB`) |
+| **Official Website (GitHub Pages)** | [gptgamestudio.github.io/hellwar-warzone](https://gptgamestudio.github.io/hellwar-warzone/) |
+| **Official Website (Firebase)** | [hellwar-warzone.web.app](https://hellwar-warzone.web.app/) |
+| **All Releases** | [View GitHub Releases](https://github.com/gptgamestudio/hellwar-warzone/releases) |
 <!-- RELEASE_INFO_END -->
 
-### How Releases Auto-Update
-Whenever a version tag (`v*`, e.g., `v1.0.1`) or manual release dispatch runs in GitHub Actions:
-1. `.github/workflows/build-apk.yml` compiles and verifies `helicopter-war.apk`.
-2. Uploads `helicopter-war-apk` as a workflow artifact and publishes `helicopter-war.apk` directly to GitHub Releases.
-3. Automatically updates this `README.md`, `index.html`, `hosting/index.html`, `release-info.json`, and `sitemap.xml` with the exact verified tag, APK file size, release date, and direct asset URL.
+### How Direct APK Releases Auto-Update
+Whenever a version tag (`v*`, e.g., `v1.0.2`) or manual release dispatch runs in GitHub Actions:
+1. `.github/workflows/build-apk.yml` compiles, runs all 38+ unit tests, and verifies `helicopter-war.apk`.
+2. Publishes `helicopter-war.apk` directly to GitHub Releases (`make_latest: true`), automatically updating the permanent Direct APK URL above.
+3. Synchronizes `README.md`, `index.html`, `hosting/index.html`, `release-info.json`, `hosting/release-info.json`, and sitemaps with the latest version, file size, and direct APK download URL.
 
 ---
 
-## Release Notes (`v1.0.1`)
-- **CI/CD & Google Sign-In Resilience:** Fixed GitHub Actions JDK 21 / Android SDK setup, resolved dynamic `default_web_client_id` lookup when `google-services.json` is stored via GitHub Secrets, and added automated keystore materialization.
-- **AdMob Privacy & Stability:** Opted out of deprecated Privacy Sandbox `ACCESS_ADSERVICES_*` permissions (`tools:node="remove"`) while preserving `AD_ID` and live Banner, Interstitial, and `+1,000 CR` Rewarded Supply Drop ads.
-- **Official SEO Website & Auto-Release Sync:** Added mobile-responsive download portal with `SoftwareApplication` schema, `sitemap.xml`, `robots.txt`, and automatic release metadata synchronization.
+## Release Highlights (`v1.0.1`)
+- **Pro Campaign & Boss Combat System:** 5 Main Hearts (10 hits per heart), 24h cap of 10 Rewarded Ad continues (+5 Hearts), Interstitial continues, strict sequential Empire unlock (50 Barracks per Empire &rarr; Danger Zone Boss 100 hits &rarr; HQ 1,000 hits), Countermeasure Flare, Overdrive Plasma Cannon, and Hangar checkpoint resume (`CONTINUE STAGE`).
+- **CI/CD & Google Sign-In Resilience:** Hardened JDK 21 / Android SDK workflow, dynamic `default_web_client_id` resolution, automated keystore materialization, and chained GitHub Pages deployment.
+- **Official Websites & Direct APK Delivery:** Mobile-responsive download portals on GitHub Pages (`gptgamestudio.github.io/hellwar-warzone`) and Firebase Hosting (`hellwar-warzone.web.app`) pointing directly to `helicopter-war.apk`.
 
 ---
 
@@ -86,9 +89,9 @@ Battle across **4 distinct warzones**, each guarded by **50 unique fortified bar
 ---
 
 ## Android Installation Instructions
-1. Open the [Official Download Website](https://gptgamestudio.github.io/hellwar-warzone/) or [GitHub Releases](https://github.com/gptgamestudio/hellwar-warzone/releases) on your Android phone.
-2. Tap **Download APK (`helicopter-war.apk`)**.
-3. Open the downloaded `helicopter-war.apk` from your browser downloads or file manager.
+1. Tap **[Direct APK Download (`helicopter-war.apk`)](https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk)** or open either official website ([GitHub Pages](https://gptgamestudio.github.io/hellwar-warzone/) / [Firebase Hosting](https://hellwar-warzone.web.app/)) on your Android phone.
+2. Tap **Download `helicopter-war.apk` (Direct APK)** to start downloading the installer directly.
+3. Open the downloaded `helicopter-war.apk` from your browser downloads or Android Files app.
 4. If Android prompts *"For your security, your phone currently isn't allowed to install unknown apps"*, tap **Settings** &rarr; enable **Allow from this source** for your browser.
 5. Tap **Install** and launch **Helicopter War** (`com.hellwar.game`).
 
