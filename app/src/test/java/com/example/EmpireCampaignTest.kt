@@ -140,8 +140,13 @@ class EmpireCampaignTest {
 
             engine.damageBarracks(engine.allBarracks[49], 1000f)
             assertTrue("HQ for ${empire.name} must unlock at 50/50", engine.enemyHeadquarters?.isUnlocked ?: false)
+            assertEquals("Boss stays inside Main HQ until player enters Danger Zone", null, engine.activeBoss)
 
-            assertNotNull("Boss must spawn upon HQ unlock for ${empire.name}", engine.activeBoss)
+            val hq = engine.enemyHeadquarters!!
+            engine.player.pos = Vector3D(hq.pos.x, hq.pos.y - 60f, 9.5f)
+            engine.update(0.1f)
+
+            assertNotNull("Boss must deploy from HQ when player enters Danger Zone for ${empire.name}", engine.activeBoss)
             val boss = engine.activeBoss!!
             val keyWord = empire.bossName.split(" ")[0].trimEnd('\'', 's', ':')
             assertTrue("Boss name must identify empire flagship ($keyWord in ${boss.name})", boss.name.contains(keyWord, ignoreCase = true))

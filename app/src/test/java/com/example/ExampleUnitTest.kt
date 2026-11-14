@@ -223,11 +223,15 @@ class ExampleUnitTest {
         engine.update(0.1f)
         assertEquals("Hazard enters WARNING state", com.example.game.engine.HazardState.WARNING, geyser.state)
 
-        // 3. Advance cycle to ACTIVE state -> deals damage
+        // 3. Advance cycle to ACTIVE state -> deals damage (after clearing spawn invulnerability)
+        engine.player.invulnerableTimer = 0f
         geyser.cycleTimer = 1.3f
         engine.update(0.1f)
         assertEquals("Hazard enters ACTIVE state", com.example.game.engine.HazardState.ACTIVE, geyser.state)
-        assertTrue("Player must take damage when standing in active hazard radius", engine.player.health < initialHp || engine.player.armor < engine.player.maxArmor || engine.player.shield < engine.player.maxShield)
+        assertTrue(
+            "Player must take hit/damage when standing in active hazard radius",
+            engine.player.hitsRemainingInHeart < 10 || engine.player.health < initialHp || engine.player.shield < engine.player.maxShield
+        )
     }
 
     @Test
@@ -360,13 +364,18 @@ class ExampleUnitTest {
         // Destroy boss
         boss.health = 50f
         boss.shield = 0f
+        boss.bossHitsRemaining = 1
         engine.applyDamageToBoss(100f, boss.pos)
 
-        // Verify defeat trigger
+        // Verify boss defeat unlocks final 1000-hit Main HQ siege, then HQ destruction awards Victory
         assertTrue("Boss health reaches 0", boss.health <= 0f)
-        assertTrue("Mission victory awarded", engine.isVictory)
-        assertEquals("Score awarded +25,000 pts", initialScore + 25000, engine.score)
-        assertEquals("Progression credits awarded +5,000 CR", initialCredits + 5000, engine.creditsEarned)
+        assertTrue("HQ Boss-defeated gate must open", engine.enemyHeadquarters?.isBossDefeated == true)
+        assertEquals("Boss score awarded +25,000 pts", initialScore + 25000, engine.score)
+        assertEquals("Boss credits awarded +5,000 CR", initialCredits + 5000, engine.creditsEarned)
+        assertFalse("Stage victory awaits Main HQ destruction", engine.isVictory)
+
+        engine.destroyHeadquarters()
+        assertTrue("Mission victory awarded once Main HQ is destroyed", engine.isVictory)
     }
 
     @Test
@@ -573,9 +582,15 @@ class ExampleUnitTest {
         engine.damageBarracks(fiftiethBarracks, 350f)
         assertEquals(50, engine.barracksDestroyedCount)
 
-        // Verify HQ is now unlocked and Boss encounter is triggered
+        // Verify HQ is unlocked while Boss remains inside until Danger Zone entry
         assertTrue("Enemy headquarters forcefield must be unlocked when all 50 barracks destroyed", engine.enemyHeadquarters!!.isUnlocked)
-        assertNotNull("Supreme Empire Boss must be spawned upon destroying 50 barracks", engine.activeBoss)
+        assertEquals("Boss waits inside Main HQ while player is far from Danger Zone", null, engine.activeBoss)
+
+        val hq = engine.enemyHeadquarters!!
+        engine.player.pos = Vector3D(hq.pos.x, hq.pos.y - 60f, 9.5f)
+        engine.update(0.1f)
+
+        assertNotNull("Supreme Empire Boss must emerge upon entering HQ Danger Zone", engine.activeBoss)
         assertTrue("Boss spawned flag must be true", engine.bossSpawned)
     }
 
@@ -714,6 +729,112 @@ class ExampleUnitTest {
         assertTrue("Player Y must remain finite", engine.player.pos.y.isFinite())
         assertTrue("Player Z must remain finite", engine.player.pos.z.isFinite())
         assertTrue("Camera Y must remain finite", engine.camera.y.isFinite())
+    }
+
+    @Test
+    fun `verify 5 main hearts x 10 hits player durability and rewarded ad continue restoration`() {
+        val engine = GameEngine(selectedEmpire = EmpireType.DRAGON)
+        assertEquals(5, engine.player.hearts)
+        assertEquals(10, engine.player.hitsRemainingInHeart)
+
+        // 49 hits leave 1 Heart with 1 Hit remaining (alive)
+        for (hit in 1..49) {
+            engine.player.invulnerableTimer = 0f
+            engine.applyPlayerHit(1)
+        }
+        assertFalse("Player stays alive at 1 heart / 1 hit", engine.isGameOver)
+        assertEquals(1, engine.player.hearts)
+        assertEquals(1, engine.player.hitsRemainingInHeart)
+
+        // 50th hit depletes final heart -> Game Over (Continue? YES / NO)
+        engine.player.invulnerableTimer = 0f
+        engine.applyPlayerHit(1)
+        assertTrue("Player must stop at 0/5 hearts", engine.isGameOver)
+        assertEquals(0, engine.player.hearts)
+
+        // Watching Rewarded Ad restores full 5 Main Hearts x 10 Hits
+        engine.continueAfterAdReward()
+        assertFalse("Continue resumes battle", engine.isGameOver)
+        assertEquals(5, engine.player.hearts)
+        assertEquals(10, engine.player.hitsRemainingInHeart)
+    }
+
+    @Test
+    fun `verify 24h cap of 10 rewarded ad continues and automatic reset after 24 hours`() {
+        var fakeNow = 1_700_000_000_000L
+        val mgr = com.example.game.network.CampaignProgressionManager(prefs = null, nowProvider = { fakeNow })
+
+        assertEquals(10, mgr.getAdContinueQuota("pilot_1").remaining)
+        repeat(10) { idx ->
+            val updated = mgr.consumeAdContinueWatch("pilot_1")
+            assertNotNull("Watch #${idx + 1} must succeed", updated)
+        }
+        val capped = mgr.getAdContinueQuota("pilot_1")
+        assertEquals(0, capped.remaining)
+        assertFalse("11th continue ad in 24h must be blocked", capped.canWatchAdToContinue)
+        assertEquals(null, mgr.consumeAdContinueWatch("pilot_1"))
+
+        // Advance time by 24 hours + 1 second -> auto resets to 10/10 available
+        fakeNow += com.example.game.network.CampaignProgressionManager.RESET_WINDOW_MS + 1000L
+        val resetQuota = mgr.getAdContinueQuota("pilot_1")
+        assertEquals(10, resetQuota.remaining)
+        assertTrue(resetQuota.canWatchAdToContinue)
+    }
+
+    @Test
+    fun `verify strict sequential stage unlocking without advance stage skip`() {
+        val mgr = com.example.game.network.CampaignProgressionManager(prefs = null)
+        val uid = "pilot_seq"
+
+        assertTrue("Stage 1 DRAGON unlocked initially", mgr.isStageUnlocked(EmpireType.DRAGON, null, uid))
+        assertFalse("Stage 2 ALIEN locked initially", mgr.isStageUnlocked(EmpireType.ALIEN, null, uid))
+        assertFalse("Stage 3 ORC locked initially", mgr.isStageUnlocked(EmpireType.ORC, null, uid))
+        assertFalse("Stage 4 HUMAN locked initially", mgr.isStageUnlocked(EmpireType.HUMAN, null, uid))
+
+        mgr.markStageCompleted(uid, EmpireType.DRAGON)
+        assertTrue("Stage 2 ALIEN unlocked after clearing Stage 1", mgr.isStageUnlocked(EmpireType.ALIEN, null, uid))
+        assertFalse("Stage 3 ORC remains locked", mgr.isStageUnlocked(EmpireType.ORC, null, uid))
+    }
+
+    @Test
+    fun `verify sortie checkpoint export restore and 100-100-1000 hit targets with flare and overdrive`() {
+        val engine = GameEngine(selectedEmpire = EmpireType.DRAGON)
+
+        // Verify Barracks = 100 hits max, HQ = 1000 hits max
+        val b0 = engine.allBarracks[0]
+        assertEquals(100, b0.hitsRemaining)
+        assertEquals(1000, engine.enemyHeadquarters!!.hitsRemaining)
+
+        // Destroy 3 barracks cleanly
+        engine.damageBarracks(engine.allBarracks[0], 100f)
+        engine.damageBarracks(engine.allBarracks[1], 100f)
+        engine.damageBarracks(engine.allBarracks[2], 100f)
+        engine.player.pos = Vector3D(14f, 180f, 9.5f)
+        repeat(15) {
+            engine.player.invulnerableTimer = 0f
+            engine.applyPlayerHit(1)
+        } // drops from 5/10 to 4/5 hearts, 5 hits left
+        val cp = engine.exportCheckpoint()
+
+        // Restore into a fresh engine instance (simulating Dashboard -> CONTINUE STAGE)
+        val resumedEngine = GameEngine(selectedEmpire = EmpireType.DRAGON)
+        resumedEngine.restoreFromCheckpoint(cp)
+        assertEquals(3, resumedEngine.barracksDestroyedCount)
+        assertEquals(14f, resumedEngine.player.pos.x, 0.01f)
+        assertEquals(180f, resumedEngine.player.pos.y, 0.01f)
+        assertEquals(4, resumedEngine.player.hearts)
+        assertEquals(5, resumedEngine.player.hitsRemainingInHeart)
+
+        // Flare countermeasure & Overdrive Plasma abilities
+        resumedEngine.activateFlareCountermeasure()
+        assertTrue("Flare sets invulnerable defensive window", resumedEngine.player.flareActiveTimer > 0f)
+        assertTrue("Flare goes on cooldown", resumedEngine.player.flareCooldownTimer > 0f)
+
+        resumedEngine.player.overdriveCharge = 100f
+        resumedEngine.bullets.clear()
+        resumedEngine.activateOverdriveBeam()
+        assertTrue("Overdrive spawns plasma volley", resumedEngine.bullets.any { it.isPlayerPlasma })
+        assertEquals(0f, resumedEngine.player.overdriveCharge, 0.01f)
     }
 }
 

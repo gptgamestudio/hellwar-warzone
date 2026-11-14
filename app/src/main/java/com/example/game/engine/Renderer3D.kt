@@ -663,7 +663,8 @@ class Renderer3D {
                 }
             }
 
-            // Forcefield Shield Perimeter when Headquarters is LOCKED (< 50 Barracks destroyed)
+            // Headquarters Forcefield, Danger Zone Perimeter Ring & 1,000-Hit Hull Bar
+            val pulse = (sin((hq.pos.y + hq.hitsRemaining) * 0.2f) * 0.5f + 0.5f)
             if (!hq.isUnlocked) {
                 val shieldColor = hq.empire.primaryColor.copy(alpha = 0.55f)
                 scope.drawRoundRect(
@@ -673,7 +674,38 @@ class Renderer3D {
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f),
                     style = Stroke(3.5f)
                 )
+            } else if (!hq.isBossDefeated) {
+                // HQ unlocked -> Warning Danger Zone alert ring while Boss is inside HQ awaiting player entry
+                val zoneColor = if (hq.isDangerZoneTriggered) Color(0xFFFF1744) else Color(0xFFFF9100)
+                scope.drawOval(
+                    color = zoneColor.copy(alpha = 0.45f + pulse * 0.35f),
+                    topLeft = Offset(cx - bw * 1.9f, cy - bh * 0.7f),
+                    size = Size(bw * 3.8f, bh * 1.4f),
+                    style = Stroke(4f)
+                )
+            } else {
+                // Boss defeated -> HQ Vulnerable (1,000 Hits Hull Bar + Breach Highlight)
+                scope.drawOval(
+                    color = if (hq.hitFlashTimer > 0f) Color.White else Color(0xFF00E676).copy(alpha = 0.6f),
+                    topLeft = Offset(cx - bw * 1.6f, cy - bh * 0.55f),
+                    size = Size(bw * 3.2f, bh * 1.1f),
+                    style = Stroke(3.5f)
+                )
             }
+
+            // HQ Hull Integrity Bar (1,000 hits total)
+            val hqBarW = bw * 2.4f
+            val hqBarH = 7f
+            val hqBarY = tcy - 34f
+            val hqPct = (hq.hitsRemaining.toFloat() / hq.maxHits.toFloat()).coerceIn(0f, 1f)
+            scope.drawRect(Color(0xEE0D1520), Offset(cx - hqBarW / 2 - 1f, hqBarY - 1f), Size(hqBarW + 2f, hqBarH + 2f))
+            scope.drawRect(Color(0xAAFFFFFF), Offset(cx - hqBarW / 2 - 1f, hqBarY - 1f), Size(hqBarW + 2f, hqBarH + 2f), style = Stroke(1f))
+            val hqBarColor = when {
+                !hq.isUnlocked -> Color(0xFF78909C)
+                !hq.isBossDefeated -> Color(0xFFFF9100)
+                else -> Color(0xFFFF1744)
+            }
+            scope.drawRect(hqBarColor, Offset(cx - hqBarW / 2, hqBarY), Size(hqBarW * hqPct, hqBarH))
         }
     }
 
@@ -969,6 +1001,38 @@ class Renderer3D {
             )
             scope.drawLine(Color(0xFFE5A93C), tipPos, bladeEnd, 4.2f, StrokeCap.Round)
         }
+
+        // 7. Combat Status Auras: Countermeasure Flare Pulse, Overdrive Ready Glow, and Hit Flash
+        if (player.flareActiveTimer > 0f) {
+            val flareR = 76f * (s / 20f)
+            scope.drawCircle(
+                Color(0x5500E5FF),
+                flareR,
+                Offset(cx, cy),
+                style = Stroke(4f)
+            )
+            scope.drawCircle(
+                Color(0x22FFD600),
+                flareR * 0.8f,
+                Offset(cx, cy)
+            )
+        }
+        if (player.overdriveBeamTimer > 0f || player.overdriveCharge >= 100f) {
+            scope.drawCircle(
+                Color(0x6600E5FF),
+                48f * (s / 20f),
+                Offset(cx, cy),
+                style = Stroke(2.5f)
+            )
+        }
+        if (player.hitFlashTimer > 0f) {
+            scope.drawCircle(
+                Color(0x66FF1744),
+                56f * (s / 20f),
+                Offset(cx, cy),
+                style = Stroke(3.5f)
+            )
+        }
     }
 
     /**
@@ -1178,11 +1242,25 @@ class Renderer3D {
             }
         }
 
+        // Hit Flash / Alert Indicator & Damage Smoke Wisps
+        if (enemy.hitFlashTimer > 0f) {
+            scope.drawCircle(Color(0x88FFFFFF), 24f * (s / 20f), Offset(cx, cy), style = Stroke(3f))
+        }
+
         // High-Contrast Threat Health Bar & Identity Indicator
         val barW = 54f * (s / 20f)
         val barH = 6f
         val barY = cy - 36f * (s / 20f)
         val hpPct = (enemy.health / enemy.maxHealth).coerceIn(0f, 1f)
+
+        if (hpPct < 0.5f) {
+            scope.drawCircle(Color(0x66222222), 10f * (s / 20f), Offset(cx - 4f, cy - 12f))
+        }
+
+        if (enemy.isAlerted) {
+            // Hostile alert diamond marker beside enemy health bar
+            scope.drawCircle(Color(0xFFFF1744), 3.5f, Offset(cx - barW / 2 - 7f, barY + barH / 2))
+        }
 
         // Health Bar Background & Border
         scope.drawRect(Color(0xDD000000), Offset(cx - barW / 2 - 1f, barY - 1f), Size(barW + 2f, barH + 2f))
@@ -1393,6 +1471,24 @@ class Renderer3D {
                 }
             }
         }
+
+        // Boss Evasive Boost & Hit Flash Visual Feedback
+        if (boss.isEvading) {
+            scope.drawOval(
+                Color(0x6600E5FF),
+                Offset(cx - 72f * (s / 20f), cy - 32f * (s / 20f)),
+                Size(144f * (s / 20f), 64f * (s / 20f)),
+                style = Stroke(3.5f)
+            )
+        }
+        if (boss.hitFlashTimer > 0f) {
+            scope.drawCircle(
+                Color(0x77FFFFFF),
+                56f * (s / 20f),
+                Offset(cx, cy),
+                style = Stroke(4f)
+            )
+        }
     }
 
     private fun drawRocket3D(scope: DrawScope, camera: Camera3D, rocket: RocketCluster, width: Float, height: Float) {
@@ -1445,16 +1541,25 @@ class Renderer3D {
         val cx = proj.screenPos.x
         val cy = proj.screenPos.y
 
-        val tracerLen = 16f * (s / 20f)
+        val tracerLen = if (bullet.isPlayerPlasma) 24f * (s / 20f) else 16f * (s / 20f)
         val color = when {
+            bullet.isPlayerPlasma -> Color(0xFF00E5FF)
             bullet.isPlayer -> Color(0xFFFFD600)
             bullet.isTankShell -> Color(0xFFFF9100)
             bullet.isFlakBurst -> Color(0xFFFF3D00)
             else -> Color(0xFFFF1744)
         }
 
-        val thickness = if (bullet.isTankShell) 6.0f else if (bullet.isPlayer) 3.5f else 4.0f
+        val thickness = when {
+            bullet.isPlayerPlasma -> 6.5f
+            bullet.isTankShell -> 6.0f
+            bullet.isPlayer -> 3.5f
+            else -> 4.0f
+        }
         scope.drawLine(color, Offset(cx, cy - tracerLen * 0.5f), Offset(cx, cy + tracerLen * 0.5f), thickness, StrokeCap.Round)
+        if (bullet.isPlayerPlasma) {
+            scope.drawLine(Color.White, Offset(cx, cy - tracerLen * 0.35f), Offset(cx, cy + tracerLen * 0.35f), 2.5f, StrokeCap.Round)
+        }
     }
 
     private fun drawParticle(scope: DrawScope, camera: Camera3D, particle: VisualParticle, width: Float, height: Float) {

@@ -30,7 +30,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Dangerous
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -39,6 +43,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RocketLaunch
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,7 +54,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,6 +69,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -69,12 +77,15 @@ import com.example.game.engine.BossCombatEntity
 import com.example.game.engine.GameEngine
 import com.example.game.engine.GameHudState
 import com.example.game.engine.HazardState
+import com.example.game.model.EmpireType
+import com.example.game.network.AdContinueQuota
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.HealthGreen
 import com.example.ui.theme.MilitaryGold
 import com.example.ui.theme.ShieldBlue
 import com.example.ui.theme.ThreatRed
+import kotlinx.coroutines.delay
 
 @Composable
 fun HudOverlay(
@@ -85,7 +96,12 @@ fun HudOverlay(
     onRestartSortie: () -> Unit,
     modifier: Modifier = Modifier,
     onPauseStateChange: (Boolean) -> Unit = {},
-    onClaimDebriefAdBonus: ((onGranted: (Int) -> Unit, onStatus: (String) -> Unit) -> Unit)? = null
+    onClaimDebriefAdBonus: ((onGranted: (Int) -> Unit, onStatus: (String) -> Unit) -> Unit)? = null,
+    onSaveAndReturnToDashboard: () -> Unit = onReturnToMenu,
+    adContinueQuota: AdContinueQuota = AdContinueQuota(0),
+    onWatchAdContinue: ((onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit)? = null,
+    nextStageEmpire: EmpireType? = null,
+    onAutoDeployNextStage: ((EmpireType) -> Unit)? = null
 ) {
     var showPauseDialog by remember { mutableStateOf(false) }
 
@@ -99,6 +115,13 @@ fun HudOverlay(
         ) {
             TopStatusRow(
                 hudState = hudState,
+                onBackToDashboard = {
+                    engine.isUpPressed = false
+                    engine.isDownPressed = false
+                    engine.isLeftPressed = false
+                    engine.isRightPressed = false
+                    onSaveAndReturnToDashboard()
+                },
                 onPauseClick = {
                     engine.isUpPressed = false
                     engine.isDownPressed = false
@@ -118,7 +141,40 @@ fun HudOverlay(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Enemy Barracks Mission Objective Progress (0 / 50) inside high-contrast pill for bright sky legibility
+            // Dynamic Mission Objective Strip (Barracks -> HQ Danger Zone Boss -> 1,000-Hit Main HQ)
+            val objectiveLabel: String
+            val objectiveText: String
+            val objectiveProgress: Float
+            val objectiveColor: Color
+            when {
+                hudState.isHqBossDefeated -> {
+                    objectiveLabel = "SIEGE HQ"
+                    objectiveText = "${hudState.hqHitsRemaining}/${hudState.hqMaxHits}"
+                    objectiveProgress = (hudState.hqHitsRemaining.toFloat() / hudState.hqMaxHits.toFloat()).coerceIn(0f, 1f)
+                    objectiveColor = ThreatRed
+                }
+                hudState.isHeadquartersUnlocked -> {
+                    objectiveLabel = if (hudState.bossEntity != null) "BOSS" else "GO TO HQ"
+                    objectiveText = if (hudState.bossEntity != null) {
+                        "${hudState.bossEntity.bossHitsRemaining}/${hudState.bossEntity.maxBossHits}"
+                    } else {
+                        "DANGER ZONE"
+                    }
+                    objectiveProgress = if (hudState.bossEntity != null) {
+                        (hudState.bossEntity.bossHitsRemaining.toFloat() / hudState.bossEntity.maxBossHits.toFloat()).coerceIn(0f, 1f)
+                    } else {
+                        1f
+                    }
+                    objectiveColor = Color(0xFF00E676)
+                }
+                else -> {
+                    objectiveLabel = "BARRACKS"
+                    objectiveText = "${hudState.barracksDestroyedCount}/${hudState.totalBarracks}"
+                    objectiveProgress = (hudState.barracksDestroyedCount.toFloat() / hudState.totalBarracks.toFloat()).coerceIn(0f, 1f)
+                    objectiveColor = Color(0xFFFF9100)
+                }
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -128,27 +184,26 @@ fun HudOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "BARRACKS",
+                    text = objectiveLabel,
                     color = Color(0xFFFFD600),
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                val barracksProgress = (hudState.barracksDestroyedCount.toFloat() / hudState.totalBarracks.toFloat()).coerceIn(0f, 1f)
                 LinearProgressIndicator(
-                    progress = { barracksProgress },
+                    progress = { objectiveProgress },
                     modifier = Modifier
                         .weight(1f)
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
-                    color = if (hudState.isHeadquartersUnlocked) Color(0xFF00E676) else Color(0xFFFF9100),
+                    color = objectiveColor,
                     trackColor = Color(0x33FF9100)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "${hudState.barracksDestroyedCount}/${hudState.totalBarracks}",
-                    color = if (hudState.isHeadquartersUnlocked) Color(0xFF00E676) else Color(0xFFFFD600),
+                    text = objectiveText,
+                    color = objectiveColor,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = FontFamily.Monospace
@@ -180,16 +235,15 @@ fun HudOverlay(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 12.dp)
+                .padding(horizontal = 8.dp, vertical = 10.dp)
                 .align(Alignment.BottomCenter)
         ) {
-            // Left Side Tactical: Auto-Fire Toggle & MRL Rocket Barrage
+            // Left Side Tactical: Auto-Fire Toggle, Flare Countermeasure & MRL Rocket Barrage
             Column(
                 horizontalAlignment = Alignment.Start,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.align(Alignment.BottomStart)
             ) {
-                // Auto-Fire Toggle Button
                 Button(
                     onClick = { engine.player.isAutoFiring = !engine.player.isAutoFiring },
                     colors = ButtonDefaults.buttonColors(
@@ -197,19 +251,24 @@ fun HudOverlay(
                         contentColor = if (hudState.isAutoFiring) AmberWarning else Color(0xFF78909C)
                     ),
                     shape = RoundedCornerShape(8.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     modifier = Modifier
-                        .height(38.dp)
+                        .height(34.dp)
                         .testTag("auto_fire_toggle")
                 ) {
                     Text(
-                        text = if (hudState.isAutoFiring) "AUTO: ON" else "AUTO: OFF",
-                        fontSize = 10.sp,
+                        text = if (hudState.isAutoFiring) "AUTO:ON" else "AUTO:OFF",
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
                 }
 
-                // Multiple Rocket Launcher (MRL) Button
+                FlareCountermeasureButton(
+                    hudState = hudState,
+                    onActivate = { engine.activateFlareCountermeasure() }
+                )
+
                 MultipleRocketButton(
                     hudState = hudState,
                     onLaunch = { engine.launchRocketBarrage() }
@@ -217,20 +276,22 @@ fun HudOverlay(
             }
 
             // CENTER-BOTTOM: Cross-Shaped 4-Directional Movement D-Pad
-            //           UP
-            //    LEFT  DOWN  RIGHT
             CrossDirectionalTouchControls(
                 engine = engine,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
 
-            // Right Side Weapon Controls: Dedicated Target-Lock Guided Missile Button
+            // Right Side Weapon Controls: Overdrive Plasma & Target-Lock Guided Missile
             Column(
                 horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.align(Alignment.BottomEnd)
             ) {
-                // Dedicated Guided Missile Button
+                OverdriveWeaponButton(
+                    hudState = hudState,
+                    onActivate = { engine.activateOverdriveBeam() }
+                )
+
                 DedicatedMissileButton(
                     hudState = hudState,
                     onLaunch = { engine.launchMissiles() }
@@ -253,19 +314,34 @@ fun HudOverlay(
                 onQuit = {
                     showPauseDialog = false
                     onPauseStateChange(false)
-                    onReturnToMenu()
+                    onSaveAndReturnToDashboard()
                 }
             )
         }
 
-        // Game Over / Victory Screen
-        if (hudState.isGameOver || hudState.isVictory) {
-            MissionDebriefingDialog(
-                isVictory = hudState.isVictory,
+        // Game Over (5-Heart Exhausted -> Watch Ad Continue? YES/NO) or Victory (Auto-Deploy Next Stage)
+        if (hudState.isGameOver) {
+            DefeatContinueDialog(
                 score = hudState.score,
                 kills = hudState.kills,
                 credits = hudState.creditsEarned,
                 empire = hudState.activeEmpire,
+                stageNumber = hudState.stageNumber,
+                adContinueQuota = adContinueQuota,
+                onWatchAdContinue = onWatchAdContinue,
+                onRestart = onRestartSortie,
+                onReturnToHangar = onReturnToMenu
+            )
+        } else if (hudState.isVictory) {
+            MissionDebriefingDialog(
+                isVictory = true,
+                score = hudState.score,
+                kills = hudState.kills,
+                credits = hudState.creditsEarned,
+                empire = hudState.activeEmpire,
+                stageNumber = hudState.stageNumber,
+                nextStageEmpire = nextStageEmpire,
+                onAutoDeployNextStage = onAutoDeployNextStage,
                 onClaimSupplyBonus = onClaimDebriefAdBonus,
                 onRestart = onRestartSortie,
                 onReturnToHangar = onReturnToMenu
@@ -300,19 +376,45 @@ private fun BossHealthPanel(boss: BossCombatEntity) {
                     )
                 }
 
-                // Phase Badge
-                Box(
-                    modifier = Modifier
-                        .background(if (boss.phase == 3) ThreatRed else AmberWarning, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    Text(
-                        text = if (boss.phase == 3) "PHASE 3: ENRAGED" else "PHASE ${boss.phase}/3",
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.Black,
-                        fontFamily = FontFamily.Monospace
-                    )
+                // Hit Counter & Phase Badge
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFF263238), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "${boss.bossHitsRemaining}/${boss.maxBossHits} HITS",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                when {
+                                    boss.isEvading -> CyberCyan
+                                    boss.phase == 3 -> ThreatRed
+                                    else -> AmberWarning
+                                },
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = when {
+                                boss.isEvading -> "EVADING"
+                                boss.phase == 3 -> "P3 ENRAGED"
+                                else -> "PHASE ${boss.phase}/3"
+                            },
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.Black,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                 }
             }
 
@@ -392,6 +494,7 @@ private fun BossHealthPanel(boss: BossCombatEntity) {
 @Composable
 private fun TopStatusRow(
     hudState: GameHudState,
+    onBackToDashboard: () -> Unit,
     onPauseClick: () -> Unit
 ) {
     Row(
@@ -399,124 +502,110 @@ private fun TopStatusRow(
             .fillMaxWidth()
             .background(Color(0xCC0D141E), RoundedCornerShape(10.dp))
             .border(1.dp, Color(0xFF263238), RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Health, Armor, and Energy Shield Gauges
-        Column(modifier = Modifier.weight(1.4f)) {
-            // Energy Shield Bar
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "SHIELD",
-                    color = CyberCyan,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.width(42.dp)
-                )
-                LinearProgressIndicator(
-                    progress = { (hudState.shield / hudState.maxShield).coerceIn(0f, 1f) },
-                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    color = CyberCyan,
-                    trackColor = Color(0x3300E5FF)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "${hudState.shield.toInt()}",
-                    color = CyberCyan,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
+        // Back to Dashboard Arrow (saves mid-stage checkpoint cleanly)
+        IconButton(
+            onClick = onBackToDashboard,
+            modifier = Modifier
+                .size(48.dp)
+                .background(Color(0xFF16202C), RoundedCornerShape(8.dp))
+                .testTag("back_to_dashboard_button")
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Save & Return to Dashboard",
+                tint = CyberCyan,
+                modifier = Modifier.size(20.dp)
+            )
+        }
 
-            Spacer(modifier = Modifier.height(2.dp))
+        Spacer(modifier = Modifier.width(6.dp))
 
-            // Armor Bar
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        // 5 Hearts + 10 Hits per Heart + Armor/Shield Gauges
+        Column(modifier = Modifier.weight(1.45f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                for (i in 1..hudState.maxHearts) {
+                    val filled = i <= hudState.hearts
+                    Icon(
+                        imageVector = if (filled) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = null,
+                        tint = if (filled) ThreatRed else Color(0xFF455A64),
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = "ARMOR",
-                    color = ShieldBlue,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.width(42.dp)
-                )
-                LinearProgressIndicator(
-                    progress = { (hudState.armor / hudState.maxArmor).coerceIn(0f, 1f) },
-                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    color = ShieldBlue,
-                    trackColor = Color(0x3300B0FF)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "${hudState.armor.toInt()}",
-                    color = ShieldBlue,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-
-            Spacer(modifier = Modifier.height(2.dp))
-
-            // Hull Health Bar
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "HULL",
-                    color = HealthGreen,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.width(42.dp)
-                )
-                LinearProgressIndicator(
-                    progress = { (hudState.health / hudState.maxHealth).coerceIn(0f, 1f) },
-                    modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
-                    color = if (hudState.health > 30f) HealthGreen else ThreatRed,
-                    trackColor = Color(0x3300E676)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "${hudState.health.toInt()}",
+                    text = "${hudState.hitsRemainingInHeart}/${hudState.hitsPerHeart}",
                     color = Color.White,
                     fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace
+                )
+            }
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            // Heart Integrity Progress Bar (10 hits per heart)
+            LinearProgressIndicator(
+                progress = { (hudState.hitsRemainingInHeart.toFloat() / hudState.hitsPerHeart.toFloat()).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                color = if (hudState.hearts <= 1) ThreatRed else HealthGreen,
+                trackColor = Color(0x33FF1744)
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Compact Shield Bar
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "SHD",
+                    color = CyberCyan,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                    modifier = Modifier.width(24.dp)
+                )
+                LinearProgressIndicator(
+                    progress = { (hudState.shield / hudState.maxShield.coerceAtLeast(1f)).coerceIn(0f, 1f) },
+                    modifier = Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color = CyberCyan,
+                    trackColor = Color(0x3300E5FF)
                 )
             }
         }
 
-        Spacer(modifier = Modifier.width(10.dp))
+        Spacer(modifier = Modifier.width(6.dp))
 
-        // Score & Kills
-        Column(
-            horizontalAlignment = Alignment.End,
-            modifier = Modifier.weight(1f)
-        ) {
+        // Stage, Score & Kills
+        Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = "SCORE: ${hudState.score}",
+                text = "STG ${hudState.stageNumber} // ${hudState.score}",
                 color = AmberWarning,
-                fontSize = 13.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace
             )
             Text(
                 text = "KILLS: ${hudState.kills}",
                 color = Color(0xFFCFD8DC),
-                fontSize = 11.sp,
+                fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )
         }
 
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(4.dp))
 
         IconButton(
             onClick = onPauseClick,
             modifier = Modifier
-                .size(36.dp)
+                .size(48.dp)
                 .background(Color(0xFF1E2836), RoundedCornerShape(8.dp))
                 .testTag("pause_button")
         ) {
@@ -667,6 +756,94 @@ private fun ThreatWarningBanner(message: String, color: Color) {
 }
 
 /**
+ * Countermeasure Flare Button (Auto-Recharges every 7.5s, deflects incoming fire)
+ */
+@Composable
+private fun FlareCountermeasureButton(
+    hudState: GameHudState,
+    onActivate: () -> Unit
+) {
+    val isReady = hudState.isFlareReady
+
+    Box(
+        modifier = Modifier
+            .size(50.dp)
+            .clip(CircleShape)
+            .background(if (isReady) Color(0xFF0E7490) else Color(0xFF1E293B))
+            .border(2.dp, if (isReady) CyberCyan else Color(0xFF455A64), CircleShape)
+            .pointerInput(isReady) {
+                if (isReady) {
+                    detectTapGestures(onTap = { onActivate() })
+                }
+            }
+            .testTag("flare_button"),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!isReady) {
+            CircularProgressIndicator(
+                progress = { hudState.flareCooldownPercent },
+                modifier = Modifier.fillMaxSize(),
+                color = CyberCyan,
+                trackColor = Color(0x22FFFFFF),
+                strokeWidth = 3.dp
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Shield, contentDescription = "Countermeasure Flare", tint = if (isReady) Color.White else Color(0xFF90A4AE), modifier = Modifier.size(18.dp))
+            Text(text = "FLARE", fontSize = 8.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = if (isReady) Color.White else Color(0xFF90A4AE))
+        }
+    }
+}
+
+/**
+ * Overdrive Plasma Beam Button (0-100% auto-recharging super-weapon)
+ */
+@Composable
+private fun OverdriveWeaponButton(
+    hudState: GameHudState,
+    onActivate: () -> Unit
+) {
+    val isReady = hudState.isOverdriveReady
+
+    Box(
+        modifier = Modifier
+            .size(50.dp)
+            .clip(CircleShape)
+            .background(if (isReady) Color(0xFF0284C7) else Color(0xFF1E293B))
+            .border(2.dp, if (isReady) Color.White else Color(0xFF455A64), CircleShape)
+            .pointerInput(isReady) {
+                if (isReady) {
+                    detectTapGestures(onTap = { onActivate() })
+                }
+            }
+            .testTag("overdrive_button"),
+        contentAlignment = Alignment.Center
+    ) {
+        if (!isReady) {
+            CircularProgressIndicator(
+                progress = { hudState.overdriveChargePercent },
+                modifier = Modifier.fillMaxSize(),
+                color = CyberCyan,
+                trackColor = Color(0x22FFFFFF),
+                strokeWidth = 3.dp
+            )
+        }
+
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Bolt, contentDescription = "Overdrive Plasma", tint = if (isReady) Color.White else Color(0xFF90A4AE), modifier = Modifier.size(18.dp))
+            Text(
+                text = if (isReady) "OVER" else "${(hudState.overdriveChargePercent * 100).toInt()}%",
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                color = if (isReady) Color.White else Color(0xFF90A4AE)
+            )
+        }
+    }
+}
+
+/**
  * Multiple Rocket Launcher (MRL) Button
  */
 @Composable
@@ -678,7 +855,7 @@ private fun MultipleRocketButton(
 
     Box(
         modifier = Modifier
-            .size(68.dp)
+            .size(58.dp)
             .clip(CircleShape)
             .background(if (isReady) Color(0xFFC2410C) else Color(0xFF263238))
             .border(2.dp, if (isReady) MilitaryGold else Color(0xFF455A64), CircleShape)
@@ -701,8 +878,8 @@ private fun MultipleRocketButton(
         }
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "MRL", fontSize = 11.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = if (isReady) Color.White else Color(0xFF90A4AE))
-            Text(text = "${hudState.rocketAmmo}", fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = MilitaryGold)
+            Text(text = "MRL", fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = if (isReady) Color.White else Color(0xFF90A4AE))
+            Text(text = "${hudState.rocketAmmo}", fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = MilitaryGold)
         }
     }
 }
@@ -720,7 +897,7 @@ private fun DedicatedMissileButton(
 
     Box(
         modifier = Modifier
-            .size(72.dp)
+            .size(62.dp)
             .clip(CircleShape)
             .background(if (isReady) (if (hasLock) ThreatRed else Color(0xFF991B1B)) else Color(0xFF263238))
             .border(2.dp, if (hasLock) Color.White else (if (isReady) AmberWarning else Color(0xFF455A64)), CircleShape)
@@ -743,7 +920,7 @@ private fun DedicatedMissileButton(
         }
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.RocketLaunch, contentDescription = "Missile Attack", tint = if (isReady) Color.White else Color(0xFF78909C), modifier = Modifier.size(26.dp))
+            Icon(Icons.Default.RocketLaunch, contentDescription = "Missile Attack", tint = if (isReady) Color.White else Color(0xFF78909C), modifier = Modifier.size(22.dp))
             Text(
                 text = if (hasLock) "LOCKED" else if (isReady) "${hudState.missileAmmo} MIS" else "ARMING",
                 fontSize = 8.sp,
@@ -757,25 +934,13 @@ private fun DedicatedMissileButton(
 
 /**
  * Cross-Shaped 4-Directional Movement Control Pad
- * Positioned in the CENTER-BOTTOM area of the 9:16 portrait gameplay screen.
- *
- * Layout:
- *              UP
- *       LEFT  DOWN  RIGHT
- *
- * - UP moves forward
- * - DOWN moves backward
- * - LEFT moves sideways left
- * - RIGHT moves sideways right
- * - Helicopter always faces UP (never rotates)
- * - Supports press-and-hold and simultaneous diagonal movement
  */
 @Composable
 private fun CrossDirectionalTouchControls(
     engine: GameEngine,
     modifier: Modifier = Modifier
 ) {
-    val btnWidth = 52.dp
+    val btnWidth = 48.dp
     val btnHeight = 48.dp
 
     androidx.compose.runtime.DisposableEffect(engine) {
@@ -934,18 +1099,170 @@ private fun TacticalPauseDialog(onResume: () -> Unit, onRestart: () -> Unit, onQ
 }
 
 @Composable
+private fun DefeatContinueDialog(
+    score: Int,
+    kills: Int,
+    credits: Int,
+    empire: EmpireType,
+    stageNumber: Int,
+    adContinueQuota: AdContinueQuota,
+    onWatchAdContinue: ((onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit)?,
+    onRestart: () -> Unit,
+    onReturnToHangar: () -> Unit
+) {
+    var statusText by remember { mutableStateOf<String?>(null) }
+
+    Dialog(onDismissRequest = {}) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF0C131D),
+            border = androidx.compose.foundation.BorderStroke(2.dp, ThreatRed),
+            modifier = Modifier.fillMaxWidth().padding(12.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "0/5 HEARTS — CONTINUE?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    color = ThreatRed
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "STAGE $stageNumber // ${empire.title}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = empire.primaryColor,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF151F2C), RoundedCornerShape(10.dp)).padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceAround
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("SCORE", fontSize = 9.sp, color = Color(0xFF90A4AE))
+                        Text("$score", fontSize = 16.sp, fontWeight = FontWeight.Black, color = AmberWarning)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("KILLS", fontSize = 9.sp, color = Color(0xFF90A4AE))
+                        Text("$kills", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("CREDITS", fontSize = 9.sp, color = Color(0xFF90A4AE))
+                        Text("+$credits", fontSize = 15.sp, fontWeight = FontWeight.Black, color = MilitaryGold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "24H REWARDED CONTINUES LEFT: ${adContinueQuota.remaining}/${adContinueQuota.maxPer24Hours}",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = if (adContinueQuota.canWatchAdToContinue) CyberCyan else ThreatRed
+                )
+                statusText?.let { msg ->
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = msg,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = AmberWarning,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // YES — WATCH AD TO RESTORE +5 MAIN HEARTS
+                Button(
+                    onClick = {
+                        if (adContinueQuota.canWatchAdToContinue && onWatchAdContinue != null) {
+                            onWatchAdContinue({}, { msg -> statusText = msg })
+                        }
+                    },
+                    enabled = adContinueQuota.canWatchAdToContinue && onWatchAdContinue != null,
+                    colors = ButtonDefaults.buttonColors(containerColor = HealthGreen),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("defeat_continue_yes_button")
+                ) {
+                    Text(
+                        text = if (adContinueQuota.canWatchAdToContinue) {
+                            "YES — WATCH AD (+5 HEARTS)"
+                        } else {
+                            "DAILY 10/10 LIMIT REACHED (24H)"
+                        },
+                        color = Color.Black,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // NO — RETURN TO DASHBOARD
+                Button(
+                    onClick = onReturnToHangar,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("defeat_continue_no_button")
+                ) {
+                    Text("NO — RETURN TO DASHBOARD", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = onRestart,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF263238)),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = AmberWarning)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("RESTART STAGE", color = AmberWarning, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MissionDebriefingDialog(
     isVictory: Boolean,
     score: Int,
     kills: Int,
     credits: Int,
-    empire: com.example.game.model.EmpireType,
+    empire: EmpireType,
+    stageNumber: Int = 1,
+    nextStageEmpire: EmpireType? = null,
+    onAutoDeployNextStage: ((EmpireType) -> Unit)? = null,
     onClaimSupplyBonus: ((onGranted: (Int) -> Unit, onStatus: (String) -> Unit) -> Unit)? = null,
     onRestart: () -> Unit,
     onReturnToHangar: () -> Unit
 ) {
     var bonusClaimed by remember { mutableStateOf(false) }
     var bonusStatus by remember { mutableStateOf<String?>(null) }
+    var countdown by remember { mutableIntStateOf(3) }
+    var autoDeployCancelled by remember { mutableStateOf(false) }
+
+    if (isVictory && nextStageEmpire != null && onAutoDeployNextStage != null && !autoDeployCancelled) {
+        LaunchedEffect(nextStageEmpire) {
+            while (countdown > 0) {
+                delay(1000L)
+                countdown -= 1
+            }
+            onAutoDeployNextStage(nextStageEmpire)
+        }
+    }
 
     Dialog(onDismissRequest = {}) {
         Surface(
@@ -956,16 +1273,16 @@ private fun MissionDebriefingDialog(
         ) {
             Column(modifier = Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = if (isVictory) "MISSION ACCOMPLISHED" else "HELICOPTER LOST",
+                    text = if (nextStageEmpire == null) "ALL 4 EMPIRES CONQUERED!" else "STAGE $stageNumber CLEARED!",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
-                    color = if (isVictory) HealthGreen else ThreatRed
+                    color = HealthGreen
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "THEATER: ${empire.title}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = empire.primaryColor, fontFamily = FontFamily.Monospace)
+                Text(text = "${empire.title} HQ ANNIHILATED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = empire.primaryColor, fontFamily = FontFamily.Monospace)
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Row(
                     modifier = Modifier.fillMaxWidth().background(Color(0xFF151F2C), RoundedCornerShape(10.dp)).padding(14.dp),
@@ -976,7 +1293,7 @@ private fun MissionDebriefingDialog(
                         Text("$score", fontSize = 18.sp, fontWeight = FontWeight.Black, color = AmberWarning)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("HOSTILES DESTROYED", fontSize = 10.sp, color = Color(0xFF90A4AE))
+                        Text("HOSTILES", fontSize = 10.sp, color = Color(0xFF90A4AE))
                         Text("$kills", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -985,11 +1302,38 @@ private fun MissionDebriefingDialog(
                     }
                 }
 
+                if (nextStageEmpire != null && onAutoDeployNextStage != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = if (autoDeployCancelled) {
+                            "NEXT STAGE UNLOCKED: ${nextStageEmpire.title}"
+                        } else {
+                            "AUTO-DEPLOYING STAGE ${stageNumber + 1} IN ${countdown}s..."
+                        },
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = CyberCyan,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            autoDeployCancelled = true
+                            onAutoDeployNextStage(nextStageEmpire)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("auto_deploy_next_stage_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = HealthGreen)
+                    ) {
+                        Text("DEPLOY STAGE ${stageNumber + 1}: ${nextStageEmpire.name}", color = Color.Black, fontWeight = FontWeight.Black)
+                    }
+                }
+
                 if (onClaimSupplyBonus != null) {
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Button(
                         onClick = {
                             if (!bonusClaimed) {
+                                autoDeployCancelled = true
                                 onClaimSupplyBonus(
                                     { bonus ->
                                         bonusClaimed = true
@@ -1006,7 +1350,7 @@ private fun MissionDebriefingDialog(
                         border = androidx.compose.foundation.BorderStroke(1.dp, MilitaryGold),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(44.dp)
+                            .height(48.dp)
                             .testTag("debrief_rewarded_ad_button")
                     ) {
                         Text(
@@ -1021,16 +1365,30 @@ private fun MissionDebriefingDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Button(onClick = onRestart, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = AmberWarning)) {
+                Button(
+                    onClick = {
+                        autoDeployCancelled = true
+                        onRestart()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AmberWarning)
+                ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("DEPLOY AGAIN", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text("REPLAY STAGE", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-                Button(onClick = onReturnToHangar, modifier = Modifier.fillMaxWidth().height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836))) {
-                    Text("RETURN TO MAIN MENU", color = Color.White, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        autoDeployCancelled = true
+                        onReturnToHangar()
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836))
+                ) {
+                    Text("RETURN TO DASHBOARD", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,11 +25,21 @@ import com.example.game.ads.findActivity
 import com.example.game.engine.GameEngine
 import com.example.game.engine.Renderer3D
 import com.example.game.model.EmpireType
+import com.example.game.network.AdContinueQuota
+import com.example.game.network.CampaignProgressionManager
+import com.example.game.network.SortieCheckpoint
 
 @Composable
 fun GamePlayScreen(
     selectedEmpire: EmpireType,
     profile: com.example.game.model.PlayerProfile = com.example.game.model.PlayerProfile(),
+    resumeCheckpoint: SortieCheckpoint? = null,
+    adContinueQuota: AdContinueQuota = AdContinueQuota(0),
+    onSaveCheckpoint: (SortieCheckpoint) -> Unit = {},
+    onClearCheckpoint: () -> Unit = {},
+    onWatchAdContinue: ((onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit)? = null,
+    onStageCompleted: (EmpireType) -> Unit = {},
+    onAutoDeployNextStage: ((EmpireType) -> Unit)? = null,
     onReturnToMenu: () -> Unit,
     onClaimDebriefAdBonus: ((onGranted: (Int) -> Unit, onStatus: (String) -> Unit) -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -37,7 +48,7 @@ fun GamePlayScreen(
     val activity = remember(context) { context.findActivity() }
     val campaignService = remember { com.example.game.network.WarNetCampaignService.getInstance(context) }
     val audioSystem = remember(context) { com.example.game.audio.CombatAudioSystem(context.applicationContext) }
-    androidx.compose.runtime.DisposableEffect(audioSystem) {
+    DisposableEffect(audioSystem) {
         onDispose {
             audioSystem.release()
         }
@@ -60,15 +71,72 @@ fun GamePlayScreen(
     var isBannerVisible by remember { mutableStateOf(true) }
     var extraZoneLiftDp by remember { mutableFloatStateOf(0f) }
 
-    // Preload ads on sortie launch for smooth post-mission transitions
+    val nextStageEmpire = remember(selectedEmpire) {
+        val order = CampaignProgressionManager.STAGE_ORDER
+        val idx = order.indexOf(selectedEmpire)
+        if (idx >= 0 && idx + 1 < order.size) order[idx + 1] else null
+    }
+
+    // Restore exact mid-stage checkpoint when continuing from Dashboard
+    LaunchedEffect(engine, resumeCheckpoint) {
+        if (resumeCheckpoint != null && resumeCheckpoint.empire == selectedEmpire) {
+            engine.restoreFromCheckpoint(resumeCheckpoint)
+        }
+    }
+
+    // Periodic milestone checkpoint auto-save while combat is active
+    LaunchedEffect(engine, hudState.barracksDestroyedCount, hudState.isHqBossDefeated) {
+        if (!engine.isVictory && !engine.isGameOver &&
+            (hudState.barracksDestroyedCount > 0 || hudState.isHqBossDefeated)
+        ) {
+            onSaveCheckpoint(engine.exportCheckpoint())
+        }
+    }
+
+    // Handle Victory milestone: unlock next stage cleanly and clear mid-stage checkpoint
+    LaunchedEffect(hudState.isVictory) {
+        if (hudState.isVictory) {
+            onStageCompleted(selectedEmpire)
+            onClearCheckpoint()
+        }
+    }
+
+    // Trigger Interstitial Ad upon 0/5 Hearts defeat before Continue (YES/NO) prompt
+    LaunchedEffect(hudState.isGameOver) {
+        if (hudState.isGameOver) {
+            AdMobManager.showInterstitialIfReady(activity) {}
+        }
+    }
+
+    // Auto-save active mid-stage checkpoint if composition exits unexpectedly
+    DisposableEffect(engine) {
+        onDispose {
+            if (!engine.isVictory && !engine.isGameOver) {
+                onSaveCheckpoint(engine.exportCheckpoint())
+            }
+        }
+    }
+
+    // Preload ads on sortie launch for smooth transitions
     LaunchedEffect(Unit) {
         AdMobManager.loadInterstitial(context)
         AdMobManager.loadRewarded(context)
     }
 
-    // Handle back button: pause or return to menu
+    val saveAndReturnToDashboard: () -> Unit = {
+        if (!engine.isVictory && !engine.isGameOver) {
+            onSaveCheckpoint(engine.exportCheckpoint())
+        } else {
+            onClearCheckpoint()
+        }
+        AdMobManager.showInterstitialIfReady(activity) {
+            onReturnToMenu()
+        }
+    }
+
+    // System back button saves mid-stage checkpoint and returns to Dashboard
     BackHandler {
-        onReturnToMenu()
+        saveAndReturnToDashboard()
     }
 
     // High performance 60 FPS game loop with delta timing and true pause freeze
@@ -112,17 +180,42 @@ fun GamePlayScreen(
                 engine = engine,
                 onPauseClick = { isPaused = true },
                 onPauseStateChange = { isPaused = it },
+                onSaveAndReturnToDashboard = saveAndReturnToDashboard,
                 onReturnToMenu = {
+                    onClearCheckpoint()
                     AdMobManager.showInterstitialIfReady(activity) {
                         onReturnToMenu()
                     }
                 },
                 onRestartSortie = {
+                    onClearCheckpoint()
                     AdMobManager.showInterstitialIfReady(activity) {
                         isPaused = false
                         engine.resetBattle()
                     }
                 },
+                adContinueQuota = adContinueQuota,
+                onWatchAdContinue = if (onWatchAdContinue != null) {
+                    { onContinued, onStatus ->
+                        onWatchAdContinue(
+                            {
+                                engine.continueAfterAdReward()
+                                onSaveCheckpoint(engine.exportCheckpoint())
+                                onContinued()
+                            },
+                            onStatus
+                        )
+                    }
+                } else null,
+                nextStageEmpire = nextStageEmpire,
+                onAutoDeployNextStage = if (onAutoDeployNextStage != null) {
+                    { nextEmpire ->
+                        onClearCheckpoint()
+                        AdMobManager.showInterstitialIfReady(activity) {
+                            onAutoDeployNextStage(nextEmpire)
+                        }
+                    }
+                } else null,
                 onClaimDebriefAdBonus = onClaimDebriefAdBonus
             )
         }

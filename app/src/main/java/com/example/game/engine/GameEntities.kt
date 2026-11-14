@@ -20,20 +20,28 @@ data class EnemyBarracks(
     val empire: EmpireType,
     val name: String,
     var pos: Vector3D,
-    var health: Float = 320f,
-    val maxHealth: Float = 320f,
+    var health: Float = 100f,
+    val maxHealth: Float = 100f,
     var isDestroyed: Boolean = false,
     var isDiscovered: Boolean = false,
     val defenderIds: MutableList<String> = mutableListOf(),
     val defenderTypes: List<EnemyCategory> = listOf(EnemyCategory.INFANTRY_SOLDIER, EnemyCategory.ROCKET_SOLDIER),
     val rewardCredits: Int = 200,
     val scoreReward: Int = 1000,
-    var defendersSpawned: Boolean = false
+    var defendersSpawned: Boolean = false,
+    var hitsRemaining: Int = 100,
+    val maxHits: Int = 100,
+    var hitFlashTimer: Float = 0f,
+    var isAlertTriggered: Boolean = false
 ) {
     fun takeDamage(amount: Float): Boolean {
         if (isDestroyed) return false
         health = kotlin.math.max(0f, health - amount)
-        if (health <= 0f) {
+        hitsRemaining = kotlin.math.ceil(health).toInt().coerceIn(0, maxHits)
+        hitFlashTimer = 0.16f
+        if (health <= 0f || hitsRemaining <= 0) {
+            health = 0f
+            hitsRemaining = 0
             isDestroyed = true
             return true
         }
@@ -48,9 +56,28 @@ data class EnemyHeadquarters(
     var pos: Vector3D,
     var isUnlocked: Boolean = false,
     var isDestroyed: Boolean = false,
-    var health: Float = 1500f,
-    val maxHealth: Float = 1500f
-)
+    var health: Float = 1000f,
+    val maxHealth: Float = 1000f,
+    var hitsRemaining: Int = 1000,
+    val maxHits: Int = 1000,
+    var isBossDefeated: Boolean = false,
+    var isDangerZoneTriggered: Boolean = false,
+    var hitFlashTimer: Float = 0f
+) {
+    fun takeHitDamage(hits: Int): Boolean {
+        if (!isUnlocked || !isBossDefeated || isDestroyed) return false
+        val safeHits = hits.coerceAtLeast(1)
+        hitsRemaining = (hitsRemaining - safeHits).coerceAtLeast(0)
+        health = hitsRemaining.toFloat()
+        hitFlashTimer = 0.14f
+        if (hitsRemaining <= 0) {
+            health = 0f
+            isDestroyed = true
+            return true
+        }
+        return false
+    }
+}
 
 data class PlayerHelo(
     var pos: Vector3D = Vector3D(0f, 0f, 9.5f),
@@ -64,6 +91,14 @@ data class PlayerHelo(
     var heloClass: com.example.game.model.HelicopterClass = com.example.game.model.HelicopterClass.SCOUT,
     var skin: com.example.game.model.HelicopterSkin = com.example.game.model.HelicopterSkin.TACTICAL_BLACK,
     var upgrades: com.example.game.model.HelicopterUpgrades = com.example.game.model.HelicopterUpgrades(),
+
+    // Pro Hit-Heart System: 5 Main Hearts, 1 Heart = 10 Hits (50 hits total)
+    var hearts: Int = 5,
+    val maxHearts: Int = 5,
+    var hitsRemainingInHeart: Int = 10,
+    val hitsPerHeart: Int = 10,
+    var invulnerableTimer: Float = 0f,
+    var hitFlashTimer: Float = 0f,
 
     // Dynamic stats calculated from Class + Upgrades
     var health: Float = 75f,
@@ -94,6 +129,15 @@ data class PlayerHelo(
     var maxMissileAmmo: Int = 6,
     var missileTimer: Float = 0f,
     val missileCooldown: Float = 3.2f,
+
+    // Tactical Weapon 1: Chaff / EMP Countermeasure Flares (Auto-recharging)
+    var flareCooldownTimer: Float = 0f,
+    val flareCooldownMax: Float = 7.5f,
+    var flareActiveTimer: Float = 0f,
+
+    // Tactical Weapon 2: Overdrive Plasma Cannon (Auto-recharging + combat charge)
+    var overdriveCharge: Float = 40f,
+    var overdriveBeamTimer: Float = 0f,
 
     // Target lock & Radar
     var lockedTargetId: String? = null,
@@ -149,6 +193,47 @@ data class PlayerHelo(
         }
         return health
     }
+
+    /**
+     * Applies discrete combat hits toward the 5-Heart x 10-Hit survival rule.
+     * Returns true if a Main Heart was broken on this hit.
+     */
+    fun applyCombatHit(hits: Int = 1): Boolean {
+        if (hearts <= 0 || invulnerableTimer > 0f) return false
+        hitsRemainingInHeart = (hitsRemainingInHeart - hits.coerceAtLeast(1))
+        hitFlashTimer = 0.22f
+        invulnerableTimer = 0.16f
+
+        if (hitsRemainingInHeart <= 0) {
+            hearts = (hearts - 1).coerceAtLeast(0)
+            if (hearts > 0) {
+                hitsRemainingInHeart = hitsPerHeart
+                invulnerableTimer = 0.90f
+                shield = maxShield
+                armor = maxArmor
+                health = maxHealth
+            } else {
+                hitsRemainingInHeart = 0
+                shield = 0f
+                armor = 0f
+                health = 0f
+            }
+            return true
+        } else {
+            health = (maxHealth * (hitsRemainingInHeart.toFloat() / hitsPerHeart.toFloat())).coerceAtLeast(1f)
+            return false
+        }
+    }
+
+    fun restoreAllHearts() {
+        hearts = maxHearts
+        hitsRemainingInHeart = hitsPerHeart
+        health = maxHealth
+        armor = maxArmor
+        shield = maxShield
+        invulnerableTimer = 2.8f
+        hitFlashTimer = 0f
+    }
 }
 
 data class TracerBullet(
@@ -158,7 +243,8 @@ data class TracerBullet(
     val isPlayer: Boolean = true,
     var life: Float = 1.6f,
     val isTankShell: Boolean = false,
-    val isFlakBurst: Boolean = false
+    val isFlakBurst: Boolean = false,
+    val isPlayerPlasma: Boolean = false
 )
 
 data class RocketCluster(
@@ -196,7 +282,10 @@ data class EnemyTarget(
     var attackTimer: Float = 0f,
     var turretAngle: Float = 0f,
     val isGroundUnit: Boolean = false,
-    var rotorAngle: Float = 0f
+    var rotorAngle: Float = 0f,
+    var isAlerted: Boolean = false,
+    var hitFlashTimer: Float = 0f,
+    var dodgeTimer: Float = 0f
 )
 
 data class BossSubsystem(
@@ -271,8 +360,23 @@ data class BossCombatEntity(
     var animationPhase: Float = 0f,
     var chargeOffset: Vector3D = Vector3D(0f, 0f, 0f),
     val weakPoint: BossWeakPoint? = null,
-    val subsystems: MutableList<BossSubsystem> = mutableListOf()
+    val subsystems: MutableList<BossSubsystem> = mutableListOf(),
+    var bossHitsRemaining: Int = 100,
+    val maxBossHits: Int = 100,
+    var isEvading: Boolean = false,
+    var evadeTimer: Float = 0f,
+    var evadeCooldownTimer: Float = 0f,
+    var evadeDirection: Float = 1f,
+    var hitFlashTimer: Float = 0f
 ) {
+    fun registerHit(hits: Int = 1, isWeakPointHit: Boolean = false): Int {
+        if (isInvulnerable) return bossHitsRemaining
+        val multiplied = if (isWeakPointHit && weakPoint?.isExposed == true) (hits * 2) else hits
+        bossHitsRemaining = (bossHitsRemaining - multiplied.coerceAtLeast(1)).coerceAtLeast(0)
+        hitFlashTimer = 0.14f
+        return bossHitsRemaining
+    }
+
     fun takeDamage(amount: Float, isWeakPointHit: Boolean = false): Float {
         if (isInvulnerable) return 0f
         val effectiveDamage = if (isWeakPointHit && weakPoint?.isExposed == true) amount * weakPoint.damageMultiplier else amount
@@ -285,6 +389,7 @@ data class BossCombatEntity(
         if (remaining > 0f) {
             health = kotlin.math.max(0f, health - remaining)
         }
+        hitFlashTimer = 0.14f
         // Check phase transitions at 66% and 33%
         val hpPct = health / maxHealth
         if (hpPct <= 0.33f && phase < 3) {

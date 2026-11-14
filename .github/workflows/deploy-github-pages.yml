@@ -1,6 +1,13 @@
 name: Deploy Developer Site to GitHub Pages
 
 on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'hosting/**'
+  workflow_run:
+    workflows: [ "Build Android APK" ]
+    types: [ completed ]
   workflow_dispatch:
 
 permissions:

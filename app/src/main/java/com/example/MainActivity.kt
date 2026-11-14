@@ -14,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -26,8 +27,10 @@ import com.example.game.ads.AdMobManager
 import com.example.game.ads.findActivity
 import com.example.game.model.EmpireType
 import com.example.game.model.PlayerProfile
+import com.example.game.network.CampaignProgressionManager
 import com.example.game.network.NetworkMonitor
 import com.example.game.network.OnlineStatus
+import com.example.game.network.SortieCheckpoint
 import com.example.game.network.WarNetCampaignService
 import com.example.game.network.attemptAutoSignIn
 import com.example.game.network.authStateFlow
@@ -162,6 +165,9 @@ private fun AuthenticatedGameNavigation(
     val campaignService = remember(user.uid) {
         WarNetCampaignService.getInstance(context.applicationContext)
     }
+    val progressionManager = remember(context) {
+        CampaignProgressionManager.getInstance(context.applicationContext)
+    }
     val campaignState by campaignService.campaignState.collectAsState()
 
     val displayCallsign = remember(user.uid, user.displayName, campaignState.authenticatedPilotCallsign) {
@@ -183,7 +189,16 @@ private fun AuthenticatedGameNavigation(
     }
 
     var currentScreen by remember { mutableStateOf(GameScreen.MAIN_MENU) }
-    var selectedEmpire by remember { mutableStateOf(EmpireType.DRAGON) }
+    var progressionTick by remember { mutableIntStateOf(0) }
+    val highestUnlockedEmpire = remember(campaignState, progressionTick, user.uid) {
+        progressionManager.getHighestUnlockedEmpire(campaignState, user.uid)
+    }
+    val highestStageNumber = progressionManager.getStageNumber(highestUnlockedEmpire)
+    var selectedEmpire by remember { mutableStateOf(highestUnlockedEmpire) }
+    var savedCheckpoint by remember(user.uid) { mutableStateOf(progressionManager.loadCheckpoint(user.uid)) }
+    var activeResumeCheckpoint by remember(user.uid) { mutableStateOf<SortieCheckpoint?>(null) }
+    var sortieSessionId by remember(user.uid) { mutableIntStateOf(0) }
+    var adContinueQuota by remember(user.uid) { mutableStateOf(progressionManager.getAdContinueQuota(user.uid)) }
     var profile by remember { mutableStateOf(PlayerProfile(callsign = displayCallsign)) }
     var adFeedbackMessage by remember { mutableStateOf<String?>(null) }
 
@@ -192,6 +207,38 @@ private fun AuthenticatedGameNavigation(
         credits = maxOf(profile.credits, campaignState.credits.toInt()),
         highScore = maxOf(profile.highScore, campaignState.highScore.toInt())
     )
+
+    val refreshProgression: () -> Unit = {
+        savedCheckpoint = progressionManager.loadCheckpoint(user.uid)
+        adContinueQuota = progressionManager.getAdContinueQuota(user.uid)
+        progressionTick++
+    }
+
+    val triggerRewardedContinueAd: (onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit =
+        { onContinued, onStatus ->
+            val currentQuota = progressionManager.getAdContinueQuota(user.uid)
+            adContinueQuota = currentQuota
+            if (!currentQuota.canWatchAdToContinue) {
+                onStatus("DAILY 10/10 CONTINUE LIMIT REACHED (RESETS IN 24H)")
+            } else {
+                val activity = context.findActivity()
+                AdMobManager.showRewardedAd(
+                    activity = activity,
+                    onRewardEarned = {
+                        adContinueQuota = progressionManager.consumeAdContinueWatch(user.uid)
+                            ?: progressionManager.getAdContinueQuota(user.uid)
+                        onContinued()
+                        onStatus("+5 MAIN HEARTS RESTORED! (${adContinueQuota.remaining}/10 LEFT TODAY)")
+                    },
+                    onDismissedWithoutReward = {
+                        onStatus("WATCH FULL AD TO CONTINUE WITH +5 HEARTS")
+                    },
+                    onUnavailable = {
+                        onStatus("LOADING CONTINUE AD... TRY AGAIN IN A MOMENT")
+                    }
+                )
+            }
+        }
 
     val triggerRewardedSupplyDrop: (onGranted: (Int) -> Unit, onStatus: (String) -> Unit) -> Unit =
         { onGranted, onStatus ->
@@ -231,10 +278,35 @@ private fun AuthenticatedGameNavigation(
         GameScreen.MAIN_MENU -> {
             MainMenuScreen(
                 profile = syncedProfile,
-                onPlayWar = { currentScreen = GameScreen.GAMEPLAY },
+                resumeCheckpoint = savedCheckpoint,
+                highestUnlockedEmpire = highestUnlockedEmpire,
+                highestStageNumber = highestStageNumber,
+                onContinueSortie = {
+                    val cp = progressionManager.loadCheckpoint(user.uid)
+                    if (cp != null && progressionManager.isStageUnlocked(cp.empire, campaignState, user.uid)) {
+                        selectedEmpire = cp.empire
+                        activeResumeCheckpoint = cp
+                    } else {
+                        selectedEmpire = highestUnlockedEmpire
+                        activeResumeCheckpoint = null
+                    }
+                    sortieSessionId++
+                    currentScreen = GameScreen.GAMEPLAY
+                },
+                onPlayWar = {
+                    selectedEmpire = highestUnlockedEmpire
+                    activeResumeCheckpoint = null
+                    sortieSessionId++
+                    currentScreen = GameScreen.GAMEPLAY
+                },
                 onEmpireCampaign = { currentScreen = GameScreen.CAMPAIGN },
                 onEndlessBattle = {
-                    selectedEmpire = EmpireType.values().random()
+                    val unlockedList = CampaignProgressionManager.STAGE_ORDER.filter {
+                        progressionManager.isStageUnlocked(it, campaignState, user.uid)
+                    }
+                    selectedEmpire = unlockedList.randomOrNull() ?: EmpireType.DRAGON
+                    activeResumeCheckpoint = null
+                    sortieSessionId++
                     currentScreen = GameScreen.GAMEPLAY
                 },
                 onGarage = { currentScreen = GameScreen.GARAGE },
@@ -251,25 +323,59 @@ private fun AuthenticatedGameNavigation(
         }
 
         GameScreen.GAMEPLAY -> {
-            GamePlayScreen(
-                selectedEmpire = selectedEmpire,
-                profile = syncedProfile,
-                onClaimDebriefAdBonus = { onGranted, onStatus ->
-                    triggerRewardedSupplyDrop(onGranted, onStatus)
-                },
-                onReturnToMenu = { currentScreen = GameScreen.MAIN_MENU },
-                modifier = modifier
-            )
+            key(selectedEmpire, sortieSessionId) {
+                GamePlayScreen(
+                    selectedEmpire = selectedEmpire,
+                    profile = syncedProfile,
+                    resumeCheckpoint = activeResumeCheckpoint,
+                    adContinueQuota = adContinueQuota,
+                    onSaveCheckpoint = { cp ->
+                        progressionManager.saveCheckpoint(user.uid, cp)
+                        savedCheckpoint = cp
+                    },
+                    onClearCheckpoint = {
+                        progressionManager.clearCheckpoint(user.uid)
+                        savedCheckpoint = null
+                    },
+                    onWatchAdContinue = triggerRewardedContinueAd,
+                    onStageCompleted = { clearedEmpire ->
+                        progressionManager.markStageCompleted(user.uid, clearedEmpire)
+                        refreshProgression()
+                    },
+                    onAutoDeployNextStage = { nextEmpire ->
+                        progressionManager.markStageCompleted(user.uid, selectedEmpire)
+                        progressionManager.clearCheckpoint(user.uid)
+                        savedCheckpoint = null
+                        activeResumeCheckpoint = null
+                        selectedEmpire = nextEmpire
+                        sortieSessionId++
+                        refreshProgression()
+                    },
+                    onClaimDebriefAdBonus = { onGranted, onStatus ->
+                        triggerRewardedSupplyDrop(onGranted, onStatus)
+                    },
+                    onReturnToMenu = {
+                        refreshProgression()
+                        currentScreen = GameScreen.MAIN_MENU
+                    },
+                    modifier = modifier
+                )
+            }
         }
 
         GameScreen.CAMPAIGN -> {
             BackHandler { currentScreen = GameScreen.MAIN_MENU }
             CampaignScreen(
                 currentEmpire = selectedEmpire,
+                uid = user.uid,
                 onSelectEmpire = { selectedEmpire = it },
                 onDeploy = { empire ->
-                    selectedEmpire = empire
-                    currentScreen = GameScreen.GAMEPLAY
+                    if (progressionManager.isStageUnlocked(empire, campaignState, user.uid)) {
+                        selectedEmpire = empire
+                        activeResumeCheckpoint = null
+                        sortieSessionId++
+                        currentScreen = GameScreen.GAMEPLAY
+                    }
                 },
                 onBack = { currentScreen = GameScreen.MAIN_MENU },
                 modifier = modifier

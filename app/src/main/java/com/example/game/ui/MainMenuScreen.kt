@@ -57,7 +57,9 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.game.ads.AdMobBannerBar
 import com.example.game.ads.AdMobManager
+import com.example.game.model.EmpireType
 import com.example.game.model.PlayerProfile
+import com.example.game.network.SortieCheckpoint
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.ArmorCard
 import com.example.ui.theme.CarbonSurface
@@ -77,6 +79,10 @@ fun MainMenuScreen(
     onWarCommand: () -> Unit,
     onLeaderboard: () -> Unit,
     onSettings: () -> Unit,
+    resumeCheckpoint: SortieCheckpoint? = null,
+    onContinueSortie: () -> Unit = {},
+    highestUnlockedEmpire: EmpireType = EmpireType.DRAGON,
+    highestStageNumber: Int = 1,
     onWatchSupplyAd: () -> Unit = {},
     supplyAdStatus: String? = null,
     modifier: Modifier = Modifier
@@ -151,9 +157,46 @@ fun MainMenuScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. PRIMARY BUTTON: PLAY WAR
+            // 0. RESUME SAVED SORTIE (shown when player backed out mid-stage)
+            if (resumeCheckpoint != null) {
+                Button(
+                    onClick = onContinueSortie,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = HealthGreen),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .testTag("menu_continue_stage")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.Black,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "CONTINUE STAGE ${resumeCheckpoint.stageNumber}: ${resumeCheckpoint.empire.name}",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.Black
+                        )
+                        Text(
+                            text = "HEARTS ${resumeCheckpoint.hearts}/5 • BARRACKS ${resumeCheckpoint.destroyedBarracksIds.size}/50 • SCORE ${resumeCheckpoint.score}",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xDD000000)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+
+            // 1. PRIMARY BUTTON: PLAY WAR (deploys current unlocked stage)
             Button(
                 onClick = onPlayWar,
                 shape = RoundedCornerShape(12.dp),
@@ -172,14 +215,14 @@ fun MainMenuScreen(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "PLAY WAR",
-                        fontSize = 17.sp,
+                        text = if (resumeCheckpoint != null) "NEW SORTIE — STAGE $highestStageNumber" else "PLAY WAR — STAGE $highestStageNumber",
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = Color.Black
                     )
                     Text(
-                        text = "LAUNCH ACTIVE SORTIE NOW",
+                        text = "DEPLOY ${highestUnlockedEmpire.title.uppercase()}",
                         fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xCC000000)

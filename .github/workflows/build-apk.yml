@@ -112,6 +112,10 @@ jobs:
             gradle assembleDebug --no-daemon --stacktrace
           fi
 
+      - name: Run unit tests
+        run: |
+          gradle :app:testDebugUnitTest --no-daemon --stacktrace
+
       - name: Package and verify helicopter-war.apk
         run: |
           mkdir -p dist-apk
@@ -146,10 +150,14 @@ jobs:
       - name: Publish GitHub Release APK
         if: steps.release_meta.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           name: Helicopter War ${{ steps.release_meta.outputs.tag }}
           generate_release_notes: true
+          make_latest: true
+          overwrite_files: true
           files: dist-apk/helicopter-war.apk
 
       - name: Auto-update website, README, and sitemap with verified release
@@ -159,6 +167,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout main
+          git pull --rebase origin main || true
           python3 .github/scripts/update-release-metadata.py "${{ steps.release_meta.outputs.tag }}" dist-apk/helicopter-war.apk
           git add README.md index.html hosting/index.html release-info.json hosting/release-info.json sitemap.xml hosting/sitemap.xml
           if ! git diff --cached --quiet; then

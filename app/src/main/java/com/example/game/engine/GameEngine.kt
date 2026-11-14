@@ -20,11 +20,15 @@ data class GameHudState(
     val maxArmor: Float = 60f,
     val shield: Float = 40f,
     val maxShield: Float = 40f,
+    val hearts: Int = 5,
+    val maxHearts: Int = 5,
+    val hitsRemainingInHeart: Int = 10,
+    val hitsPerHeart: Int = 10,
     val score: Int = 0,
     val kills: Int = 0,
     val missionProgressPercent: Float = 0f,
 
-    // Weapons
+    // Weapons (All auto-recharge)
     val rocketAmmo: Int = 16,
     val maxRocketAmmo: Int = 16,
     val rocketCooldownPercent: Float = 1.0f,
@@ -36,11 +40,17 @@ data class GameHudState(
     val isMissileReady: Boolean = true,
     val lockedTargetName: String? = null,
 
+    val flareCooldownPercent: Float = 1.0f,
+    val isFlareReady: Boolean = true,
+    val overdriveChargePercent: Float = 0.4f,
+    val isOverdriveReady: Boolean = false,
+
     val isAutoFiring: Boolean = true,
     val activeThreat: ThreatAlert? = null,
     val isGameOver: Boolean = false,
     val isVictory: Boolean = false,
     val activeEmpire: EmpireType = EmpireType.DRAGON,
+    val stageNumber: Int = 1,
 
     // Fleet Info
     val helicopterClass: com.example.game.model.HelicopterClass = com.example.game.model.HelicopterClass.SCOUT,
@@ -53,6 +63,10 @@ data class GameHudState(
     val barracksDestroyedCount: Int = 0,
     val totalBarracks: Int = 50,
     val isHeadquartersUnlocked: Boolean = false,
+    val isHqBossDefeated: Boolean = false,
+    val isDangerZoneTriggered: Boolean = false,
+    val hqHitsRemaining: Int = 1000,
+    val hqMaxHits: Int = 1000,
     val headquartersPos: Vector3D? = null
 )
 
@@ -117,6 +131,13 @@ class GameEngine(
     private var bossFireBreathCooldown: Float = 0f
     var bossSpawned: Boolean = false
     private var waveNumber: Int = 1
+    private var hqGuardSpawnTimer: Float = 0f
+    private var rocketRechargeTimer: Float = 0f
+    private var missileRechargeTimer: Float = 0f
+
+    /** Difficulty escalates continuously from Medium (0f) to Hard (1f) across the 50 barracks. */
+    val difficultyFactor: Float
+        get() = (barracksDestroyedCount / 50f).coerceIn(0f, 1f)
 
     private val _hudState = MutableStateFlow(GameHudState())
     val hudState: StateFlow<GameHudState> = _hudState.asStateFlow()
@@ -129,6 +150,7 @@ class GameEngine(
         const val MAX_ACTIVE_ENEMIES = 18
         const val MAX_HAZARDS = 16
         const val MAX_STRUCTURES = 140
+        const val HQ_DANGER_ZONE_RADIUS = 110f
         private const val HUD_SYNC_INTERVAL = 0.04f
     }
 
@@ -162,13 +184,16 @@ class GameEngine(
         player.applyConfiguration(player.heloClass, player.skin, player.upgrades)
         player.pos = Vector3D(0f, 0f, 9.5f)
         player.velocity = Vector3D(0f, 0f, 0f)
-        player.health = player.maxHealth
-        player.armor = player.maxArmor
-        player.shield = player.maxShield
+        player.restoreAllHearts()
+        player.invulnerableTimer = 1.5f
         player.rocketAmmo = player.maxRocketAmmo
         player.missileAmmo = player.maxMissileAmmo
         player.rocketCooldownTimer = 0f
         player.missileTimer = 0f
+        player.flareCooldownTimer = 0f
+        player.flareActiveTimer = 0f
+        player.overdriveCharge = 40f
+        player.overdriveBeamTimer = 0f
         player.rollAngle = 0f
         player.pitchAngle = 0f
         player.lockedTargetId = null
@@ -200,17 +225,120 @@ class GameEngine(
         gameTime = 0f
         hudSyncTimer = 0f
         bossFireBreathCooldown = 0f
+        hqGuardSpawnTimer = 0f
+        rocketRechargeTimer = 0f
+        missileRechargeTimer = 0f
         waveNumber = 1
         bossSpawned = false
         isGameOver = false
         isVictory = false
-        threatAlert = ThreatAlert("SORTIE COMMENCED: AIRSPACE CONTESTED", selectedEmpire.primaryColor, 3.5f)
+        threatAlert = ThreatAlert(
+            "STAGE ${getStageNumber(selectedEmpire)}: DESTROY 50 BARRACKS TO UNLOCK HQ",
+            selectedEmpire.primaryColor,
+            4.0f
+        )
 
         // Generate seamless initial environment
         generateInitialEnvironment()
 
         // Spawn initial combat squadron
         spawnInitialSquadron()
+        updateHud()
+    }
+
+    private fun getStageNumber(empire: EmpireType): Int {
+        return com.example.game.network.CampaignProgressionManager.STAGE_ORDER.indexOf(empire)
+            .let { if (it >= 0) it + 1 else 1 }
+    }
+
+    fun exportCheckpoint(): com.example.game.network.SortieCheckpoint {
+        val hq = enemyHeadquarters
+        return com.example.game.network.SortieCheckpoint(
+            empire = selectedEmpire,
+            stageNumber = getStageNumber(selectedEmpire),
+            playerX = player.pos.x,
+            playerY = player.pos.y,
+            hearts = player.hearts.coerceIn(1, player.maxHearts),
+            hitsRemainingInHeart = player.hitsRemainingInHeart.coerceIn(1, player.hitsPerHeart),
+            score = score,
+            kills = kills,
+            creditsEarned = creditsEarned,
+            destroyedBarracksIds = allBarracks.filter { it.isDestroyed }.map { it.id }.toSet(),
+            bossSpawned = bossSpawned,
+            bossDefeated = hq?.isBossDefeated == true,
+            bossHitsRemaining = activeBoss?.bossHitsRemaining ?: if (hq?.isBossDefeated == true) 0 else 100,
+            hqUnlocked = hq?.isUnlocked == true,
+            hqHitsRemaining = hq?.hitsRemaining ?: 1000,
+            overdriveCharge = player.overdriveCharge
+        )
+    }
+
+    fun restoreFromCheckpoint(checkpoint: com.example.game.network.SortieCheckpoint) {
+        if (checkpoint.empire != selectedEmpire) {
+            selectedEmpire = checkpoint.empire
+            resetBattle()
+        }
+        player.pos = Vector3D(
+            checkpoint.playerX.coerceIn(minX, maxX),
+            checkpoint.playerY.coerceIn(minY, maxY),
+            9.5f
+        )
+        player.velocity = Vector3D(0f, 0f, 0f)
+        player.hearts = checkpoint.hearts.coerceIn(1, player.maxHearts)
+        player.hitsRemainingInHeart = checkpoint.hitsRemainingInHeart.coerceIn(1, player.hitsPerHeart)
+        player.health = player.maxHealth * (player.hitsRemainingInHeart.toFloat() / player.hitsPerHeart.toFloat())
+        player.overdriveCharge = checkpoint.overdriveCharge.coerceIn(0f, 100f)
+        player.invulnerableTimer = 2.0f
+
+        score = checkpoint.score
+        kills = checkpoint.kills
+        creditsEarned = checkpoint.creditsEarned
+        isGameOver = false
+        isVictory = false
+
+        for (b in allBarracks) {
+            if (checkpoint.destroyedBarracksIds.contains(b.id)) {
+                b.isDestroyed = true
+                b.health = 0f
+                b.hitsRemaining = 0
+                b.isDiscovered = true
+            }
+        }
+        barracksDestroyedCount = allBarracks.count { it.isDestroyed }
+
+        enemyHeadquarters?.let { hq ->
+            hq.isUnlocked = checkpoint.hqUnlocked || barracksDestroyedCount >= 50
+            hq.isBossDefeated = checkpoint.bossDefeated
+            hq.hitsRemaining = checkpoint.hqHitsRemaining.coerceIn(1, hq.maxHits)
+            hq.health = hq.hitsRemaining.toFloat()
+        }
+
+        if (checkpoint.bossSpawned && !checkpoint.bossDefeated) {
+            spawnEmpireBoss()
+            activeBoss?.bossHitsRemaining = checkpoint.bossHitsRemaining.coerceIn(1, 100)
+        } else {
+            bossSpawned = checkpoint.bossSpawned
+        }
+
+        camera.x = player.pos.x
+        camera.y = player.pos.y - 12.5f
+        threatAlert = ThreatAlert(
+            "RESUMED STAGE ${checkpoint.stageNumber}: ${barracksDestroyedCount}/50 BARRACKS DESTROYED",
+            Color(0xFF00E676),
+            3.5f
+        )
+        updateHud()
+    }
+
+    /**
+     * Restores all 5 Main Hearts (50 hits) after watching a Rewarded Ad so player continues seamlessly.
+     */
+    fun continueAfterAdReward() {
+        player.restoreAllHearts()
+        bullets.removeAll { !it.isPlayer && (it.pos - player.pos).length() < 32f }
+        missiles.removeAll { it.isEnemy && (it.pos - player.pos).length() < 32f }
+        isGameOver = false
+        threatAlert = ThreatAlert("AD CONTINUE: +5 HEARTS RESTORED! PRESS ATTACK!", Color(0xFF00E676), 3.8f)
         updateHud()
     }
 
@@ -221,18 +349,58 @@ class GameEngine(
     }
 
     fun update(delta: Float) {
-        if (isGameOver) return
+        if (isGameOver || isVictory) return
         val safeDelta = if (delta.isFinite()) delta.coerceIn(0.0001f, 0.16f) else 0.016f
         updateStep(safeDelta)
     }
 
     private fun updateStep(safeDelta: Float) {
         gameTime += safeDelta
-        missionProgress = (gameTime / 100.0f).coerceIn(0f, 1f)
+        missionProgress = (barracksDestroyedCount / 50f).coerceIn(0f, 1f)
 
-        // Boss trigger at 40% mission progress
-        if (missionProgress >= 0.40f && !bossSpawned && activeBoss == null) {
-            spawnEmpireBoss()
+        // Cooldown / flash timers
+        if (player.invulnerableTimer > 0f) player.invulnerableTimer = (player.invulnerableTimer - safeDelta).coerceAtLeast(0f)
+        if (player.hitFlashTimer > 0f) player.hitFlashTimer = (player.hitFlashTimer - safeDelta).coerceAtLeast(0f)
+        if (player.flareActiveTimer > 0f) player.flareActiveTimer = (player.flareActiveTimer - safeDelta).coerceAtLeast(0f)
+        if (player.overdriveBeamTimer > 0f) player.overdriveBeamTimer = (player.overdriveBeamTimer - safeDelta).coerceAtLeast(0f)
+
+        allBarracks.forEach { b ->
+            if (b.hitFlashTimer > 0f) b.hitFlashTimer = (b.hitFlashTimer - safeDelta).coerceAtLeast(0f)
+        }
+        enemyHeadquarters?.let { hq ->
+            if (hq.hitFlashTimer > 0f) hq.hitFlashTimer = (hq.hitFlashTimer - safeDelta).coerceAtLeast(0f)
+        }
+
+        // Big Boss remains inside Main Headquarters until all 50 barracks are destroyed
+        // AND the player triggers the HQ Warning Danger Zone!
+        enemyHeadquarters?.let { hq ->
+            if (!hq.isDestroyed) {
+                val distToHq = kotlin.math.hypot(player.pos.x - hq.pos.x, player.pos.y - hq.pos.y)
+                val inDangerZone = distToHq <= HQ_DANGER_ZONE_RADIUS || player.pos.y >= hq.pos.y - HQ_DANGER_ZONE_RADIUS
+                if (inDangerZone) {
+                    if (!hq.isDangerZoneTriggered) {
+                        hq.isDangerZoneTriggered = true
+                        if (!hq.isUnlocked) {
+                            threatAlert = ThreatAlert(
+                                "WARNING: HQ DANGER ZONE! CLEAR ALL 50 BARRACKS (${barracksDestroyedCount}/50)",
+                                Color(0xFFFF9100),
+                                4.0f
+                            )
+                        }
+                        spawnHqPerimeterDefense(hq)
+                    }
+                    // Heavy HQ garrison patrols while HQ stands
+                    hqGuardSpawnTimer -= safeDelta
+                    if (hqGuardSpawnTimer <= 0f && enemies.size < MAX_ACTIVE_ENEMIES) {
+                        hqGuardSpawnTimer = 4.2f
+                        spawnHqPerimeterDefense(hq)
+                    }
+                    // Deploy Boss from Main HQ once all 50 barracks are cleared!
+                    if (hq.isUnlocked && !hq.isBossDefeated && !bossSpawned && activeBoss == null) {
+                        spawnEmpireBoss()
+                    }
+                }
+            }
         }
 
         // 1. Update 4-Directional Player Movement
@@ -245,7 +413,7 @@ class GameEngine(
         player.mainRotorAngle = (player.mainRotorAngle + 38.0f * safeDelta) % (kotlin.math.PI.toFloat() * 2f)
         player.tailRotorAngle = (player.tailRotorAngle + 48.0f * safeDelta) % (kotlin.math.PI.toFloat() * 2f)
 
-        // 4. Weapons processing (Machine guns, Rockets, Missiles)
+        // 4. Weapons processing (Machine guns, Rockets, Missiles, Flares, Overdrive)
         updateWeapons(safeDelta)
 
         // 5. Update Target-Lock system
@@ -282,6 +450,14 @@ class GameEngine(
             hudSyncTimer = 0f
             updateHud()
         }
+    }
+
+    private fun spawnHqPerimeterDefense(hq: EnemyHeadquarters) {
+        if (enemies.size >= MAX_ACTIVE_ENEMIES) return
+        spawnEnemy(EnemyCategory.GROUND_TANK, hq.pos.x - 14f, hq.pos.y - 16f, alerted = true)
+        spawnEnemy(EnemyCategory.GROUND_TANK, hq.pos.x + 14f, hq.pos.y - 16f, alerted = true)
+        spawnEnemy(EnemyCategory.MISSILE_LAUNCHER, hq.pos.x - 8f, hq.pos.y - 24f, alerted = true)
+        spawnEnemy(EnemyCategory.ATTACK_HELICOPTER, hq.pos.x + 8f, hq.pos.y - 10f, alerted = true)
     }
 
     /**
@@ -383,25 +559,99 @@ class GameEngine(
             player.shield = kotlin.math.min(player.maxShield, player.shield + delta * rechargeRate)
         }
 
-        // 3. Rocket Cooldown
+        // 3. Rocket Cooldown & Reliable Deterministic Auto-Recharge
         if (player.rocketCooldownTimer > 0f) {
-            player.rocketCooldownTimer -= delta
-            if (player.rocketCooldownTimer < 0f) player.rocketCooldownTimer = 0f
+            player.rocketCooldownTimer = (player.rocketCooldownTimer - delta).coerceAtLeast(0f)
+        }
+        if (player.rocketAmmo < player.maxRocketAmmo) {
+            rocketRechargeTimer += delta
+            if (rocketRechargeTimer >= 1.35f) {
+                rocketRechargeTimer = 0f
+                player.rocketAmmo = (player.rocketAmmo + 1).coerceAtMost(player.maxRocketAmmo)
+            }
+        } else {
+            rocketRechargeTimer = 0f
         }
 
-        // 4. Guided Missile Cooldown
+        // 4. Guided Missile Cooldown & Reliable Deterministic Auto-Recharge
         if (player.missileTimer > 0f) {
-            player.missileTimer -= delta
-            if (player.missileTimer < 0f) player.missileTimer = 0f
+            player.missileTimer = (player.missileTimer - delta).coerceAtLeast(0f)
+        }
+        if (player.missileAmmo < player.maxMissileAmmo) {
+            missileRechargeTimer += delta
+            if (missileRechargeTimer >= 2.2f) {
+                missileRechargeTimer = 0f
+                player.missileAmmo = (player.missileAmmo + 1).coerceAtMost(player.maxMissileAmmo)
+            }
+        } else {
+            missileRechargeTimer = 0f
         }
 
-        // Ammo replenishment over time
-        if (player.rocketAmmo < player.maxRocketAmmo && player.rocketCooldownTimer <= 0f && Math.random() < 0.005) {
-            player.rocketAmmo = (player.rocketAmmo + 4).coerceAtMost(player.maxRocketAmmo)
+        // 5. Countermeasure Flares Cooldown (Auto-Recharges every 7.5s)
+        if (player.flareCooldownTimer > 0f) {
+            player.flareCooldownTimer = (player.flareCooldownTimer - delta).coerceAtLeast(0f)
         }
-        if (player.missileAmmo < player.maxMissileAmmo && player.missileTimer <= 0f && Math.random() < 0.003) {
-            player.missileAmmo = (player.missileAmmo + 2).coerceAtMost(player.maxMissileAmmo)
+
+        // 6. Overdrive Plasma Cannon Auto-Charge (+3.5%/sec + combat hits)
+        if (player.overdriveCharge < 100f) {
+            player.overdriveCharge = (player.overdriveCharge + delta * 3.5f).coerceAtMost(100f)
         }
+    }
+
+    /**
+     * Tactical Weapon 1: Chaff / EMP Countermeasure Flares — intercepts incoming enemy bullets & missiles.
+     */
+    fun activateFlareCountermeasure() {
+        if (player.flareCooldownTimer > 0f || isGameOver) return
+        player.flareCooldownTimer = player.flareCooldownMax
+        player.flareActiveTimer = 1.4f
+        player.invulnerableTimer = kotlin.math.max(player.invulnerableTimer, 1.2f)
+
+        bullets.removeAll { !it.isPlayer && (it.pos - player.pos).length() < 28f }
+        missiles.removeAll { it.isEnemy && (it.pos - player.pos).length() < 32f }
+
+        // Disrupt nearby aerial threats
+        for (enemy in enemies) {
+            if ((enemy.pos - player.pos).length() < 26f) {
+                enemy.attackTimer = -1.5f
+                enemy.hitFlashTimer = 0.2f
+            }
+        }
+
+        createExplosion(player.pos, Color(0xFFFFD600), count = 24, speed = 12f)
+        createExplosion(player.pos, Color(0xFF00E5FF), count = 16, speed = 10f)
+        audioSystem?.playPlasmaCharge()
+        threatAlert = ThreatAlert("FLARE COUNTERMEASURES DEPLOYED — MISSILES DEFLECTED!", Color(0xFF00E5FF), 2.2f)
+        updateHud()
+    }
+
+    /**
+     * Tactical Weapon 2: Overdrive Plasma Cannon — unleashes high-impact piercing bolts.
+     */
+    fun activateOverdriveBeam() {
+        if (player.overdriveCharge < 100f || isGameOver) return
+        player.overdriveCharge = 0f
+        player.overdriveBeamTimer = 0.85f
+        camera.screenShake = 3.5f
+        audioSystem?.playPlasmaCharge()
+
+        val offsets = listOf(-2.4f, -1.2f, 0f, 1.2f, 2.4f)
+        for (xOff in offsets) {
+            val origin = Vector3D(player.pos.x + xOff, player.pos.y + 2.5f, player.pos.z - 0.1f)
+            addBullet(
+                TracerBullet(
+                    pos = origin,
+                    velocity = Vector3D(xOff * 1.4f, 88.0f, 0f),
+                    damage = player.mgDamage * 3.8f,
+                    isPlayer = true,
+                    life = 2.0f,
+                    isPlayerPlasma = true
+                )
+            )
+        }
+        createExplosion(Vector3D(player.pos.x, player.pos.y + 3f, player.pos.z), Color(0xFF00E5FF), count = 18, speed = 8f)
+        threatAlert = ThreatAlert("OVERDRIVE PLASMA CANNON FIRED!", Color(0xFF00E5FF), 2.0f)
+        updateHud()
     }
 
     /**
@@ -501,14 +751,19 @@ class GameEngine(
     }
 
     /**
-     * AI implementation for the 5 Enemy Types
+     * AI implementation for the 8 Enemy Types with Medium -> Hard progression scaling
+     * and Territory Proximity Alertness.
      */
     private fun updateEnemies(delta: Float) {
+        val diff = difficultyFactor // 0.0 (Medium) -> 1.0 (Hard)
+        val fireRateScale = 1.0f - (diff * 0.40f) // Up to 40% faster attack cadence near 50/50
+        val speedScale = 1.0f + (diff * 0.35f)
+
         // Progressive spawn with wave scaling (capped for mobile stability)
-        if (enemies.size < 7 && activeBoss == null) {
+        if (enemies.size < 8 && activeBoss == null) {
             enemySpawnTimer -= delta
             if (enemySpawnTimer <= 0f) {
-                enemySpawnTimer = (2.4f - (missionProgress * 1.0f)).coerceAtLeast(0.9f)
+                enemySpawnTimer = (2.4f - (diff * 1.15f)).coerceAtLeast(0.85f)
                 spawnProgressiveEnemy()
             }
         }
@@ -517,133 +772,138 @@ class GameEngine(
         while (it.hasNext()) {
             val enemy = it.next()
             enemy.strafePhase += delta
+            if (enemy.hitFlashTimer > 0f) enemy.hitFlashTimer = (enemy.hitFlashTimer - delta).coerceAtLeast(0f)
 
             val dx = player.pos.x - enemy.pos.x
             val dy = player.pos.y - enemy.pos.y
             val distToPlayer = kotlin.math.sqrt(dx * dx + dy * dy)
 
+            // Trigger alertness as soon as player approaches territory
+            if (!enemy.isAlerted && distToPlayer < 58f) {
+                enemy.isAlerted = true
+            }
+
+            // Predictive lead aim scales with difficulty (Medium -> Hard)
+            val leadSec = 0.25f * diff
+            val predictedTarget = Vector3D(
+                player.pos.x + player.velocity.x * leadSec,
+                player.pos.y + player.velocity.y * leadSec,
+                player.pos.z
+            )
+            val aimToPlayer = (predictedTarget - enemy.pos).normalized()
+            val alertBoost = if (enemy.isAlerted) speedScale else 1.0f
+
             when (enemy.category) {
                 EnemyCategory.ATTACK_HELICOPTER -> {
-                    // Circle-strafing gunship holding tactical combat distance ahead of player
                     enemy.rotorAngle = (enemy.rotorAngle + 35.0f * delta) % (kotlin.math.PI.toFloat() * 2f)
                     enemy.turretAngle = atan2(dx, dy)
                     val desiredY = player.pos.y + 18.0f
                     val yDiff = desiredY - enemy.pos.y
-                    val moveY = yDiff.coerceIn(-7.5f, 7.5f)
+                    val moveY = yDiff.coerceIn(-7.5f * alertBoost, 7.5f * alertBoost)
                     enemy.pos.y += moveY * delta
-                    enemy.pos.x = (enemy.pos.x + sin(enemy.strafePhase * 2.2f) * 7.0f * delta).coerceIn(minX + 4f, maxX - 4f)
+                    val flankPush = if (enemy.isAlerted) (player.pos.x - enemy.pos.x).coerceIn(-6f, 6f) * 0.35f else 0f
+                    enemy.pos.x = (enemy.pos.x + (sin(enemy.strafePhase * 2.2f) * 7.5f * alertBoost + flankPush) * delta).coerceIn(minX + 4f, maxX - 4f)
 
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 1.4f && distToPlayer < 45f && enemy.pos.y > player.pos.y - 6f) {
+                    if (enemy.attackTimer >= 1.4f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 6f) {
                         enemy.attackTimer = 0f
-                        val aim = (player.pos - enemy.pos).normalized()
-                        addBullet(TracerBullet(enemy.pos.copy(z = enemy.pos.z - 0.2f), aim * 28.0f, damage = 12f, isPlayer = false))
-                        if (Math.random() < 0.4) {
-                            addBullet(TracerBullet(Vector3D(enemy.pos.x - 0.8f, enemy.pos.y, enemy.pos.z), aim * 24.0f, damage = 18f, isPlayer = false))
-                            addBullet(TracerBullet(Vector3D(enemy.pos.x + 0.8f, enemy.pos.y, enemy.pos.z), aim * 24.0f, damage = 18f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = enemy.pos.z - 0.2f), aimToPlayer * (28.0f * speedScale), damage = 12f, isPlayer = false))
+                        if (diff > 0.35f || Math.random() < 0.4) {
+                            addBullet(TracerBullet(Vector3D(enemy.pos.x - 0.9f, enemy.pos.y, enemy.pos.z), aimToPlayer * 26.0f, damage = 14f, isPlayer = false))
+                            addBullet(TracerBullet(Vector3D(enemy.pos.x + 0.9f, enemy.pos.y, enemy.pos.z), aimToPlayer * 26.0f, damage = 14f, isPlayer = false))
                         }
                     }
                 }
 
                 EnemyCategory.FIGHTER_AIRCRAFT -> {
-                    // High-speed supersonic interceptor flyby with subtle sweeping bank
-                    enemy.pos.y += enemy.velocity.y * delta
-                    enemy.pos.x = (enemy.pos.x + (enemy.velocity.x + cos(enemy.strafePhase * 3.0f) * 3.5f) * delta).coerceIn(minX, maxX)
+                    enemy.pos.y += enemy.velocity.y * speedScale * delta
+                    enemy.pos.x = (enemy.pos.x + (enemy.velocity.x + cos(enemy.strafePhase * 3.0f) * 4.2f) * delta).coerceIn(minX, maxX)
                     enemy.turretAngle = atan2(dx, dy)
 
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 0.25f && distToPlayer < 50f && enemy.pos.y > player.pos.y) {
+                    if (enemy.attackTimer >= 0.28f * fireRateScale && distToPlayer < 52f && enemy.pos.y > player.pos.y) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(), Vector3D(0f, -40.0f, 0f), damage = 15f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(), Vector3D(aimToPlayer.x * 12f, -42.0f, 0f), damage = 15f, isPlayer = false))
                     }
                 }
 
                 EnemyCategory.GROUND_TANK -> {
-                    // Heavy battle tank patrolling tactical lane, holding firing range when engaged
-                    val patrolSpeedY = if (dy < -24f) -2.8f else if (dy > -12f) 1.4f else 0f
+                    val patrolSpeedY = if (dy < -22f) -3.4f * alertBoost else if (dy > -12f) 1.6f else 0f
                     enemy.pos.y = (enemy.pos.y + patrolSpeedY * delta).coerceIn(minY, maxY)
-                    enemy.pos.x = (enemy.pos.x + sin(enemy.strafePhase * 0.9f) * 2.2f * delta).coerceIn(minX + 2f, maxX - 2f)
+                    val trackX = if (enemy.isAlerted) (player.pos.x - enemy.pos.x).coerceIn(-3f, 3f) * 0.45f else 0f
+                    enemy.pos.x = (enemy.pos.x + (sin(enemy.strafePhase * 0.95f) * 2.5f + trackX) * delta).coerceIn(minX + 2f, maxX - 2f)
                     enemy.turretAngle = atan2(dx, dy)
 
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 2.2f && distToPlayer < 45f && enemy.pos.y > player.pos.y - 8f) {
+                    if (enemy.attackTimer >= 2.1f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 8f) {
                         enemy.attackTimer = 0f
-                        val aim = (player.pos - enemy.pos).normalized()
-                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aim * 32.0f, damage = 25f, isPlayer = false, isTankShell = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aimToPlayer * (33.0f * speedScale), damage = 24f, isPlayer = false, isTankShell = true))
                         createExplosion(enemy.pos.copy(z = 0.8f), Color(0xFFFF9100), count = 6, speed = 4f)
                     }
                 }
 
                 EnemyCategory.AA_TURRET -> {
-                    // Stationary ground AA fortification rotating barrels toward player
                     enemy.turretAngle = atan2(dx, dy)
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 2.0f && distToPlayer < 46f && enemy.pos.y > player.pos.y - 6f) {
+                    if (enemy.attackTimer >= 1.9f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 6f) {
                         enemy.attackTimer = 0f
-                        val aim = (player.pos - enemy.pos).normalized()
-                        addBullet(TracerBullet(enemy.pos.copy(z = 1.0f), aim * 30.0f, damage = 22f, isPlayer = false, isFlakBurst = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 1.0f), aimToPlayer * 31.0f, damage = 20f, isPlayer = false, isFlakBurst = true))
                     }
                 }
 
                 EnemyCategory.MISSILE_LAUNCHER -> {
-                    // Mobile SAM truck maneuvering slowly into firing range and rotating launcher
-                    val samMoveY = if (dy < -28f) -2.2f else 0f
+                    val samMoveY = if (dy < -28f) -2.5f * alertBoost else 0f
                     enemy.pos.y = (enemy.pos.y + samMoveY * delta).coerceIn(minY, maxY)
-                    enemy.pos.x = (enemy.pos.x + cos(enemy.strafePhase * 0.7f) * 1.6f * delta).coerceIn(minX + 2f, maxX - 2f)
+                    enemy.pos.x = (enemy.pos.x + cos(enemy.strafePhase * 0.7f) * 1.8f * delta).coerceIn(minX + 2f, maxX - 2f)
                     enemy.turretAngle = atan2(dx, dy)
 
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 3.2f && distToPlayer < 52f && enemy.pos.y > player.pos.y - 10f) {
+                    if (enemy.attackTimer >= 3.1f * fireRateScale && distToPlayer < 55f && enemy.pos.y > player.pos.y - 10f) {
                         enemy.attackTimer = 0f
                         val missile = GuidedMissile(
                             id = UUID.randomUUID().toString(),
                             pos = enemy.pos.copy(z = 1.2f),
-                            velocity = Vector3D(0f, -14.0f, 4.0f),
+                            velocity = Vector3D(aimToPlayer.x * 6f, -15.0f, 4.0f),
                             targetId = "PLAYER",
-                            damage = 38f,
+                            damage = 34f,
                             isEnemy = true
                         )
                         addMissile(missile)
-                        createExplosion(enemy.pos.copy(z = 1.2f), Color(0xFFFF3D00), count = 10, speed = 5f)
+                        createExplosion(enemy.pos.copy(z = 1.2f), Color(0xFFFF3D00), count = 8, speed = 5f)
                     }
                 }
 
                 EnemyCategory.INFANTRY_SOLDIER -> {
-                    // Ground infantry soldier actively patrolling & flanking around outpost while aiming at player
-                    enemy.pos.x = (enemy.pos.x + cos(enemy.strafePhase * 1.9f) * 2.4f * delta).coerceIn(minX + 1f, maxX - 1f)
-                    enemy.pos.y = (enemy.pos.y + sin(enemy.strafePhase * 1.2f) * 1.1f * delta).coerceIn(minY, maxY)
+                    val flankMove = if (enemy.isAlerted) (player.pos.x - enemy.pos.x).coerceIn(-4f, 4f) * 0.4f else 0f
+                    enemy.pos.x = (enemy.pos.x + (cos(enemy.strafePhase * 1.9f) * 2.5f + flankMove) * delta).coerceIn(minX + 1f, maxX - 1f)
+                    enemy.pos.y = (enemy.pos.y + sin(enemy.strafePhase * 1.2f) * 1.2f * delta).coerceIn(minY, maxY)
                     enemy.turretAngle = atan2(dx, dy)
 
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 1.6f && distToPlayer < 40f && enemy.pos.y > player.pos.y - 10f) {
+                    if (enemy.attackTimer >= 1.55f * fireRateScale && distToPlayer < 42f && enemy.pos.y > player.pos.y - 10f) {
                         enemy.attackTimer = 0f
-                        val aim = (player.pos - enemy.pos).normalized()
-                        addBullet(TracerBullet(enemy.pos.copy(z = 0.5f), aim * 24.0f, damage = 8f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.5f), aimToPlayer * 25.0f, damage = 8f, isPlayer = false))
                     }
                 }
 
                 EnemyCategory.ROCKET_SOLDIER -> {
-                    // RPG trooper repositioning tactically and tracking player helicopter
-                    enemy.pos.x = (enemy.pos.x + sin(enemy.strafePhase * 1.6f) * 2.0f * delta).coerceIn(minX + 1f, maxX - 1f)
-                    enemy.pos.y = (enemy.pos.y + cos(enemy.strafePhase * 1.0f) * 0.9f * delta).coerceIn(minY, maxY)
+                    enemy.pos.x = (enemy.pos.x + sin(enemy.strafePhase * 1.6f) * 2.2f * delta).coerceIn(minX + 1f, maxX - 1f)
+                    enemy.pos.y = (enemy.pos.y + cos(enemy.strafePhase * 1.0f) * 1.0f * delta).coerceIn(minY, maxY)
                     enemy.turretAngle = atan2(dx, dy)
 
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 2.8f && distToPlayer < 42f && enemy.pos.y > player.pos.y - 12f) {
+                    if (enemy.attackTimer >= 2.65f * fireRateScale && distToPlayer < 45f && enemy.pos.y > player.pos.y - 12f) {
                         enemy.attackTimer = 0f
-                        val aim = (player.pos - enemy.pos).normalized()
-                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aim * 20.0f, damage = 25f, isPlayer = false, isFlakBurst = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aimToPlayer * 22.0f, damage = 22f, isPlayer = false, isFlakBurst = true))
                     }
                 }
 
                 EnemyCategory.WATCHTOWER_SNIPER -> {
-                    // Elevated sentry aiming high-caliber rounds toward player helicopter
                     enemy.turretAngle = atan2(dx, dy)
                     enemy.attackTimer += delta
-                    if (enemy.attackTimer >= 2.2f && distToPlayer < 46f && enemy.pos.y > player.pos.y - 8f) {
+                    if (enemy.attackTimer >= 2.1f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 8f) {
                         enemy.attackTimer = 0f
-                        val aim = (player.pos - enemy.pos).normalized()
-                        addBullet(TracerBullet(enemy.pos.copy(z = 4.0f), aim * 32.0f, damage = 18f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 4.0f), aimToPlayer * 34.0f, damage = 16f, isPlayer = false))
                     }
                 }
             }
@@ -662,12 +922,12 @@ class GameEngine(
 
         val categories = EnemyCategory.values()
         val category = categories.random()
-        spawnEnemy(category, spawnX, spawnY)
+        spawnEnemy(category, spawnX, spawnY, alerted = true)
     }
 
-    private fun spawnEnemy(category: EnemyCategory, x: Float, y: Float) {
+    private fun spawnEnemy(category: EnemyCategory, x: Float, y: Float, alerted: Boolean = false) {
         if (enemies.size >= MAX_ACTIVE_ENEMIES) return
-        val hpMultiplier = 1.0f + (missionProgress * 0.5f)
+        val hpMultiplier = 1.0f + (difficultyFactor * 0.65f)
         val isGround = category != EnemyCategory.ATTACK_HELICOPTER && category != EnemyCategory.FIGHTER_AIRCRAFT
         val z = if (isGround) 0.1f else 9.5f
         val velY = when (category) {
@@ -692,15 +952,18 @@ class GameEngine(
                 maxHealth = category.baseHp * hpMultiplier,
                 scoreValue = category.scoreVal,
                 unitName = "${selectedEmpire.name} ${category.label}",
-                isGroundUnit = isGround
+                isGroundUnit = isGround,
+                isAlerted = alerted
             )
         )
     }
 
     /**
-     * Boss System: 4 Unique Empire Bosses with Weak Points, Destructible Subsystems, and 3 Combat Phases
+     * Boss System: Stays inside Main Headquarters until all 50 Barracks are destroyed
+     * AND Player triggers the HQ Danger Zone. 100-Hit endurance with Medium->Hard evasion AI.
      */
     fun spawnEmpireBoss() {
+        if (activeBoss != null) return
         bossSpawned = true
         val bossName = when (selectedEmpire) {
             EmpireType.DRAGON -> "Ignis Rex: Dragon Emperor"
@@ -743,47 +1006,79 @@ class GameEngine(
             else -> {}
         }
 
+        val spawnPos = enemyHeadquarters?.let { hq ->
+            if (kotlin.math.abs(player.pos.y - hq.pos.y) <= HQ_DANGER_ZONE_RADIUS + 40f) {
+                Vector3D(hq.pos.x, hq.pos.y - 10f, 10.5f)
+            } else {
+                Vector3D(player.pos.x, player.pos.y + 34.0f, 10.5f)
+            }
+        } ?: Vector3D(0f, player.pos.y + 34.0f, 10.5f)
+
         activeBoss = BossCombatEntity(
             id = UUID.randomUUID().toString(),
             empire = selectedEmpire,
             name = bossName,
-            pos = Vector3D(0f, player.pos.y + 34.0f, 10.5f),
+            pos = spawnPos,
             health = bossHp,
             maxHealth = bossHp,
             shield = bossShield,
             maxShield = bossShield,
             phase = 1,
             weakPoint = weakPoint,
-            subsystems = subsystems
+            subsystems = subsystems,
+            bossHitsRemaining = 100,
+            maxBossHits = 100
         )
         audioSystem?.playBossWarning()
-        threatAlert = ThreatAlert("BOSS WARNING: $bossName ENGAGING AIRSPACE", Color(0xFFFF1744), 6.0f)
-        camera.screenShake = 4.5f
+        threatAlert = ThreatAlert("HQ DANGER ZONE: $bossName EMERGED! (100 HITS TO DEFEAT)", Color(0xFFFF1744), 6.0f)
+        camera.screenShake = 5.0f
+        createExplosion(spawnPos, selectedEmpire.primaryColor, count = 24, speed = 10f)
     }
 
     private fun updateBoss(delta: Float) {
         val boss = activeBoss ?: return
         boss.animationPhase += delta * 2.2f * boss.enrageFactor
+        if (boss.hitFlashTimer > 0f) boss.hitFlashTimer = (boss.hitFlashTimer - delta).coerceAtLeast(0f)
+        if (boss.evadeCooldownTimer > 0f) boss.evadeCooldownTimer = (boss.evadeCooldownTimer - delta).coerceAtLeast(0f)
 
-        // Check and update phase transitions continuously based on HP percentage
-        val hpPct = boss.health / boss.maxHealth
+        // Check phase transitions by HP OR remaining hit threshold (66 / 33 out of 100)
+        val hitPct = boss.bossHitsRemaining.toFloat() / boss.maxBossHits.toFloat()
+        val hpPct = kotlin.math.min(boss.health / boss.maxHealth, hitPct)
         if (hpPct <= 0.33f && boss.phase < 3) {
             boss.phase = 3
             boss.enrageFactor = 1.5f
             boss.weakPoint?.isExposed = true
-            threatAlert = ThreatAlert("BOSS WARNING: ${boss.name} ENTERED PHASE 3 ENRAGED", Color(0xFFFF1744), 5.0f)
+            threatAlert = ThreatAlert("BOSS WARNING: ${boss.name} ENTERED PHASE 3 ENRAGED!", Color(0xFFFF1744), 5.0f)
         } else if (hpPct <= 0.66f && boss.phase < 2) {
             boss.phase = 2
             boss.enrageFactor = 1.25f
-            threatAlert = ThreatAlert("BOSS WARNING: ${boss.name} ENTERED PHASE 2", Color(0xFFFF9100), 4.0f)
+            threatAlert = ThreatAlert("BOSS WARNING: ${boss.name} ENTERED PHASE 2 AGGRESSIVE!", Color(0xFFFF9100), 4.0f)
         }
 
-        // Base hover tracking
-        val targetY = player.pos.y + 22.0f
-        boss.pos.y += (targetY - boss.pos.y) * 1.5f * delta
-        boss.pos.x = sin(boss.animationPhase * 0.8f * boss.enrageFactor) * 8.5f
+        // Intelligent Evasive AI: Boss dodges incoming player rockets & guided missiles laterally
+        val incomingThreat = missiles.any { !it.isEnemy && (it.pos - boss.pos).length() < 24f } ||
+            rockets.any { (it.pos - boss.pos).length() < 20f }
+        if (incomingThreat && !boss.isEvading && boss.evadeCooldownTimer <= 0f) {
+            boss.isEvading = true
+            boss.evadeTimer = 0.65f
+            boss.evadeCooldownTimer = if (boss.phase >= 2) 2.4f else 3.4f
+            boss.evadeDirection = if (boss.pos.x >= player.pos.x) -1f else 1f
+            createExplosion(boss.pos, Color(0xFF00E5FF), count = 6, speed = 5f)
+        }
 
-        // Handle Active Attack State Machines
+        // Hover & Evasion Flight Positioning
+        val targetY = (player.pos.y + 22.0f).coerceIn(minY + 12f, maxY - 12f)
+        boss.pos.y += (targetY - boss.pos.y) * 1.8f * delta
+        if (boss.isEvading) {
+            boss.evadeTimer -= delta
+            boss.pos.x = (boss.pos.x + boss.evadeDirection * 24f * delta).coerceIn(minX + 12f, maxX - 12f)
+            if (boss.evadeTimer <= 0f) {
+                boss.isEvading = false
+            }
+        } else {
+            val weaveTargetX = player.pos.x + sin(boss.animationPhase * 0.85f * boss.enrageFactor) * 10.5f
+            boss.pos.x += (weaveTargetX - boss.pos.x) * 2.2f * delta
+        }
         when (boss.currentAttackMode) {
             BossAttackMode.AERIAL_CHARGE -> {
                 boss.modeTimer += delta
@@ -792,7 +1087,7 @@ class GameEngine(
                 boss.chargeOffset = Vector3D(0f, -diveY, -diveY * 0.25f)
                 val currentPos = boss.pos + boss.chargeOffset
                 if ((currentPos - player.pos).length() < 3.8f) {
-                    player.takeDamage(40f * delta * 4f)
+                    applyPlayerHit(1)
                     camera.screenShake = 3.5f
                     createExplosion(player.pos, Color(0xFFFF3D00), count = 4, speed = 5f)
                 }
@@ -808,7 +1103,7 @@ class GameEngine(
                 boss.chargeOffset = Vector3D(0f, -surgeY, 0f)
                 val currentPos = boss.pos + boss.chargeOffset
                 if ((currentPos - player.pos).length() < 4.2f) {
-                    player.takeDamage(45f * delta * 4f)
+                    applyPlayerHit(1)
                     camera.screenShake = 4.0f
                 }
                 if (boss.modeTimer >= 1.3f) {
@@ -1032,13 +1327,21 @@ class GameEngine(
             }
         }
 
-        // Check Boss Defeat
-        if (boss.health <= 0f) {
-            triggerBossDestruction(boss)
-            activeBoss = null
-            isVictory = true
-            threatAlert = ThreatAlert("SUPREME VICTORY: ${boss.name} DESTROYED (+5000 CREDITS)", Color(0xFF00E676), 12.0f)
+        // Check Boss Defeat (100 Hits OR HP <= 0 unlocks Final Siege on 1000-Hit Main Headquarters)
+        if (boss.bossHitsRemaining <= 0 || boss.health <= 0f) {
+            onBossDefeated(boss)
         }
+    }
+
+    private fun onBossDefeated(boss: BossCombatEntity) {
+        triggerBossDestruction(boss)
+        activeBoss = null
+        enemyHeadquarters?.isBossDefeated = true
+        threatAlert = ThreatAlert(
+            "BOSS DEFEATED! DESTROY MAIN HEADQUARTERS CITADEL (1,000 HITS)!",
+            Color(0xFF00E676),
+            8.0f
+        )
     }
 
     private fun triggerBossDestruction(boss: BossCombatEntity) {
@@ -1059,7 +1362,7 @@ class GameEngine(
         }
     }
 
-    fun applyDamageToBoss(damage: Float, hitPos: Vector3D): Boolean {
+    fun applyDamageToBoss(damage: Float, hitPos: Vector3D, discreteHits: Int = 1): Boolean {
         val boss = activeBoss ?: return false
         val currentBossPos = boss.pos + boss.chargeOffset
 
@@ -1069,6 +1372,7 @@ class GameEngine(
                 val subPos = currentBossPos + subsystem.offset
                 if ((hitPos - subPos).length() < 3.2f) {
                     val wasDestroyed = subsystem.takeDamage(damage)
+                    boss.registerHit(discreteHits, isWeakPointHit = false)
                     createExplosion(subPos, Color(0xFFFF9100), count = 6, speed = 5f)
                     if (wasDestroyed) {
                         createExplosion(subPos, Color(0xFFFF3D00), count = 30, speed = 12f)
@@ -1076,6 +1380,9 @@ class GameEngine(
                         camera.screenShake = 3.0f
                         audioSystem?.playExplosion()
                         threatAlert = ThreatAlert("SUBSYSTEM DESTROYED: ${subsystem.name}", Color(0xFF00E676), 3.5f)
+                    }
+                    if (boss.bossHitsRemaining <= 0 || boss.health <= 0f) {
+                        onBossDefeated(boss)
                     }
                     return true
                 }
@@ -1088,8 +1395,12 @@ class GameEngine(
                 val wpPos = currentBossPos + wp.offset
                 if ((hitPos - wpPos).length() < wp.radius) {
                     boss.takeDamage(damage, isWeakPointHit = true)
+                    boss.registerHit(discreteHits, isWeakPointHit = true)
                     createExplosion(wpPos, Color(0xFFFFD600), count = 16, speed = 8f)
                     camera.screenShake = 2.4f
+                    if (boss.bossHitsRemaining <= 0 || boss.health <= 0f) {
+                        onBossDefeated(boss)
+                    }
                     return true
                 }
             }
@@ -1098,12 +1409,10 @@ class GameEngine(
         // 3. Main Hull Hit
         if ((hitPos - currentBossPos).length() < 7.8f) {
             boss.takeDamage(damage, isWeakPointHit = false)
+            boss.registerHit(discreteHits, isWeakPointHit = false)
             createExplosion(hitPos, boss.empire.primaryColor, count = 8, speed = 6f)
-            if (boss.health <= 0f) {
-                triggerBossDestruction(boss)
-                activeBoss = null
-                isVictory = true
-                threatAlert = ThreatAlert("SUPREME VICTORY: ${boss.name} DESTROYED (+5000 CREDITS)", Color(0xFF00E676), 12.0f)
+            if (boss.bossHitsRemaining <= 0 || boss.health <= 0f) {
+                onBossDefeated(boss)
             }
             return true
         }
@@ -1202,35 +1511,45 @@ class GameEngine(
         while (bIt.hasNext()) {
             val b = bIt.next()
             if (!b.isPlayer) continue
+            val bulletHits = if (b.isPlayerPlasma) 6 else 1
+            val barracksBulletDmg = if (b.isPlayerPlasma) 6f else 1f
+            val hqBulletHits = if (b.isPlayerPlasma) 15 else 2
 
             // Boss check
-            if (applyDamageToBoss(b.damage, b.pos)) {
+            if (applyDamageToBoss(b.damage, b.pos, discreteHits = bulletHits)) {
+                player.overdriveCharge = (player.overdriveCharge + 1.2f).coerceAtMost(100f)
                 bIt.remove()
                 continue
             }
 
-            // Barracks check
+            // Barracks check (100 hits per barracks)
             var hitBarracks = false
             for (barracks in allBarracks) {
                 if (!barracks.isDestroyed && (b.pos - barracks.pos).length() < 5.0f) {
                     hitBarracks = true
-                    damageBarracks(barracks, b.damage)
-                    createExplosion(b.pos, Color(0xFFFFD600), count = 5, speed = 6f)
+                    damageBarracks(barracks, barracksBulletDmg)
+                    player.overdriveCharge = (player.overdriveCharge + 1.0f).coerceAtMost(100f)
+                    createExplosion(b.pos, if (b.isPlayerPlasma) Color(0xFF00E5FF) else Color(0xFFFFD600), count = 5, speed = 6f)
                     bIt.remove()
                     break
                 }
             }
             if (hitBarracks) continue
 
-            // Headquarters check
+            // Headquarters check (1,000 hits after 50/50 barracks & Boss defeat)
             enemyHeadquarters?.let { hq ->
-                if (hq.isUnlocked && !hq.isDestroyed && (b.pos - hq.pos).length() < 9.0f) {
-                    hq.health -= b.damage
-                    createExplosion(b.pos, Color(0xFFFF9100), count = 6, speed = 7f)
-                    bIt.remove()
-                    if (hq.health <= 0f) {
-                        destroyHeadquarters()
+                if (!hq.isDestroyed && (b.pos - hq.pos).length() < 10.5f) {
+                    if (hq.isUnlocked && hq.isBossDefeated) {
+                        val explodedHq = hq.takeHitDamage(hqBulletHits)
+                        player.overdriveCharge = (player.overdriveCharge + 1.5f).coerceAtMost(100f)
+                        createExplosion(b.pos, Color(0xFFFF9100), count = 6, speed = 7f)
+                        if (explodedHq) {
+                            destroyHeadquarters()
+                        }
+                    } else if ((b.pos - hq.pos).length() < 10.5f) {
+                        createExplosion(b.pos, Color(0xFF00E5FF), count = 3, speed = 4f)
                     }
+                    bIt.remove()
                     hitBarracks = true
                 }
             }
@@ -1240,8 +1559,13 @@ class GameEngine(
                 val hitDist = if (enemy.isGroundUnit) 3.0f else 2.4f
                 if ((b.pos - enemy.pos).length() < hitDist) {
                     enemy.health -= b.damage
-                    createExplosion(b.pos, Color(0xFFFFD600), count = 4, speed = 5f)
-                    bIt.remove()
+                    enemy.isAlerted = true
+                    enemy.hitFlashTimer = 0.14f
+                    player.overdriveCharge = (player.overdriveCharge + 1.8f).coerceAtMost(100f)
+                    createExplosion(b.pos, if (b.isPlayerPlasma) Color(0xFF00E5FF) else Color(0xFFFFD600), count = 4, speed = 5f)
+                    if (!b.isPlayerPlasma) {
+                        bIt.remove()
+                    }
                     break
                 }
             }
@@ -1253,16 +1577,16 @@ class GameEngine(
             val r = rIt.next()
             var exploded = false
 
-            // Boss check
-            if (applyDamageToBoss(r.damage, r.pos)) {
+            // Boss check (6 hits per rocket)
+            if (applyDamageToBoss(r.damage, r.pos, discreteHits = 6)) {
                 exploded = true
             }
 
             if (!exploded) {
-                // Barracks splash check
+                // Barracks splash check (8 hits per rocket)
                 for (barracks in allBarracks) {
                     if (!barracks.isDestroyed && (r.pos - barracks.pos).length() < r.splashRadius + 2.0f) {
-                        damageBarracks(barracks, r.damage)
+                        damageBarracks(barracks, 8f)
                         exploded = true
                         break
                     }
@@ -1270,11 +1594,10 @@ class GameEngine(
             }
 
             if (!exploded) {
-                // HQ splash check
+                // HQ splash check (12 hits per rocket)
                 enemyHeadquarters?.let { hq ->
-                    if (hq.isUnlocked && !hq.isDestroyed && (r.pos - hq.pos).length() < r.splashRadius + 5.0f) {
-                        hq.health -= r.damage
-                        if (hq.health <= 0f) destroyHeadquarters()
+                    if (hq.isUnlocked && hq.isBossDefeated && !hq.isDestroyed && (r.pos - hq.pos).length() < r.splashRadius + 5.0f) {
+                        if (hq.takeHitDamage(12)) destroyHeadquarters()
                         exploded = true
                     }
                 }
@@ -1284,11 +1607,13 @@ class GameEngine(
                 for (enemy in enemies) {
                     if ((r.pos - enemy.pos).length() < r.splashRadius) {
                         enemy.health -= r.damage
+                        enemy.isAlerted = true
+                        enemy.hitFlashTimer = 0.18f
                         exploded = true
-                        // Splash to nearby
                         for (other in enemies) {
                             if (other.id != enemy.id && (other.pos - r.pos).length() < r.splashRadius) {
                                 other.health -= r.damage * 0.6f
+                                other.isAlerted = true
                             }
                         }
                         break
@@ -1311,28 +1636,27 @@ class GameEngine(
             var impacted = false
 
             if (!m.isEnemy) {
-                // Player missile vs Boss
-                if (applyDamageToBoss(m.damage, m.pos)) {
+                // Player missile vs Boss (12 hits per missile)
+                if (applyDamageToBoss(m.damage, m.pos, discreteHits = 12)) {
                     impacted = true
                 }
 
-                // Player missile vs Barracks
+                // Player missile vs Barracks (15 hits per missile)
                 if (!impacted) {
                     for (barracks in allBarracks) {
                         if (!barracks.isDestroyed && (m.pos - barracks.pos).length() < 5.5f) {
-                            damageBarracks(barracks, m.damage)
+                            damageBarracks(barracks, 15f)
                             impacted = true
                             break
                         }
                     }
                 }
 
-                // Player missile vs HQ
+                // Player missile vs HQ (25 hits per missile)
                 if (!impacted) {
                     enemyHeadquarters?.let { hq ->
-                        if (hq.isUnlocked && !hq.isDestroyed && (m.pos - hq.pos).length() < 9.5f) {
-                            hq.health -= m.damage
-                            if (hq.health <= 0f) destroyHeadquarters()
+                        if (hq.isUnlocked && hq.isBossDefeated && !hq.isDestroyed && (m.pos - hq.pos).length() < 10.5f) {
+                            if (hq.takeHitDamage(25)) destroyHeadquarters()
                             impacted = true
                         }
                     }
@@ -1343,10 +1667,13 @@ class GameEngine(
                     for (enemy in enemies) {
                         if ((m.pos - enemy.pos).length() < 3.2f) {
                             enemy.health -= m.damage
+                            enemy.isAlerted = true
+                            enemy.hitFlashTimer = 0.2f
                             impacted = true
                             for (other in enemies) {
                                 if (other.id != enemy.id && (other.pos - m.pos).length() < 6.5f) {
                                     other.health -= m.damage * 0.5f
+                                    other.isAlerted = true
                                 }
                             }
                             break
@@ -1356,7 +1683,7 @@ class GameEngine(
             } else {
                 // Enemy missile vs Player
                 if ((m.pos - player.pos).length() < 2.2f) {
-                    player.takeDamage(m.damage)
+                    applyPlayerHit(1)
                     impacted = true
                     camera.screenShake = 3.5f
                 }
@@ -1377,17 +1704,10 @@ class GameEngine(
 
             val hitDist = if (b.isFlakBurst) 3.0f else 1.8f
             if ((b.pos - player.pos).length() < hitDist) {
-                player.takeDamage(b.damage)
+                applyPlayerHit(1)
                 camera.screenShake = 2.0f
                 createExplosion(b.pos, Color(0xFF00E5FF), count = 6, speed = 5f)
                 ebIt.remove()
-
-                if (player.health <= 0f && !isGameOver) {
-                    isGameOver = true
-                    threatAlert = ThreatAlert("HULL BREACH: HELICOPTER DESTROYED", Color(0xFFFF1744), 10f)
-                    createExplosion(player.pos, Color(0xFFFF3D00), count = 45, speed = 16f)
-                    audioSystem?.playExplosion()
-                }
             }
         }
 
@@ -1398,6 +1718,7 @@ class GameEngine(
             if (enemy.health <= 0f) {
                 kills++
                 score += enemy.scoreValue
+                player.overdriveCharge = (player.overdriveCharge + 8f).coerceAtMost(100f)
                 createExplosion(enemy.pos, enemy.empire.primaryColor, count = 22, speed = 10f)
                 audioSystem?.playExplosion()
                 camera.screenShake = 1.6f
@@ -1406,13 +1727,38 @@ class GameEngine(
         }
     }
 
+    /**
+     * Central 5-Heart x 10-Hit player survival processor.
+     */
+    fun applyPlayerHit(hits: Int = 1) {
+        if (isGameOver || isVictory || player.invulnerableTimer > 0f) return
+        val heartLost = player.applyCombatHit(hits)
+        if (player.hearts <= 0) {
+            isGameOver = true
+            threatAlert = ThreatAlert(
+                "0/5 HEARTS REMAINING — WATCH AD TO CONTINUE?",
+                Color(0xFFFF1744),
+                10f
+            )
+            createExplosion(player.pos, Color(0xFFFF3D00), count = 45, speed = 16f)
+            audioSystem?.playExplosion()
+        } else if (heartLost) {
+            threatAlert = ThreatAlert(
+                "HEART LOST! ${player.hearts}/${player.maxHearts} HEARTS REMAINING (10 HITS/HEART)",
+                Color(0xFFFF9100),
+                2.5f
+            )
+            createExplosion(player.pos, Color(0xFFFF9100), count = 18, speed = 9f)
+            audioSystem?.playExplosion()
+        }
+    }
+
     fun damageBarracks(barracks: EnemyBarracks, damage: Float): Boolean {
         if (barracks.isDestroyed) return false
-        barracks.health -= damage
+        val wasDestroyed = barracks.takeDamage(damage)
         createExplosion(barracks.pos, Color(0xFFFF9100), count = 5, speed = 6f)
-        if (barracks.health <= 0f) {
-            barracks.health = 0f
-            barracks.isDestroyed = true
+        if (wasDestroyed) {
+            player.overdriveCharge = (player.overdriveCharge + 14f).coerceAtMost(100f)
 
             // Enforce persistent online record & anti-duplicate reward checks
             val destructionResult = campaignService?.recordBarracksDestruction(barracks)
@@ -1425,7 +1771,6 @@ class GameEngine(
                     creditsEarned += destructionResult.creditsAwarded
                 }
                 is BarracksDestructionResult.AlreadyDestroyed -> {
-                    // Zero duplicate reward if already destroyed in persistent campaign
                     barracksDestroyedCount = allBarracks.count { it.isDestroyed }
                 }
             }
@@ -1436,14 +1781,21 @@ class GameEngine(
 
             val isHqUnlocked = barracksDestroyedCount >= 50 || (campaignService?.isHeadquartersUnlocked(selectedEmpire) == true)
             if (isHqUnlocked) {
-                enemyHeadquarters?.isUnlocked = true
-                threatAlert = ThreatAlert(
-                    "ALL 50 ${selectedEmpire.name} BARRACKS DESTROYED! HEADQUARTERS FORCEFIELD DOWN! ELIMINATE ${selectedEmpire.bossName}!",
-                    Color(0xFFFF1744),
-                    8.0f
-                )
+                enemyHeadquarters?.let { hq ->
+                    hq.isUnlocked = true
+                    val distToHq = kotlin.math.hypot(player.pos.x - hq.pos.x, player.pos.y - hq.pos.y)
+                    val inDangerZone = distToHq <= HQ_DANGER_ZONE_RADIUS || player.pos.y >= hq.pos.y - HQ_DANGER_ZONE_RADIUS
+                    if (inDangerZone && !hq.isBossDefeated && !bossSpawned && activeBoss == null) {
+                        spawnEmpireBoss()
+                    } else {
+                        threatAlert = ThreatAlert(
+                            "ALL 50 ${selectedEmpire.name} BARRACKS DESTROYED! ADVANCE TO HQ DANGER ZONE FOR BOSS BATTLE!",
+                            Color(0xFFFF1744),
+                            8.0f
+                        )
+                    }
+                }
                 audioSystem?.playBossWarning()
-                spawnEmpireBoss()
             } else {
                 threatAlert = ThreatAlert(
                     "${selectedEmpire.name} BARRACKS #${barracks.index} DESTROYED! [$barracksDestroyedCount / 50]",
@@ -1460,6 +1812,7 @@ class GameEngine(
         val hq = enemyHeadquarters ?: return
         if (hq.isDestroyed) return
         hq.health = 0f
+        hq.hitsRemaining = 0
         hq.isDestroyed = true
         campaignService?.recordHeadquartersDestruction(selectedEmpire)
         score += 15000
@@ -1471,6 +1824,7 @@ class GameEngine(
         createExplosion(hq.pos + Vector3D(-4f, -4f, 2f), Color(0xFFFFD600), count = 40, speed = 15f)
         audioSystem?.playExplosion()
         camera.screenShake = 5.0f
+        updateHud()
     }
 
 
@@ -1524,8 +1878,11 @@ class GameEngine(
     private fun updateHud() {
         val rocketCdPct = (1.0f - (player.rocketCooldownTimer / player.rocketCooldownMax)).coerceIn(0f, 1f)
         val missileCdPct = (1.0f - (player.missileTimer / player.missileCooldown)).coerceIn(0f, 1f)
+        val flareCdPct = (1.0f - (player.flareCooldownTimer / player.flareCooldownMax)).coerceIn(0f, 1f)
+        val overdrivePct = (player.overdriveCharge / 100f).coerceIn(0f, 1f)
 
         val lockedName = activeBoss?.name ?: enemies.find { it.id == player.lockedTargetId }?.unitName
+        val hq = enemyHeadquarters
 
         _hudState.value = GameHudState(
             health = player.health,
@@ -1534,6 +1891,10 @@ class GameEngine(
             maxArmor = player.maxArmor,
             shield = player.shield,
             maxShield = player.maxShield,
+            hearts = player.hearts,
+            maxHearts = player.maxHearts,
+            hitsRemainingInHeart = player.hitsRemainingInHeart,
+            hitsPerHeart = player.hitsPerHeart,
             score = score,
             kills = kills,
             missionProgressPercent = missionProgress,
@@ -1546,18 +1907,27 @@ class GameEngine(
             missileReadyPercent = missileCdPct,
             isMissileReady = player.missileTimer <= 0f && player.missileAmmo >= 2,
             lockedTargetName = if (player.lockProgress >= 0.9f) lockedName else null,
+            flareCooldownPercent = flareCdPct,
+            isFlareReady = player.flareCooldownTimer <= 0f,
+            overdriveChargePercent = overdrivePct,
+            isOverdriveReady = player.overdriveCharge >= 100f,
             isAutoFiring = player.isAutoFiring,
             activeThreat = threatAlert,
             isGameOver = isGameOver,
             isVictory = isVictory,
             activeEmpire = selectedEmpire,
+            stageNumber = getStageNumber(selectedEmpire),
             helicopterClass = player.heloClass,
             bossEntity = activeBoss,
             creditsEarned = creditsEarned,
             barracksDestroyedCount = barracksDestroyedCount,
             totalBarracks = 50,
-            isHeadquartersUnlocked = enemyHeadquarters?.isUnlocked ?: false,
-            headquartersPos = enemyHeadquarters?.pos
+            isHeadquartersUnlocked = hq?.isUnlocked ?: false,
+            isHqBossDefeated = hq?.isBossDefeated ?: false,
+            isDangerZoneTriggered = hq?.isDangerZoneTriggered ?: false,
+            hqHitsRemaining = hq?.hitsRemaining ?: 1000,
+            hqMaxHits = hq?.maxHits ?: 1000,
+            headquartersPos = hq?.pos
         )
     }
 
@@ -1569,15 +1939,17 @@ class GameEngine(
         allBarracks.clear()
         barracksDestroyedCount = 0
         enemyHeadquarters = null
+        activeBoss = null
+        bossSpawned = false
         furthestGeneratedY = player.pos.y
         initOpenWorldObjectives()
         generateEnvironmentChunk(furthestGeneratedY)
+        updateHud()
     }
 
     private fun initOpenWorldObjectives() {
         allBarracks.clear()
         // Procedurally distribute 50 distinct barracks across the expansive open-world theater
-        // Distributed across X: -170f to +170f and Y: 35f to 950f (non-clustered, expansive territory)
         val random = java.util.Random(selectedEmpire.ordinal * 1000L + 42L)
         val empireDefenders = when (selectedEmpire) {
             EmpireType.HUMAN -> listOf(EnemyCategory.INFANTRY_SOLDIER, EnemyCategory.ROCKET_SOLDIER, EnemyCategory.GROUND_TANK)
@@ -1600,8 +1972,10 @@ class GameEngine(
                 empire = selectedEmpire,
                 name = barracksName,
                 pos = Vector3D(posX, posY, 0.1f),
-                health = if (isAlreadyDestroyed) 0f else 320f,
-                maxHealth = 320f,
+                health = if (isAlreadyDestroyed) 0f else 100f,
+                maxHealth = 100f,
+                hitsRemaining = if (isAlreadyDestroyed) 0 else 100,
+                maxHits = 100,
                 isDestroyed = isAlreadyDestroyed,
                 isDiscovered = isAlreadyDestroyed,
                 defenderTypes = empireDefenders
@@ -1621,7 +1995,7 @@ class GameEngine(
                 )
             )
 
-            // Spawn localized defenders initially only for frontline barracks (Y <= 95); deeper sectors activate lazily as player flies north
+            // Spawn localized defenders initially only for frontline barracks (Y <= 95)
             if (!isAlreadyDestroyed && posY <= 95f) {
                 spawnBarracksDefenders(barracks)
             }
@@ -1629,7 +2003,7 @@ class GameEngine(
 
         barracksDestroyedCount = allBarracks.count { it.isDestroyed }
 
-        // Fortified Enemy Headquarters located at the apex of the territory (Y = 1020f)
+        // Fortified Enemy Headquarters located at the apex of the territory (Y = 1020f), 1,000 Hits
         val hqName = "${selectedEmpire.name} SUPREME CITADEL & HEADQUARTERS"
         val isHqUnlocked = barracksDestroyedCount >= 50 || (campaignService?.isHeadquartersUnlocked(selectedEmpire) == true)
         val isHqDestroyed = campaignService?.isHeadquartersDestroyed(selectedEmpire) == true
@@ -1641,8 +2015,10 @@ class GameEngine(
             pos = Vector3D(0f, 1020f, 0.1f),
             isUnlocked = isHqUnlocked,
             isDestroyed = isHqDestroyed,
-            health = if (isHqDestroyed) 0f else 2500f,
-            maxHealth = 2500f
+            health = if (isHqDestroyed) 0f else 1000f,
+            maxHealth = 1000f,
+            hitsRemaining = if (isHqDestroyed) 0 else 1000,
+            maxHits = 1000
         )
         enemyHeadquarters = hq
         structures.add(
@@ -1663,11 +2039,11 @@ class GameEngine(
         barracks.defendersSpawned = true
         val defenders = barracks.defenderTypes
         if (defenders.size >= 2) {
-            spawnEnemy(defenders[0], barracks.pos.x - 3.5f, barracks.pos.y + 1.5f)
-            spawnEnemy(defenders[1], barracks.pos.x + 3.5f, barracks.pos.y + 1.5f)
+            spawnEnemy(defenders[0], barracks.pos.x - 3.5f, barracks.pos.y + 1.5f, alerted = barracks.isAlertTriggered)
+            spawnEnemy(defenders[1], barracks.pos.x + 3.5f, barracks.pos.y + 1.5f, alerted = barracks.isAlertTriggered)
         }
         if (defenders.size >= 3 && barracks.index % 2 == 0) {
-            spawnEnemy(defenders[2], barracks.pos.x, barracks.pos.y + 4.0f)
+            spawnEnemy(defenders[2], barracks.pos.x, barracks.pos.y + 4.0f, alerted = barracks.isAlertTriggered)
         }
     }
 
@@ -1687,10 +2063,24 @@ class GameEngine(
             furthestGeneratedY += 30f
         }
 
-        // Discover nearby barracks on exploration radar & activate defenders lazily near player
+        // Territory proximity trigger: entering a barracks zone alerts the garrison & spawns tank/troop patrol
         for (b in allBarracks) {
-            if (!b.isDiscovered && (b.pos - player.pos).length() < player.radarRange + 25f) {
+            val distToBarracks = (b.pos - player.pos).length()
+            if (!b.isDiscovered && distToBarracks < player.radarRange + 25f) {
                 b.isDiscovered = true
+            }
+            if (!b.isDestroyed && !b.isAlertTriggered && distToBarracks < 52f) {
+                b.isAlertTriggered = true
+                if (threatAlert == null) {
+                    threatAlert = ThreatAlert(
+                        "TERRITORY ALERT: BARRACKS #${b.index} GARRISON MOBILIZED!",
+                        selectedEmpire.primaryColor,
+                        2.0f
+                    )
+                }
+                if (enemies.size < MAX_ACTIVE_ENEMIES) {
+                    spawnEnemy(EnemyCategory.GROUND_TANK, b.pos.x, b.pos.y - 4f, alerted = true)
+                }
             }
             if (!b.isDestroyed && !b.defendersSpawned &&
                 b.pos.y >= player.pos.y - 20f && b.pos.y <= player.pos.y + 75f &&
@@ -1722,7 +2112,7 @@ class GameEngine(
             if (h.state == HazardState.ACTIVE) {
                 val dist = (Vector3D(h.pos.x, h.pos.y, player.pos.z) - player.pos).length()
                 if (dist < h.radius) {
-                    player.takeDamage(h.damage * delta * 1.5f)
+                    applyPlayerHit(1)
                     camera.screenShake = 1.8f
                     createExplosion(player.pos, selectedEmpire.primaryColor, count = 3, speed = 4f)
                 }

@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.CheckCircle
 import com.example.game.model.EmpireType
+import com.example.game.network.CampaignProgressionManager
 import com.example.game.network.WarNetCampaignService
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CyberCyan
@@ -69,14 +70,18 @@ fun CampaignScreen(
     onSelectEmpire: (EmpireType) -> Unit,
     onDeploy: (EmpireType) -> Unit,
     onBack: () -> Unit,
+    uid: String = "default",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val campaignService = remember { WarNetCampaignService.getInstance(context) }
+    val progressionManager = remember(context) { CampaignProgressionManager.getInstance(context) }
     val campaignState by campaignService.campaignState.collectAsState()
 
     var selected by remember { mutableStateOf(currentEmpire) }
     val selectedProgress = campaignService.getProgressForEmpire(selected)
+    val selectedStageNumber = progressionManager.getStageNumber(selected)
+    val isSelectedUnlocked = progressionManager.isStageUnlocked(selected, campaignState, uid)
 
     Scaffold(
         topBar = {
@@ -174,7 +179,7 @@ fun CampaignScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             Text(
-                text = "SELECT ENEMY EMPIRE THEATER",
+                text = "CAMPAIGN STAGES (SEQUENTIAL UNLOCK 1 → 4)",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 color = CyberCyan,
@@ -182,20 +187,27 @@ fun CampaignScreen(
             )
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Empire Selector Tabs (Showing 0/50 for each)
+            // Strict Sequential Stage Selector Tabs (Stage 1 -> Stage 2 -> Stage 3 -> Stage 4)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                EmpireType.values().forEach { empire ->
+                CampaignProgressionManager.STAGE_ORDER.forEachIndexed { index, empire ->
+                    val stageNum = index + 1
                     val isSelected = empire == selected
+                    val isUnlocked = progressionManager.isStageUnlocked(empire, campaignState, uid)
+                    val isDone = progressionManager.isStageCompleted(empire, campaignState, uid)
                     val p = campaignService.getProgressForEmpire(empire)
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp)
+                            .height(58.dp)
                             .background(
-                                if (isSelected) empire.primaryColor.copy(alpha = 0.25f) else Color(0xFF131B26),
+                                when {
+                                    isSelected -> empire.primaryColor.copy(alpha = 0.25f)
+                                    !isUnlocked -> Color(0xFF0E141D)
+                                    else -> Color(0xFF131B26)
+                                },
                                 RoundedCornerShape(8.dp)
                             )
                             .border(
@@ -205,24 +217,54 @@ fun CampaignScreen(
                             )
                             .clickable {
                                 selected = empire
-                                onSelectEmpire(empire)
+                                if (isUnlocked) {
+                                    onSelectEmpire(empire)
+                                }
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                if (!isUnlocked) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = "Locked Stage",
+                                        tint = ThreatRed,
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                } else if (isDone) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Cleared",
+                                        tint = Color(0xFF00E676),
+                                        modifier = Modifier.size(10.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "S$stageNum:${empire.name}",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = when {
+                                        isSelected -> empire.primaryColor
+                                        !isUnlocked -> Color(0xFF607D8B)
+                                        else -> Color(0xFFCFD8DC)
+                                    }
+                                )
+                            }
                             Text(
-                                text = empire.name,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Black,
-                                fontFamily = FontFamily.Monospace,
-                                color = if (isSelected) empire.primaryColor else Color(0xFF90A4AE)
-                            )
-                            Text(
-                                text = "${p.destroyedCount}/50",
-                                fontSize = 10.sp,
+                                text = if (!isUnlocked) "LOCKED" else "${p.destroyedCount}/50",
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
-                                color = if (p.destroyedCount >= 50) Color(0xFF00E676) else Color(0xFFFFB300)
+                                color = when {
+                                    !isUnlocked -> ThreatRed
+                                    p.destroyedCount >= 50 -> Color(0xFF00E676)
+                                    else -> Color(0xFFFFB300)
+                                }
                             )
                         }
                     }
@@ -514,23 +556,57 @@ fun CampaignScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Deploy Button
+                    // Sequential Lock Gate & Deploy Button (No Advance Stage Selection)
+                    if (!isSelectedUnlocked) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF261215), RoundedCornerShape(8.dp))
+                                .border(1.dp, ThreatRed, RoundedCornerShape(8.dp))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "STAGE $selectedStageNumber LOCKED: DEFEAT STAGE ${selectedStageNumber - 1} MAIN HQ FIRST (NO ADVANCE SKIP)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = ThreatRed,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
                     Button(
-                        onClick = { onDeploy(selected) },
-                        colors = ButtonDefaults.buttonColors(containerColor = selected.primaryColor),
+                        onClick = { if (isSelectedUnlocked) onDeploy(selected) },
+                        enabled = isSelectedUnlocked,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = selected.primaryColor,
+                            disabledContainerColor = Color(0xFF263238)
+                        ),
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp)
                             .testTag("deploy_empire_button")
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
+                        Icon(
+                            imageVector = if (isSelectedUnlocked) Icons.Default.PlayArrow else Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = if (isSelectedUnlocked) Color.Black else Color(0xFF90A4AE)
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "ENGAGE ${selected.name} FORCES",
+                            text = if (isSelectedUnlocked) {
+                                "DEPLOY STAGE $selectedStageNumber: ${selected.name}"
+                            } else {
+                                "LOCKED — COMPLETE STAGE ${selectedStageNumber - 1}"
+                            },
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Black,
-                            color = Color.Black,
+                            color = if (isSelectedUnlocked) Color.Black else Color(0xFF90A4AE),
                             fontFamily = FontFamily.Monospace
                         )
                     }
