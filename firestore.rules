@@ -1,0 +1,228 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny all access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Zero-Trust Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidEmpire(empire) {
+      return empire in ['HUMAN', 'ORC', 'DRAGON', 'ALIEN'];
+    }
+
+    // --- Entity Validation Helpers ---
+    function isValidUserProfile(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.userId.size() >= 1 &&
+             data.userId.size() <= 128 &&
+             data.callsign is string &&
+             data.callsign.size() >= 2 &&
+             data.callsign.size() <= 32 &&
+             data.credits is int &&
+             data.credits >= 0 &&
+             data.credits <= 100000000 &&
+             data.highScore is int &&
+             data.highScore >= 0 &&
+             data.highScore <= 100000000 &&
+             data.humanDestroyedCount is int &&
+             data.humanDestroyedCount >= 0 &&
+             data.humanDestroyedCount <= 50 &&
+             data.orcDestroyedCount is int &&
+             data.orcDestroyedCount >= 0 &&
+             data.orcDestroyedCount <= 50 &&
+             data.dragonDestroyedCount is int &&
+             data.dragonDestroyedCount >= 0 &&
+             data.dragonDestroyedCount <= 50 &&
+             data.alienDestroyedCount is int &&
+             data.alienDestroyedCount >= 0 &&
+             data.alienDestroyedCount <= 50 &&
+             data.createdAt is timestamp &&
+             data.createdAt <= request.time &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function isProfileRenameAction() {
+      return incoming().diff(existing()).affectedKeys().hasOnly(['callsign', 'updatedAt']);
+    }
+
+    function isCampaignProgressAction() {
+      return incoming().diff(existing()).affectedKeys().hasOnly([
+               'credits',
+               'highScore',
+               'humanDestroyedCount',
+               'orcDestroyedCount',
+               'dragonDestroyedCount',
+               'alienDestroyedCount',
+               'updatedAt'
+             ]) &&
+             incoming().credits >= existing().credits &&
+             incoming().credits <= existing().credits + 2500 &&
+             incoming().highScore >= existing().highScore &&
+             incoming().highScore <= existing().highScore + 15000 &&
+             incoming().humanDestroyedCount >= existing().humanDestroyedCount &&
+             incoming().humanDestroyedCount <= existing().humanDestroyedCount + 1 &&
+             incoming().orcDestroyedCount >= existing().orcDestroyedCount &&
+             incoming().orcDestroyedCount <= existing().orcDestroyedCount + 1 &&
+             incoming().dragonDestroyedCount >= existing().dragonDestroyedCount &&
+             incoming().dragonDestroyedCount <= existing().dragonDestroyedCount + 1 &&
+             incoming().alienDestroyedCount >= existing().alienDestroyedCount &&
+             incoming().alienDestroyedCount <= existing().alienDestroyedCount + 1;
+    }
+
+    function isValidDestroyedBarracks(data, userId, docId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.userId.size() <= 128 &&
+             data.empire is string &&
+             data.empire.size() <= 16 &&
+             isValidEmpire(data.empire) &&
+             data.barracksIndex is int &&
+             data.barracksIndex >= 1 &&
+             data.barracksIndex <= 50 &&
+             data.barracksId is string &&
+             data.barracksId.size() <= 40 &&
+             data.barracksId == ('BARRACKS_' + data.empire + '_' + string(data.barracksIndex)) &&
+             docId == data.barracksId &&
+             (data.damageDealt is int || data.damageDealt is float) &&
+             data.damageDealt >= 320 &&
+             data.creditsAwarded is int &&
+             data.creditsAwarded == 200 &&
+             data.scoreAwarded is int &&
+             data.scoreAwarded == 1000 &&
+             data.destroyedAt is timestamp &&
+             data.destroyedAt <= request.time;
+    }
+
+    function isValidHqVictory(data, userId, docId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.userId.size() <= 128 &&
+             data.empire is string &&
+             data.empire.size() <= 16 &&
+             isValidEmpire(data.empire) &&
+             docId == data.empire &&
+             data.bossId is string &&
+             data.bossId.size() <= 32 &&
+             data.bossId == ('BOSS_' + data.empire) &&
+             data.creditsAwarded is int &&
+             data.creditsAwarded == 2500 &&
+             data.scoreAwarded is int &&
+             data.scoreAwarded == 15000 &&
+             data.victoryAt is timestamp &&
+             data.victoryAt <= request.time;
+    }
+
+    function hasCompletedAll50Barracks(userId, empire) {
+      let profile = get(/databases/$(database)/documents/users/$(userId)).data;
+      return (empire == 'HUMAN' && profile.humanDestroyedCount >= 50) ||
+             (empire == 'ORC' && profile.orcDestroyedCount >= 50) ||
+             (empire == 'DRAGON' && profile.dragonDestroyedCount >= 50) ||
+             (empire == 'ALIEN' && profile.alienDestroyedCount >= 50);
+    }
+
+    // --- Collection Rules ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'callsign', 'credits', 'highScore',
+                         'humanDestroyedCount', 'orcDestroyedCount',
+                         'dragonDestroyedCount', 'alienDestroyedCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'callsign', 'credits', 'highScore',
+                         'humanDestroyedCount', 'orcDestroyedCount',
+                         'dragonDestroyedCount', 'alienDestroyedCount',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().credits == 18500 &&
+                       incoming().highScore == 0 &&
+                       incoming().humanDestroyedCount == 0 &&
+                       incoming().orcDestroyedCount == 0 &&
+                       incoming().dragonDestroyedCount == 0 &&
+                       incoming().alienDestroyedCount == 0 &&
+                       isValidUserProfile(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (isProfileRenameAction() || isCampaignProgressAction());
+
+      allow delete: if false;
+
+      match /destroyed_barracks/{barracksId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(barracksId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(barracksId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'barracksId', 'empire', 'barracksIndex',
+                           'damageDealt', 'creditsAwarded', 'scoreAwarded', 'destroyedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'barracksId', 'empire', 'barracksIndex',
+                           'damageDealt', 'creditsAwarded', 'scoreAwarded', 'destroyedAt'
+                         ]) &&
+                         isValidDestroyedBarracks(incoming(), userId, barracksId);
+
+        // Append-only ledger: prevents tampering or re-farming rewards
+        allow update, delete: if false;
+      }
+
+      match /hq_victories/{empire} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(empire);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(empire) &&
+                         incoming().keys().hasAll([
+                           'userId', 'empire', 'bossId',
+                           'creditsAwarded', 'scoreAwarded', 'victoryAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'empire', 'bossId',
+                           'creditsAwarded', 'scoreAwarded', 'victoryAt'
+                         ]) &&
+                         isValidHqVictory(incoming(), userId, empire) &&
+                         hasCompletedAll50Barracks(userId, empire);
+
+        // Append-only ledger: prevents re-claiming HQ victory rewards
+        allow update, delete: if false;
+      }
+    }
+  }
+}

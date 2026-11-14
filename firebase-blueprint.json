@@ -1,0 +1,177 @@
+{
+  "entities": {
+    "UserCampaignProfile": {
+      "title": "UserCampaignProfile",
+      "description": "Authenticated pilot profile and per-empire campaign progression counters stored in Cloud Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated Firebase Auth UID matching the document ID."
+        },
+        "callsign": {
+          "type": "string",
+          "description": "Pilot callsign displayed in campaign HUD and menus."
+        },
+        "credits": {
+          "type": "integer",
+          "description": "Cumulative earned war credits."
+        },
+        "highScore": {
+          "type": "integer",
+          "description": "Cumulative campaign score."
+        },
+        "humanDestroyedCount": {
+          "type": "integer",
+          "description": "Count of destroyed Human Empire barracks (0..50)."
+        },
+        "orcDestroyedCount": {
+          "type": "integer",
+          "description": "Count of destroyed Orc Empire barracks (0..50)."
+        },
+        "dragonDestroyedCount": {
+          "type": "integer",
+          "description": "Count of destroyed Dragon Empire barracks (0..50)."
+        },
+        "alienDestroyedCount": {
+          "type": "integer",
+          "description": "Count of destroyed Alien Empire barracks (0..50)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned creation timestamp via FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned update timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "callsign",
+        "credits",
+        "highScore",
+        "humanDestroyedCount",
+        "orcDestroyedCount",
+        "dragonDestroyedCount",
+        "alienDestroyedCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DestroyedBarracksRecord": {
+      "title": "DestroyedBarracksRecord",
+      "description": "Immutable record proving first-time destruction of an enemy barracks for anti-duplicate reward enforcement and cross-device sync.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "barracksId": {
+          "type": "string",
+          "description": "Canonical barracks identifier (BARRACKS_<EMPIRE>_<1..50>)."
+        },
+        "empire": {
+          "type": "string",
+          "enum": ["HUMAN", "ORC", "DRAGON", "ALIEN"],
+          "description": "Empire territory identifier."
+        },
+        "barracksIndex": {
+          "type": "integer",
+          "description": "Barracks index within the empire (1..50)."
+        },
+        "damageDealt": {
+          "type": "number",
+          "description": "Lethal damage applied to destroy the barracks (>= 320)."
+        },
+        "creditsAwarded": {
+          "type": "integer",
+          "description": "Fixed bounty credits awarded upon destruction (200)."
+        },
+        "scoreAwarded": {
+          "type": "integer",
+          "description": "Fixed score awarded upon destruction (1000)."
+        },
+        "destroyedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned destruction timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "barracksId",
+        "empire",
+        "barracksIndex",
+        "damageDealt",
+        "creditsAwarded",
+        "scoreAwarded",
+        "destroyedAt"
+      ]
+    },
+    "HeadquartersVictoryRecord": {
+      "title": "HeadquartersVictoryRecord",
+      "description": "Immutable record confirming defeat of an empire headquarters after all 50 barracks in that empire are destroyed.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID."
+        },
+        "empire": {
+          "type": "string",
+          "enum": ["HUMAN", "ORC", "DRAGON", "ALIEN"],
+          "description": "Defeated empire identifier."
+        },
+        "bossId": {
+          "type": "string",
+          "description": "Defeated boss identifier (BOSS_<EMPIRE>)."
+        },
+        "creditsAwarded": {
+          "type": "integer",
+          "description": "Fixed HQ victory credits reward (2500)."
+        },
+        "scoreAwarded": {
+          "type": "integer",
+          "description": "Fixed HQ victory score reward (15000)."
+        },
+        "victoryAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server-assigned victory timestamp via FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "empire",
+        "bossId",
+        "creditsAwarded",
+        "scoreAwarded",
+        "victoryAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserCampaignProfile"
+      },
+      "description": "Per-user pilot profile and empire barracks destruction summary counters."
+    },
+    "/users/{userId}/destroyed_barracks/{barracksId}": {
+      "schema": {
+        "$ref": "#/entities/DestroyedBarracksRecord"
+      },
+      "description": "Append-only ledger of destroyed barracks per user and empire (200 max across 4 empires)."
+    },
+    "/users/{userId}/hq_victories/{empire}": {
+      "schema": {
+        "$ref": "#/entities/HeadquartersVictoryRecord"
+      },
+      "description": "Append-only ledger of defeated empire headquarters, unlocked strictly at 50/50 barracks."
+    }
+  }
+}

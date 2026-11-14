@@ -1,0 +1,22 @@
+[gd_scene load_steps=4 format=3 uid="uid://boss_dragon_01"]
+
+[ext_resource type="Script" path="res://scripts/bosses/dragon_emperor.gd" id="1_dragon"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_body"]
+size = Vector3(8.0, 3.5, 9.0)
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_heart"]
+radius = 1.2
+
+[node name="BossDragon" type="Area3D" groups=["bosses", "enemies"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, -15)
+script = ExtResource("1_dragon")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_body")
+
+[node name="DragonHeartWeakPoint" type="Area3D" parent="." groups=["weak_points"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.2, 0.5)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="DragonHeartWeakPoint"]
+shape = SubResource("SphereShape3D_heart")

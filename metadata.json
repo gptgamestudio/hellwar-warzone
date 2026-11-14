@@ -1,0 +1,6 @@
+{
+  "name": "Helicopter War",
+  "description": "High-octane 3D vertical mobile helicopter warfare game featuring endless battles, 4 enemy empires, online operations, and precision touch controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

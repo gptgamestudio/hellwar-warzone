@@ -1,0 +1,39 @@
+name: Auto-Deploy Firebase Hosting (Zero-PC)
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'hosting/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-firebase-hosting.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy-firebase-hosting:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Firebase Service Account secret
+        id: check_secret
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HELLWAR_WARZONE }}
+        run: |
+          if [ -n "$FIREBASE_SA" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Secret FIREBASE_SERVICE_ACCOUNT_HELLWAR_WARZONE is not configured yet. Add it in GitHub Repo Settings -> Secrets and variables -> Actions to enable zero-PC auto-deploy."
+          fi
+
+      - name: Deploy hosting/ to Firebase Hosting (hellwar-warzone)
+        if: steps.check_secret.outputs.configured == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HELLWAR_WARZONE }}
+          channelId: live
+          projectId: hellwar-warzone
