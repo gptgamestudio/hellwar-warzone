@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://gptgamestudio.github.io/hellwar-warzone/sitemap.xml

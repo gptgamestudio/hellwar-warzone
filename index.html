@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Helicopter War — Official Android APK Download | 3D Gunship Shooter</title>
+  <meta name="description" content="Download official Helicopter War APK (com.hellwar.game) for Android. Battle across 4 enemy empires, destroy 200 fortified barracks, defeat multi-phase bosses, and sync campaign saves via Cloud Firestore." />
+  <meta name="keywords" content="Helicopter War APK, Helicopter War Android download, 3D helicopter shooter game, gunship battle APK, com.hellwar.game, GPT Game Studio" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#0d3b22" />
+  <!-- Google Search Console: replace content with your verification token when verifying in Search Console -->
+  <!-- <meta name="google-site-verification" content="YOUR_GOOGLE_SEARCH_CONSOLE_TOKEN" /> -->
+
+  <link rel="canonical" href="https://gptgamestudio.github.io/hellwar-warzone/" />
+  <link rel="icon" type="image/jpeg" href="assets/site/app-icon.jpg" />
+
+  <!-- Open Graph / Social Sharing -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Helicopter War — GPT Game Studio" />
+  <meta property="og:title" content="Helicopter War — Official Android APK Download" />
+  <meta property="og:description" content="Command 3D combat gunships across 4 Enemy Empires, crush 200 fortified barracks, defeat multi-phase flagship bosses, and sync saves with Cloud Firestore." />
+  <meta property="og:url" content="https://gptgamestudio.github.io/hellwar-warzone/" />
+  <meta property="og:image" content="https://gptgamestudio.github.io/hellwar-warzone/assets/site/hero-gunship.jpg" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Helicopter War — Official Android APK Download" />
+  <meta name="twitter:description" content="3D vertical tactical gunship shooter across 4 Enemy Empires and 200 Enemy Barracks." />
+  <meta name="twitter:image" content="https://gptgamestudio.github.io/hellwar-warzone/assets/site/hero-gunship.jpg" />
+
+  <!-- Structured Data: SoftwareApplication Schema -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Helicopter War: Empire Endless Battle",
+    "operatingSystem": "Android 7.0+",
+    "applicationCategory": "GameApplication",
+    "softwareVersion": "1.0.1",
+    "datePublished": "2026-11-14",
+    "fileSize": "35.10 MB",
+    "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/latest",
+    "image": "https://gptgamestudio.github.io/hellwar-warzone/assets/site/hero-gunship.jpg",
+    "screenshot": [
+      "https://gptgamestudio.github.io/hellwar-warzone/assets/site/screenshot-sortie.jpg",
+      "https://gptgamestudio.github.io/hellwar-warzone/assets/site/screenshot-boss.jpg",
+      "https://gptgamestudio.github.io/hellwar-warzone/assets/site/screenshot-hangar.jpg"
+    ],
+    "author": {
+      "@type": "Organization",
+      "name": "GPT Game Studio",
+      "url": "https://gptgamestudio.github.io/"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+
+  <style>
+    :root {
+      --bg: #f3f7f4;
+      --surface: #ffffff;
+      --surface-alt: #eaf2ec;
+      --ink: #0f2117;
+      --muted: #465e50;
+      --primary: #146c38;
+      --primary-dark: #0e4e28;
+      --accent: #d97706;
+      --border: #d0dfd4;
+      --shadow: 0 12px 32px rgba(15, 33, 23, 0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, sans-serif;
+      background: linear-gradient(180deg, #ffffff 0%, var(--bg) 100%);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+    img { max-width: 100%; display: block; }
+    a { color: var(--primary-dark); }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .topbar-inner {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--ink);
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .brand img {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+    }
+    .nav-links {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .nav-links a { text-decoration: none; padding: 6px 4px; }
+    .wrap { max-width: 1060px; margin: 0 auto; padding: 24px 18px 64px; }
+    .hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: var(--shadow);
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 26px;
+      align-items: center;
+    }
+    @media (max-width: 820px) {
+      .hero { grid-template-columns: 1fr; padding: 20px; }
+    }
+    .badge {
+      display: inline-block;
+      background: #e1f4e7;
+      color: var(--primary-dark);
+      font-weight: 800;
+      font-size: 0.76rem;
+      letter-spacing: 0.07em;
+      padding: 6px 12px;
+      border-radius: 999px;
+      margin-bottom: 12px;
+    }
+    h1 {
+      font-size: clamp(1.75rem, 3.6vw, 2.55rem);
+      line-height: 1.15;
+      margin-bottom: 12px;
+      letter-spacing: -0.02em;
+    }
+    .sub { color: var(--muted); font-size: 1.02rem; margin-bottom: 18px; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 0.95rem;
+      text-decoration: none;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+      box-shadow: 0 6px 18px rgba(20, 108, 56, 0.25);
+    }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary {
+      background: var(--surface-alt);
+      color: var(--ink);
+      border: 1px solid var(--border);
+    }
+    .stats-bar {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .stat-item {
+      background: #f8fbf9;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+    .stat-item span {
+      display: block;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .stat-item strong { font-size: 0.92rem; color: var(--ink); word-break: break-word; }
+    .live-note {
+      margin-top: 10px;
+      font-size: 0.84rem;
+      color: var(--muted);
+    }
+    .hero-art {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #0d1d14;
+      aspect-ratio: 9 / 12;
+      max-height: 440px;
+      width: 100%;
+    }
+    .hero-art img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    section { margin-top: 34px; }
+    .section-title {
+      font-size: 1.45rem;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+    .section-sub { color: var(--muted); margin-bottom: 16px; font-size: 0.96rem; }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 6px 18px rgba(15, 33, 23, 0.04);
+    }
+    .card-img {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      border-bottom: 1px solid var(--border);
+    }
+    .shot-img {
+      width: 100%;
+      aspect-ratio: 9 / 14;
+      object-fit: cover;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-body { padding: 16px; }
+    .card-body h3 { font-size: 1.05rem; margin-bottom: 6px; color: var(--primary-dark); }
+    .card-body p { font-size: 0.9rem; color: var(--muted); }
+    .tag {
+      display: inline-block;
+      margin-top: 8px;
+      background: var(--surface-alt);
+      color: var(--primary-dark);
+      font-weight: 700;
+      font-size: 0.76rem;
+      padding: 4px 9px;
+      border-radius: 999px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 22px;
+    }
+    .steps { padding-left: 20px; color: var(--muted); }
+    .steps li { margin-bottom: 8px; }
+    .steps code {
+      background: var(--surface-alt);
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: var(--ink);
+      font-size: 0.88rem;
+    }
+    footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }
+    footer a { font-weight: 700; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#top">
+        <img src="assets/site/app-icon.jpg" alt="Helicopter War App Icon" />
+        <span>HELICOPTER WAR</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary navigation">
+        <a href="#empires">4 Empires</a>
+        <a href="#screenshots">Screenshots</a>
+        <a href="#features">Features</a>
+        <a href="#install">Install APK</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap" id="top">
+    <section class="hero" aria-label="Official Helicopter War APK Download">
+      <div>
+        <span class="badge">OFFICIAL ANDROID APK &bull; COM.HELLWAR.GAME</span>
+        <h1>Helicopter War:<br />Empire Endless Battle</h1>
+        <p class="sub">
+          Pilot armored 3D attack helicopters across four active battle theaters, obliterate
+          <strong>200 fortified enemy barracks</strong>, dismantle multi-phase Headquarters Bosses,
+          and save your War Credits securely in Cloud Firestore.
+        </p>
+
+        <div class="actions">
+          <!-- RELEASE_BUTTONS_START -->
+          <a id="download-apk-btn" class="btn btn-primary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/latest" target="_blank" rel="noopener">
+            Open Official Releases (helicopter-war.apk)
+          </a>
+          <a id="all-releases-btn" class="btn btn-secondary" href="https://github.com/gptgamestudio/hellwar-warzone/releases" target="_blank" rel="noopener">
+            All GitHub Releases
+          </a>
+          <!-- RELEASE_BUTTONS_END -->
+        </div>
+
+        <div class="stats-bar">
+          <!-- RELEASE_STATS_START -->
+          <div class="stat-item"><span>Latest Version</span><strong id="meta-version">v1.0.1 track</strong></div>
+          <div class="stat-item"><span>APK File</span><strong id="meta-filename">helicopter-war.apk</strong></div>
+          <div class="stat-item"><span>Verified Build Size</span><strong id="meta-size">35.10 MB</strong></div>
+          <div class="stat-item"><span>Build Date</span><strong id="meta-date">2026-11-14</strong></div>
+          <!-- RELEASE_STATS_END -->
+        </div>
+        <p class="live-note" id="live-release-status">
+          Checking GitHub Releases for attached <code>helicopter-war.apk</code> asset...
+        </p>
+      </div>
+
+      <div class="hero-art">
+        <img src="assets/site/hero-gunship.jpg" alt="Helicopter War armored gunship firing over convoy battlefield" />
+      </div>
+    </section>
+
+    <section id="empires">
+      <h2 class="section-title">Four Empires &amp; 200 Enemy Barracks</h2>
+      <p class="section-sub">
+        Every Empire holds <strong>50 unique barracks targets</strong> (200 across the entire warfront).
+        Destroy all 50 barracks in an Empire to break its Headquarters forcefield and engage the supreme Flagship Boss.
+      </p>
+      <div class="grid-4">
+        <article class="card">
+          <img class="card-img" src="assets/site/empire-dragon.jpg" alt="Dragon Empire volcanic warfront" loading="lazy" />
+          <div class="card-body">
+            <h3>Dragon Empire</h3>
+            <p>Volcanic spires, erupting lava geysers, and 50 magma fortresses guarded by <strong>Ignis Rex</strong>.</p>
+            <span class="tag">50 / 200 Barracks</span>
+          </div>
+        </article>
+        <article class="card">
+          <img class="card-img" src="assets/site/empire-alien.jpg" alt="Alien Empire plasma warfront" loading="lazy" />
+          <div class="card-body">
+            <h3>Alien Empire</h3>
+            <p>Orbital plasma lightning pylons and 50 alien outposts defended by <strong>Overseer Prime</strong>.</p>
+            <span class="tag">50 / 200 Barracks</span>
+          </div>
+        </article>
+        <article class="card">
+          <img class="card-img" src="assets/site/empire-orc.jpg" alt="Orc Empire siege wasteland" loading="lazy" />
+          <div class="card-body">
+            <h3>Orc Empire</h3>
+            <p>Ironclad siege fortresses, smog firepits, and 50 war camps commanded by <strong>Warlord Gashrak</strong>.</p>
+            <span class="tag">50 / 200 Barracks</span>
+          </div>
+        </article>
+        <article class="card">
+          <img class="card-img" src="assets/site/empire-human.jpg" alt="Human Empire military airbase" loading="lazy" />
+          <div class="card-body">
+            <h3>Human Empire</h3>
+            <p>EMP defense grids, hardened hangars, and 50 airbase bunkers under <strong>Project Titan</strong>.</p>
+            <span class="tag">50 / 200 Barracks</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="screenshots">
+      <h2 class="section-title">In-Game Combat &amp; Hangar Screenshots</h2>
+      <p class="section-sub">Vertical gunship dogfights, target-lock missiles, multi-phase bosses, and tactical hangar upgrades.</p>
+      <div class="grid-3">
+        <article class="card">
+          <img class="shot-img" src="assets/site/screenshot-sortie.jpg" alt="Vertical helicopter gunship sortie gameplay" loading="lazy" />
+          <div class="card-body">
+            <h3>Tactical Air-to-Ground Combat</h3>
+            <p>Cross-pad banking flight, twin autocannons, fan-spread rockets, and locked homing missiles.</p>
+          </div>
+        </article>
+        <article class="card">
+          <img class="shot-img" src="assets/site/screenshot-boss.jpg" alt="Multi-phase Dragon Emperor Boss battle" loading="lazy" />
+          <div class="card-body">
+            <h3>Multi-Phase Boss Encounters</h3>
+            <p>Target destructible boss pods and exposed weak points across enraged combat phases.</p>
+          </div>
+        </article>
+        <article class="card">
+          <img class="shot-img" src="assets/site/screenshot-hangar.jpg" alt="Warzone Hangar gunship upgrade screen" loading="lazy" />
+          <div class="card-body">
+            <h3>4 Gunships &amp; 5 Upgrade Trees</h3>
+            <p>Unlock Scout, Heavy Gunship, Stealth, and Ultimate War helicopters synced to Cloud Firestore.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="features">
+      <h2 class="section-title">Key Features</h2>
+      <div class="grid-3">
+        <div class="panel">
+          <h3>Precision 3D Touch Controls</h3>
+          <p class="section-sub" style="margin-bottom:0;">Zero-drift hover stabilization, directional banking roll physics, auto-fire autocannons, and multi-target lock missiles.</p>
+        </div>
+        <div class="panel">
+          <h3>Google Sign-In &amp; Cloud Sync</h3>
+          <p class="section-sub" style="margin-bottom:0;">Zero-trust Firebase backend keeps your credits, high scores, and destroyed barracks intact across devices.</p>
+        </div>
+        <div class="panel">
+          <h3>Android 7.0+ Ready</h3>
+          <p class="section-sub" style="margin-bottom:0;">Built cleanly with Jetpack Compose (compileSdk 36.1), adaptive touch layouts, and automated GitHub Release APKs.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="panel">
+        <h2 class="section-title">How to Install Helicopter War APK on Android</h2>
+        <ol class="steps" style="margin-top:12px;">
+          <li>Tap the <strong>Download APK</strong> button above to open/download <code>helicopter-war.apk</code> from official GitHub Releases.</li>
+          <li>Open <code>helicopter-war.apk</code> in your browser Downloads tab or Android Files app.</li>
+          <li>When prompted, tap <strong>Settings</strong> &rarr; turn on <strong>Allow from this source</strong> for your browser.</li>
+          <li>Tap <strong>Install</strong>, then launch <strong>Helicopter War</strong> and sign in with Google to sync campaign saves.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="developer">
+      <div class="panel">
+        <h2 class="section-title">Developer &amp; Repository Information</h2>
+        <p class="section-sub" style="margin-bottom:8px;">
+          <strong>Developer:</strong> GPT Game Studio &bull;
+          <strong>Package Name:</strong> <code>com.hellwar.game</code> &bull;
+          <strong>Repository:</strong> <a href="https://github.com/gptgamestudio/hellwar-warzone" target="_blank" rel="noopener">gptgamestudio/hellwar-warzone</a>
+        </p>
+        <p style="font-size:0.9rem;color:var(--muted);">
+          <strong>Direct Links:</strong>
+          <a href="https://github.com/gptgamestudio/hellwar-warzone/releases" target="_blank" rel="noopener">GitHub Releases</a> &middot;
+          <a href="privacy.html">Privacy Policy</a> &middot;
+          <a href="app-ads.txt">app-ads.txt</a> &middot;
+          <a href="sitemap.xml">sitemap.xml</a> &middot;
+          <a href="robots.txt">robots.txt</a> &middot;
+          <a href="mailto:benpasiglandingin@gmail.com">benpasiglandingin@gmail.com</a>
+        </p>
+      </div>
+    </section>
+
+    <footer>
+      <p>
+        &copy; 2026 GPT Game Studio &middot;
+        <a href="https://gptgamestudio.github.io/" target="_blank" rel="noopener">Studio Portal</a> &middot;
+        <a href="privacy.html">Privacy Policy</a> &middot;
+        <a href="https://github.com/gptgamestudio/hellwar-warzone" target="_blank" rel="noopener">GitHub Repository</a>
+      </p>
+    </footer>
+  </main>
+
+  <script>
+    (function checkLatestReleaseAsset() {
+      var statusEl = document.getElementById("live-release-status");
+      var btnEl = document.getElementById("download-apk-btn");
+      var relBtnEl = document.getElementById("all-releases-btn");
+      var verEl = document.getElementById("meta-version");
+      var sizeEl = document.getElementById("meta-size");
+      var dateEl = document.getElementById("meta-date");
+
+      fetch("https://api.github.com/repos/gptgamestudio/hellwar-warzone/releases/latest")
+        .then(function (res) {
+          if (!res.ok) throw new Error("No latest release response");
+          return res.json();
+        })
+        .then(function (release) {
+          var assets = Array.isArray(release.assets) ? release.assets : [];
+          var apkAsset = assets.find(function (a) { return a.name === "helicopter-war.apk"; })
+            || assets.find(function (a) { return a.name && a.name.endsWith(".apk"); });
+
+          if (apkAsset && apkAsset.browser_download_url && apkAsset.size > 0) {
+            var mb = (apkAsset.size / (1024 * 1024)).toFixed(2) + " MB";
+            var pubDate = (release.published_at || "").slice(0, 10) || "Verified";
+            btnEl.href = apkAsset.browser_download_url;
+            btnEl.textContent = "Download helicopter-war.apk (" + release.tag_name + " \u00B7 " + mb + ")";
+            if (relBtnEl && release.html_url) relBtnEl.href = release.html_url;
+            if (verEl) verEl.textContent = release.tag_name;
+            if (sizeEl) sizeEl.textContent = mb;
+            if (dateEl) dateEl.textContent = pubDate;
+            if (statusEl) {
+              statusEl.textContent = "Verified live GitHub Release asset ready: " + apkAsset.name + " (" + mb + ").";
+            }
+          } else if (statusEl) {
+            statusEl.textContent = "Latest GitHub Release (" + (release.tag_name || "tag") + ") does not have an APK asset attached yet. Trigger Build Android APK workflow on a v* tag to publish helicopter-war.apk.";
+          }
+        })
+        .catch(function () {
+          if (statusEl) {
+            statusEl.textContent = "APK downloads are distributed via GitHub Releases once a version tag workflow completes.";
+          }
+        });
+    })();
+  </script>
+</body>
+</html>

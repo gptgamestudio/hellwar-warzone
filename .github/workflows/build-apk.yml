@@ -3,8 +3,22 @@ name: Build Android APK
 on:
   push:
     branches: [ main, master ]
+    paths-ignore:
+      - 'README.md'
+      - 'index.html'
+      - 'privacy.html'
+      - '404.html'
+      - 'sitemap.xml'
+      - 'robots.txt'
+      - 'release-info.json'
+      - 'hosting/**'
     tags: [ 'v*' ]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional tag to publish release (e.g. v1.0.1)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -16,6 +30,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -53,34 +69,59 @@ jobs:
             fi
           fi
 
-      - name: Materialize debug signing keystore
+      - name: Materialize signing keystore
         env:
           KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+          REL_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PW: ${{ secrets.STORE_PASSWORD }}
+          KEY_PW: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ ! -f debug.keystore ]; then
-            if [ -n "$KEYSTORE_B64" ]; then
-              printf '%s' "$KEYSTORE_B64" | base64 -d > debug.keystore
-              echo "Restored debug.keystore from DEBUG_KEYSTORE_BASE64 secret."
-            elif [ -f debug.keystore.base64 ]; then
-              base64 -d debug.keystore.base64 > debug.keystore
-              echo "Restored debug.keystore from debug.keystore.base64."
-            else
-              keytool -genkeypair -v -keystore debug.keystore \
-                -storepass android -alias androiddebugkey -keypass android \
-                -keyalg RSA -keysize 2048 -validity 10000 \
-                -dname "CN=Android Debug,O=Android,C=US"
-              echo "Generated CI fallback debug.keystore."
+          if [ -n "$REL_KEYSTORE_B64" ] && [ -n "$STORE_PW" ] && [ -n "$KEY_PW" ]; then
+            printf '%s' "$REL_KEYSTORE_B64" | base64 -d > my-upload-key.jks
+            echo "BUILD_MODE=release" >> "$GITHUB_ENV"
+            echo "Restored release upload keystore from secrets."
+          else
+            echo "BUILD_MODE=debug" >> "$GITHUB_ENV"
+            if [ ! -f debug.keystore ]; then
+              if [ -n "$KEYSTORE_B64" ]; then
+                printf '%s' "$KEYSTORE_B64" | base64 -d > debug.keystore
+                echo "Restored debug.keystore from DEBUG_KEYSTORE_BASE64 secret."
+              elif [ -f debug.keystore.base64 ]; then
+                base64 -d debug.keystore.base64 > debug.keystore
+                echo "Restored debug.keystore from debug.keystore.base64."
+              else
+                keytool -genkeypair -v -keystore debug.keystore \
+                  -storepass android -alias androiddebugkey -keypass android \
+                  -keyalg RSA -keysize 2048 -validity 10000 \
+                  -dname "CN=Android Debug,O=Android,C=US"
+                echo "Generated CI fallback debug.keystore."
+              fi
             fi
+            keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android | grep -E "SHA1:|SHA256:" || true
           fi
-          keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android | grep -E "SHA1:|SHA256:" || true
 
-      - name: Build signed APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Build installable Android APK
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ "$BUILD_MODE" = "release" ]; then
+            export KEYSTORE_PATH="$PWD/my-upload-key.jks"
+            gradle assembleRelease --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
 
-      - name: Package standardized helicopter-war.apk
+      - name: Package and verify helicopter-war.apk
         run: |
           mkdir -p dist-apk
-          cp app/build/outputs/apk/debug/*.apk dist-apk/helicopter-war.apk
+          if [ "$BUILD_MODE" = "release" ]; then
+            cp app/build/outputs/apk/release/*.apk dist-apk/helicopter-war.apk
+          else
+            cp app/build/outputs/apk/debug/*.apk dist-apk/helicopter-war.apk
+          fi
+          test -s dist-apk/helicopter-war.apk
+          ls -lh dist-apk/helicopter-war.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -89,8 +130,38 @@ jobs:
           path: dist-apk/helicopter-war.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release APK on version tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Resolve release tag
+        id: release_meta
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.release_tag }}" ]; then
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub Release APK
+        if: steps.release_meta.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          name: Helicopter War ${{ steps.release_meta.outputs.tag }}
+          generate_release_notes: true
           files: dist-apk/helicopter-war.apk
+
+      - name: Auto-update website, README, and sitemap with verified release
+        if: steps.release_meta.outputs.should_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          python3 .github/scripts/update-release-metadata.py "${{ steps.release_meta.outputs.tag }}" dist-apk/helicopter-war.apk
+          git add README.md index.html hosting/index.html release-info.json hosting/release-info.json sitemap.xml hosting/sitemap.xml
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): update site and README for ${{ steps.release_meta.outputs.tag }}"
+            git push origin main
+          fi
