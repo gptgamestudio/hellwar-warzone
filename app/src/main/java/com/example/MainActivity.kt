@@ -72,16 +72,21 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val credentialManager = remember(context) { CredentialManager.create(context) }
                 val onlineStatus by networkMonitor.status.collectAsState()
-                val currentUser by remember { Firebase.auth.authStateFlow() }
+                val flowUser by remember { Firebase.auth.authStateFlow() }
                     .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
+                var manualAuthTick by remember { mutableStateOf(0) }
+                var autoSignInJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
                 // Attempt silent auto-sign-in for previously authorized Google users
                 LaunchedEffect(Unit) {
                     if (Firebase.auth.currentUser == null) {
-                        attemptAutoSignIn(
+                        autoSignInJob = attemptAutoSignIn(
                             context = this@MainActivity,
                             credentialManager = credentialManager,
-                            onAuthSuccess = {},
+                            onAuthSuccess = {
+                                manualAuthTick++
+                                networkMonitor.confirmOnlineFromAuth()
+                            },
                             onUnauthenticated = {},
                             scope = lifecycleScope
                         )
@@ -89,15 +94,32 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val signedInUser = currentUser
-                    if (signedInUser == null || onlineStatus is OnlineStatus.OfflineError) {
+                    val signedInUser = remember(flowUser, manualAuthTick) {
+                        flowUser ?: Firebase.auth.currentUser
+                    }
+                    val isHardwareOffline = onlineStatus is OnlineStatus.OfflineError &&
+                        (onlineStatus as OnlineStatus.OfflineError).isHardwareDisconnected
+                    if (signedInUser == null || isHardwareOffline) {
                         ConnectionGateScreen(
                             onlineStatus = onlineStatus,
                             currentUser = signedInUser,
                             onRetry = { networkMonitor.triggerConnectionVerification() },
-                            onEnterGame = {},
+                            onEnterGame = {
+                                manualAuthTick++
+                                networkMonitor.confirmOnlineFromAuth()
+                            },
+                            onSignInStarted = {
+                                autoSignInJob?.cancel()
+                                autoSignInJob = null
+                            },
+                            onAuthSuccess = {
+                                manualAuthTick++
+                                networkMonitor.confirmOnlineFromAuth()
+                            },
                             onSignOut = {
-                                signOutFromGoogle(credentialManager, lifecycleScope)
+                                signOutFromGoogle(credentialManager, lifecycleScope) {
+                                    manualAuthTick++
+                                }
                             },
                             modifier = Modifier.padding(innerPadding)
                         )
@@ -109,7 +131,9 @@ class MainActivity : ComponentActivity() {
                                 onlineStatus = onlineStatus,
                                 onRetryConnection = { networkMonitor.triggerConnectionVerification() },
                                 onSignOut = {
-                                    signOutFromGoogle(credentialManager, lifecycleScope)
+                                    signOutFromGoogle(credentialManager, lifecycleScope) {
+                                        manualAuthTick++
+                                    }
                                 },
                                 modifier = Modifier.padding(innerPadding)
                             )

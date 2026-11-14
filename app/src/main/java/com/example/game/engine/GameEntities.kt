@@ -27,7 +27,8 @@ data class EnemyBarracks(
     val defenderIds: MutableList<String> = mutableListOf(),
     val defenderTypes: List<EnemyCategory> = listOf(EnemyCategory.INFANTRY_SOLDIER, EnemyCategory.ROCKET_SOLDIER),
     val rewardCredits: Int = 200,
-    val scoreReward: Int = 1000
+    val scoreReward: Int = 1000,
+    var defendersSpawned: Boolean = false
 ) {
     fun takeDamage(amount: Float): Boolean {
         if (isDestroyed) return false

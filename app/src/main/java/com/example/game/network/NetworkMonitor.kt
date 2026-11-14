@@ -85,6 +85,31 @@ class NetworkMonitor(private val context: Context) {
         triggerConnectionVerification()
     }
 
+    fun confirmOnlineFromAuth() {
+        val activeNetwork = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+        val hasInternet = activeNetwork != null && capabilities != null &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        if (hasInternet || _status.value !is OnlineStatus.OfflineError) {
+            _status.value = OnlineStatus.Connected(
+                latencyMs = (_status.value as? OnlineStatus.Connected)?.latencyMs ?: 28L,
+                serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
+                networkType = resolveNetType(capabilities)
+            )
+            startHeartbeat()
+        } else {
+            triggerConnectionVerification()
+        }
+    }
+
+    private fun resolveNetType(capabilities: NetworkCapabilities?): String = when {
+        capabilities == null -> "MIL-NET RELAY"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "HIGH-SPEED WI-FI"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "CELLULAR 5G/LTE"
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "TACTICAL ETHERNET"
+        else -> "MIL-NET RELAY"
+    }
+
     fun triggerConnectionVerification() {
         pingJob?.cancel()
         heartbeatJob?.cancel()
@@ -106,23 +131,36 @@ class NetworkMonitor(private val context: Context) {
                 return@launch
             }
 
-            val netType = when {
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "HIGH-SPEED WI-FI"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "CELLULAR 5G/LTE"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "TACTICAL ETHERNET"
-                else -> "MIL-NET RELAY"
+            val netType = resolveNetType(capabilities)
+            val isValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+
+            // Fast path when Android OS already validated internet connectivity; run ping to measure latency
+            if (isValidated) {
+                _status.value = OnlineStatus.Connected(
+                    latencyMs = 35L,
+                    serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
+                    networkType = netType
+                )
+                val measured = executeRealPing()
+                if (measured != null) {
+                    _status.value = OnlineStatus.Connected(
+                        latencyMs = measured,
+                        serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
+                        networkType = netType
+                    )
+                }
+                startHeartbeat()
+                return@launch
             }
 
-            // Real server ping test
-            val isValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            val pingResult = executeRealPing() ?: if (isValidated) 42L else null
+            // Secondary ping check when NET_CAPABILITY_VALIDATED hasn't propagated yet
+            val pingResult = executeRealPing()
             if (pingResult != null) {
                 _status.value = OnlineStatus.Connected(
                     latencyMs = pingResult,
                     serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
                     networkType = netType
                 )
-                // Start single background heartbeat
                 startHeartbeat()
             } else {
                 _status.value = OnlineStatus.OfflineError(
@@ -135,38 +173,34 @@ class NetworkMonitor(private val context: Context) {
     }
 
     private suspend fun executeRealPing(): Long? = withContext(Dispatchers.IO) {
-        val startTime = System.currentTimeMillis()
-        try {
-            // Ping google / cloud endpoints for true network validation
-            val url = URL("https://clients3.google.com/generate_204")
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 4000
-                readTimeout = 4000
-                requestMethod = "GET"
-                instanceFollowRedirects = false
-                useCaches = false
-            }
-            val responseCode = connection.responseCode
-            connection.disconnect()
-            if (responseCode == 204 || responseCode == 200) {
-                val latency = System.currentTimeMillis() - startTime
-                return@withContext latency.coerceAtLeast(18L)
-            }
-        } catch (_: Exception) {
-            // Fallback secondary check
+        val endpoints = listOf(
+            "https://clients3.google.com/generate_204",
+            "https://www.gstatic.com/generate_204",
+            "https://www.cloudflare.com/cdn-cgi/trace"
+        )
+        for (endpoint in endpoints) {
+            val startTime = System.currentTimeMillis()
+            var connection: HttpURLConnection? = null
             try {
-                val url = URL("https://www.cloudflare.com/cdn-cgi/trace")
-                val connection = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 4000
-                    readTimeout = 4000
+                val url = URL(endpoint)
+                connection = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 2500
+                    readTimeout = 2500
+                    requestMethod = "GET"
+                    instanceFollowRedirects = false
+                    useCaches = false
                 }
-                val code = connection.responseCode
-                connection.disconnect()
-                if (code == 200) {
+                val responseCode = connection.responseCode
+                if (responseCode == 204 || responseCode == 200) {
                     val latency = System.currentTimeMillis() - startTime
-                    return@withContext latency.coerceAtLeast(22L)
+                    return@withContext latency.coerceAtLeast(18L)
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            } finally {
+                try {
+                    connection?.disconnect()
+                } catch (_: Exception) {}
+            }
         }
         null
     }
@@ -176,20 +210,21 @@ class NetworkMonitor(private val context: Context) {
         heartbeatJob = scope.launch {
             var consecutiveFailures = 0
             while (isActive) {
-                delay(15000)
+                delay(20000)
                 val activeNetwork = connectivityManager.activeNetwork
                 val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-                val hasValidatedNetwork = activeNetwork != null && capabilities != null &&
-                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                val hasInternet = activeNetwork != null && capabilities != null &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                val hasValidatedNetwork = hasInternet &&
+                    capabilities!!.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
                 val ping = executeRealPing() ?: if (hasValidatedNetwork) 45L else null
-                if (ping == null) {
+                if (ping == null && !hasInternet) {
                     consecutiveFailures++
                     if (consecutiveFailures >= 2) {
                         _status.value = OnlineStatus.OfflineError(
                             reason = "HEARTBEAT DROPPED: Satellite communication interrupted.",
                             errorCode = "ERR_HEARTBEAT_LOST",
-                            isHardwareDisconnected = false
+                            isHardwareDisconnected = true
                         )
                         break
                     }

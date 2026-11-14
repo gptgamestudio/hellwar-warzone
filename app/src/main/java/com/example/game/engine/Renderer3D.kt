@@ -17,6 +17,13 @@ import kotlin.math.sin
 
 class Renderer3D {
 
+    private val tmpPath = Path()
+    private var cachedSkyHeight: Float = -1f
+    private var cachedSkyBrush: Brush? = null
+
+    private val aaBarrelOffsets = floatArrayOf(-6f, -2f, 2f, 6f)
+    private val samWheelFactors = floatArrayOf(-0.35f, 0f, 0.35f)
+
     fun render(
         scope: DrawScope,
         engine: GameEngine,
@@ -24,6 +31,10 @@ class Renderer3D {
         height: Float
     ) {
         val camera = engine.camera
+        val minVisY = camera.y - 18f
+        val maxVisY = camera.y + 165f
+        val minVisX = camera.x - 135f
+        val maxVisX = camera.x + 135f
 
         // 1. Sky / Atmosphere
         drawAtmosphere(scope, width, height, engine.selectedEmpire)
@@ -48,14 +59,24 @@ class Renderer3D {
         // 5. Ground Shadows
         drawShadows(scope, camera, engine, width, height)
 
-        // 4. Ground-level Enemies (Tanks, Turrets, Missile Launchers)
-        for (enemy in engine.enemies.filter { it.isGroundUnit }) {
-            drawEnemy3D(scope, camera, enemy, width, height)
+        // 4. Ground-level Enemies (Tanks, Turrets, Missile Launchers) - zero-allocation pass
+        for (enemy in engine.enemies) {
+            if (enemy.isGroundUnit &&
+                enemy.pos.y in minVisY..maxVisY &&
+                enemy.pos.x in minVisX..maxVisX
+            ) {
+                drawEnemy3D(scope, camera, enemy, width, height)
+            }
         }
 
-        // 5. Aerial Enemies (Attack Helicopters, Fighters)
-        for (enemy in engine.enemies.filter { !it.isGroundUnit }) {
-            drawEnemy3D(scope, camera, enemy, width, height)
+        // 5. Aerial Enemies (Attack Helicopters, Fighters) - zero-allocation pass
+        for (enemy in engine.enemies) {
+            if (!enemy.isGroundUnit &&
+                enemy.pos.y in minVisY..maxVisY &&
+                enemy.pos.x in minVisX..maxVisX
+            ) {
+                drawEnemy3D(scope, camera, enemy, width, height)
+            }
         }
 
         // 6. Boss Entity in 3D
@@ -68,22 +89,30 @@ class Renderer3D {
 
         // 8. Multiple Rocket Launcher (MRL) Rockets
         for (rocket in engine.rockets) {
-            drawRocket3D(scope, camera, rocket, width, height)
+            if (rocket.pos.y in (minVisY - 30f)..(maxVisY + 30f)) {
+                drawRocket3D(scope, camera, rocket, width, height)
+            }
         }
 
         // 9. Guided Missiles
         for (missile in engine.missiles) {
-            drawMissile3D(scope, camera, missile, width, height)
+            if (missile.pos.y in (minVisY - 30f)..(maxVisY + 30f)) {
+                drawMissile3D(scope, camera, missile, width, height)
+            }
         }
 
         // 10. Bullets & Tracers
         for (bullet in engine.bullets) {
-            drawBullet3D(scope, camera, bullet, width, height)
+            if (bullet.pos.y in minVisY..maxVisY && bullet.pos.x in minVisX..maxVisX) {
+                drawBullet3D(scope, camera, bullet, width, height)
+            }
         }
 
         // 11. Particles & Explosions
         for (particle in engine.particles) {
-            drawParticle(scope, camera, particle, width, height)
+            if (particle.pos.y in minVisY..maxVisY && particle.pos.x in minVisX..maxVisX) {
+                drawParticle(scope, camera, particle, width, height)
+            }
         }
 
         // 12. 3D Target-Lock Reticle
@@ -91,23 +120,31 @@ class Renderer3D {
     }
 
     private fun drawAtmosphere(scope: DrawScope, width: Float, height: Float, empire: EmpireType) {
-        // Natural clean daylight atmosphere: Bright white sky background blending into soft sage-green distant horizon
-        val skyTop = Color(0xFFFFFFFF)      // Crisp bright white upper background
-        val skyMid = Color(0xFFF6FAF6)      // Soft cloud-white daylight
-        val skyHorizon = Color(0xFFE6F0E5)  // Fresh pale sage mist at horizon
+        val skyBrush = if (cachedSkyBrush != null && cachedSkyHeight == height) {
+            cachedSkyBrush!!
+        } else {
+            val skyTop = Color(0xFFFFFFFF)      // Crisp bright white upper background
+            val skyMid = Color(0xFFF6FAF6)      // Soft cloud-white daylight
+            val skyHorizon = Color(0xFFE6F0E5)  // Fresh pale sage mist at horizon
+            Brush.verticalGradient(
+                colors = listOf(skyTop, skyMid, skyHorizon),
+                startY = 0f,
+                endY = (height * 0.46f).coerceAtLeast(1f)
+            ).also {
+                cachedSkyBrush = it
+                cachedSkyHeight = height
+            }
+        }
 
         // Full white/soft-green sky backdrop
         scope.drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(skyTop, skyMid, skyHorizon),
-                startY = 0f,
-                endY = height * 0.46f
-            ),
+            brush = skyBrush,
             size = Size(width, height)
         )
 
         // Distant panoramic green mountain ridges on horizon
-        val ridgeFar = Path().apply {
+        val ridgeFar = tmpPath.apply {
+            reset()
             moveTo(0f, height * 0.38f)
             lineTo(width * 0.15f, height * 0.35f)
             lineTo(width * 0.32f, height * 0.37f)
@@ -121,7 +158,8 @@ class Renderer3D {
         }
         scope.drawPath(ridgeFar, Color(0xFF9BB696).copy(alpha = 0.75f), style = Fill)
 
-        val ridgeNear = Path().apply {
+        val ridgeNear = tmpPath.apply {
+            reset()
             moveTo(0f, height * 0.41f)
             lineTo(width * 0.22f, height * 0.38f)
             lineTo(width * 0.45f, height * 0.40f)
@@ -153,7 +191,8 @@ class Renderer3D {
         val nearR = camera.project(Vector3D(camera.x + 220f, safeNearY, 0f), width, height)
 
         if (horizL != null && horizR != null && nearL != null && nearR != null) {
-            val terrainPath = Path().apply {
+            val terrainPath = tmpPath.apply {
+                reset()
                 moveTo(horizL.screenPos.x, horizL.screenPos.y)
                 lineTo(horizR.screenPos.x, horizR.screenPos.y)
                 lineTo(nearR.screenPos.x, nearR.screenPos.y)
@@ -185,7 +224,8 @@ class Renderer3D {
                     val pR2 = camera.project(Vector3D(patchX + patchW * 0.85f, patchY + patchH, 0.002f), width, height)
 
                     if (pL1 != null && pR1 != null && pL2 != null && pR2 != null) {
-                        val earthQuad = Path().apply {
+                        val earthQuad = tmpPath.apply {
+                            reset()
                             moveTo(pL1.screenPos.x, pL1.screenPos.y)
                             lineTo(pR1.screenPos.x, pR1.screenPos.y)
                             lineTo(pR2.screenPos.x, pR2.screenPos.y)
@@ -227,7 +267,8 @@ class Renderer3D {
             val bR2 = camera.project(Vector3D(rx2 + bankHalfW, nextY, 0.005f), width, height)
 
             if (bL1 != null && bR1 != null && bL2 != null && bR2 != null) {
-                val bankQuad = Path().apply {
+                val bankQuad = tmpPath.apply {
+                    reset()
                     moveTo(bL1.screenPos.x, bL1.screenPos.y)
                     lineTo(bR1.screenPos.x, bR1.screenPos.y)
                     lineTo(bR2.screenPos.x, bR2.screenPos.y)
@@ -243,7 +284,8 @@ class Renderer3D {
             val wR2 = camera.project(Vector3D(rx2 + waterHalfW, nextY, 0.015f), width, height)
 
             if (wL1 != null && wR1 != null && wL2 != null && wR2 != null) {
-                val waterQuad = Path().apply {
+                val waterQuad = tmpPath.apply {
+                    reset()
                     moveTo(wL1.screenPos.x, wL1.screenPos.y)
                     lineTo(wR1.screenPos.x, wR1.screenPos.y)
                     lineTo(wR2.screenPos.x, wR2.screenPos.y)
@@ -275,7 +317,8 @@ class Renderer3D {
             val rR2 = camera.project(Vector3D(dx2 + roadHalfW, nextDY, 0.02f), width, height)
 
             if (rL1 != null && rR1 != null && rL2 != null && rR2 != null) {
-                val roadQuad = Path().apply {
+                val roadQuad = tmpPath.apply {
+                    reset()
                     moveTo(rL1.screenPos.x, rL1.screenPos.y)
                     lineTo(rR1.screenPos.x, rR1.screenPos.y)
                     lineTo(rR2.screenPos.x, rR2.screenPos.y)
@@ -294,7 +337,15 @@ class Renderer3D {
     }
 
     private fun drawStructures(scope: DrawScope, camera: Camera3D, structures: List<TerrainStructure>, width: Float, height: Float) {
+        val minVisY = camera.y - 24f
+        val maxVisY = camera.y + 180f
+        val minVisX = camera.x - 165f
+        val maxVisX = camera.x + 165f
+
         for (struct in structures) {
+            if (struct.type == StructureType.BARRACKS_FORT || struct.type == StructureType.HEADQUARTERS_FORT) continue
+            if (struct.pos.y < minVisY || struct.pos.y > maxVisY || struct.pos.x < minVisX || struct.pos.x > maxVisX) continue
+
             val baseProj = camera.project(struct.pos, width, height) ?: continue
             val topPos = Vector3D(struct.pos.x, struct.pos.y, struct.pos.z + struct.height)
             val topProj = camera.project(topPos, width, height) ?: continue
@@ -310,7 +361,8 @@ class Renderer3D {
 
             when (struct.type) {
                 StructureType.VOLCANIC_SPIRE -> {
-                    val peakPath = Path().apply {
+                    val peakPath = tmpPath.apply {
+                        reset()
                         moveTo(cx - sw, cy)
                         lineTo(tcx, tcy)
                         lineTo(cx + sw, cy)
@@ -329,7 +381,8 @@ class Renderer3D {
                     scope.drawCircle(Color(0xFFE59A4C), 4f, Offset(cx + sw, tcy - 8f))
                 }
                 StructureType.ALIEN_PYLON -> {
-                    val pylonPath = Path().apply {
+                    val pylonPath = tmpPath.apply {
+                        reset()
                         moveTo(tcx, tcy - 8f)
                         lineTo(cx + sw * 0.6f, cy - sh * 0.5f)
                         lineTo(cx, cy)
@@ -359,7 +412,8 @@ class Renderer3D {
                     scope.drawRect(Color(0xFF7D5636), Offset(cx - sw * 0.5f, cy - sh * 0.5f), Size(sw, 4f))
                 }
                 StructureType.MILITARY_HANGAR -> {
-                    val hangarPath = Path().apply {
+                    val hangarPath = tmpPath.apply {
+                        reset()
                         moveTo(cx - sw, cy)
                         lineTo(cx - sw, cy - sh * 0.6f)
                         quadraticTo(cx, tcy, cx + sw, cy - sh * 0.6f)
@@ -399,7 +453,8 @@ class Renderer3D {
                 }
                 StructureType.MOUNTAIN_HILL -> {
                     // Natural earthy brown-stone mountain ridge with crisp white snow peak
-                    val mtnPath = Path().apply {
+                    val mtnPath = tmpPath.apply {
+                        reset()
                         moveTo(cx - sw * 1.4f, cy)
                         lineTo(tcx, tcy)
                         lineTo(cx + sw * 1.4f, cy)
@@ -414,7 +469,13 @@ class Renderer3D {
     }
 
     private fun drawBarracks3D(scope: DrawScope, camera: Camera3D, barracksList: List<EnemyBarracks>, width: Float, height: Float) {
+        val minVisY = camera.y - 24f
+        val maxVisY = camera.y + 180f
+        val minVisX = camera.x - 165f
+        val maxVisX = camera.x + 165f
+
         for (barracks in barracksList) {
+            if (barracks.pos.y < minVisY || barracks.pos.y > maxVisY || barracks.pos.x < minVisX || barracks.pos.x > maxVisX) continue
             val baseProj = camera.project(barracks.pos, width, height) ?: continue
             val topPos = Vector3D(barracks.pos.x, barracks.pos.y, barracks.pos.z + 5.5f)
             val topProj = camera.project(topPos, width, height) ?: continue
@@ -452,7 +513,8 @@ class Renderer3D {
                         scope.drawRect(Color(0xFFB8A998), Offset(cx - bw, tcy), Size(bw * 2, bh))
                         scope.drawRect(Color(0xFF8B7B6B), Offset(cx - bw, tcy), Size(bw * 2, bh), style = Stroke(2.2f))
                         // Spiked natural cedar timber palisades
-                        val spikePath = Path().apply {
+                        val spikePath = tmpPath.apply {
+                            reset()
                             moveTo(cx - bw, tcy)
                             lineTo(cx - bw * 0.6f, tcy - 10f)
                             lineTo(cx - bw * 0.2f, tcy)
@@ -478,7 +540,8 @@ class Renderer3D {
                     }
                     EmpireType.DRAGON -> {
                         // Warm Weathered Basalt & Terracotta Bastion
-                        val spirePath = Path().apply {
+                        val spirePath = tmpPath.apply {
+                            reset()
                             moveTo(cx - bw * 1.1f, cy)
                             lineTo(cx - bw * 0.5f, tcy - 8f)
                             lineTo(cx, tcy + 4f)
@@ -546,7 +609,8 @@ class Renderer3D {
         } else {
             when (hq.empire) {
                 EmpireType.ORC -> {
-                    val orcHqPath = Path().apply {
+                    val orcHqPath = tmpPath.apply {
+                        reset()
                         moveTo(cx - bw * 1.4f, cy)
                         lineTo(cx - bw * 0.9f, tcy - 16f)
                         lineTo(cx - bw * 0.4f, tcy - 6f)
@@ -563,7 +627,8 @@ class Renderer3D {
                     scope.drawCircle(Color(0xFF4A3B31), 4f * (s / 20f), Offset(cx + 5f, tcy + bh * 0.2f))
                 }
                 EmpireType.DRAGON -> {
-                    val dragonHqPath = Path().apply {
+                    val dragonHqPath = tmpPath.apply {
+                        reset()
                         moveTo(cx - bw * 1.3f, cy)
                         lineTo(cx - bw * 0.7f, tcy - 20f)
                         lineTo(cx, tcy - 30f)
@@ -583,7 +648,8 @@ class Renderer3D {
                     scope.drawCircle(Color.White, 7f * (s / 20f), Offset(cx, cy - bh * 0.3f))
                 }
                 EmpireType.HUMAN -> {
-                    val hqPath = Path().apply {
+                    val hqPath = tmpPath.apply {
+                        reset()
                         moveTo(cx - bw * 1.3f, cy)
                         lineTo(cx - bw * 0.8f, tcy)
                         lineTo(cx + bw * 0.8f, tcy)
@@ -612,7 +678,13 @@ class Renderer3D {
     }
 
     private fun drawHazards(scope: DrawScope, camera: Camera3D, hazards: List<EnvironmentHazard>, width: Float, height: Float) {
+        val minVisY = camera.y - 20f
+        val maxVisY = camera.y + 165f
+        val minVisX = camera.x - 135f
+        val maxVisX = camera.x + 135f
+
         for (hazard in hazards) {
+            if (hazard.pos.y < minVisY || hazard.pos.y > maxVisY || hazard.pos.x < minVisX || hazard.pos.x > maxVisX) continue
             val baseProj = camera.project(hazard.pos, width, height) ?: continue
             val s = baseProj.scale
             val cx = baseProj.screenPos.x
@@ -714,7 +786,8 @@ class Renderer3D {
         val tailBody = trans(0f, -1.8f, 0.3f)
 
         // Tail boom structure
-        val tailBoomPath = Path().apply {
+        val tailBoomPath = tmpPath.apply {
+            reset()
             moveTo(tailBody.x - 5f * (s / 20f), tailBody.y)
             lineTo(tailEnd.x, tailEnd.y)
             lineTo(tailBody.x + 5f * (s / 20f), tailBody.y)
@@ -724,7 +797,8 @@ class Renderer3D {
         scope.drawPath(tailBoomPath, panelSeam, style = Stroke(width = 1.5f))
 
         // Swept Vertical Tail Fin
-        val finPath = Path().apply {
+        val finPath = tmpPath.apply {
+            reset()
             moveTo(tailFinBase.x, tailFinBase.y)
             lineTo(tailFinTop.x, tailFinTop.y)
             lineTo(tailEnd.x, tailEnd.y)
@@ -794,7 +868,8 @@ class Renderer3D {
         val bodyRearR = trans(1.8f, -1.8f, 0.3f)
         val bodyTail = trans(0f, -2.6f, 0.3f)
 
-        val fusePath = Path().apply {
+        val fusePath = tmpPath.apply {
+            reset()
             moveTo(nosePt.x, nosePt.y)
             lineTo(noseSideR.x, noseSideR.y)
             lineTo(sponsonR.x, sponsonR.y)
@@ -825,7 +900,8 @@ class Renderer3D {
         val canopyPilotR = trans(0.95f, 1.0f, 0.9f)
         val canopyAft = trans(0f, 0.2f, 0.8f)
 
-        val canopyPath = Path().apply {
+        val canopyPath = tmpPath.apply {
+            reset()
             moveTo(canopyNose.x, canopyNose.y)
             lineTo(canopyGunnerR.x, canopyGunnerR.y)
             lineTo(canopyPilotR.x, canopyPilotR.y)
@@ -911,7 +987,8 @@ class Renderer3D {
                 val h = 64f * (s / 20f)
 
                 // Fuselage
-                val fusePath = Path().apply {
+                val fusePath = tmpPath.apply {
+                    reset()
                     moveTo(cx, cy + h * 0.45f) // Nose facing player/downwards
                     lineTo(cx + w * 0.45f, cy + h * 0.15f)
                     lineTo(cx + w * 0.35f, cy - h * 0.35f)
@@ -965,7 +1042,8 @@ class Renderer3D {
                 val wingR = Offset(cx + span, cy - len * 0.15f)
                 val tail = Offset(cx, cy - len * 0.45f)
 
-                val jetPath = Path().apply {
+                val jetPath = tmpPath.apply {
+                    reset()
                     moveTo(nose.x, nose.y)
                     lineTo(wingR.x, wingR.y)
                     lineTo(cx + span * 0.35f, cy - len * 0.3f)
@@ -1021,7 +1099,7 @@ class Renderer3D {
                 val perpX = cos(tAngle)
                 val perpY = sin(tAngle)
                 val bLen = 28f * (s / 20f)
-                for (offsetPx in listOf(-6f, -2f, 2f, 6f)) {
+                for (offsetPx in aaBarrelOffsets) {
                     val bx = cx + perpX * offsetPx
                     val by = cy + perpY * offsetPx
                     val ex = bx + dirX * bLen
@@ -1034,7 +1112,8 @@ class Renderer3D {
                 // Mobile SAM Launcher Truck
                 val w = 42f * (s / 20f)
                 val h = 64f * (s / 20f)
-                for (wy in listOf(-h * 0.35f, 0f, h * 0.35f)) {
+                for (factor in samWheelFactors) {
+                    val wy = h * factor
                     scope.drawRect(Color(0xFF2B2825), Offset(cx - w / 2 - 4f, cy + wy - 5f), Size(5f, 10f))
                     scope.drawRect(Color(0xFF2B2825), Offset(cx + w / 2 - 1f, cy + wy - 5f), Size(5f, 10f))
                 }
@@ -1133,7 +1212,8 @@ class Renderer3D {
                 val wingR = Offset(cx + wingSpan, cy + flap)
 
                 // Wing membranes
-                val body = Path().apply {
+                val body = tmpPath.apply {
+                    reset()
                     moveTo(head.x, head.y)
                     lineTo(wingR.x, wingR.y)
                     lineTo(tail.x, tail.y)
@@ -1163,7 +1243,8 @@ class Renderer3D {
 
                 // Fire Breath Cone Stream Visual
                 if (boss.currentAttackMode == BossAttackMode.FIRE_BREATH) {
-                    val breathPath = Path().apply {
+                    val breathPath = tmpPath.apply {
+                        reset()
                         moveTo(head.x, head.y)
                         lineTo(cx - 50f, cy + 180f)
                         lineTo(cx + 50f, cy + 180f)
@@ -1230,7 +1311,8 @@ class Renderer3D {
                 scope.drawRoundRect(Color(0xFFC2410C), Offset(cx - w / 2, cy - h / 2), Size(w, h), androidx.compose.ui.geometry.CornerRadius(12f), style = Stroke(3.5f))
 
                 // Front Spiked Ram
-                val ram = Path().apply {
+                val ram = tmpPath.apply {
+                    reset()
                     moveTo(cx - w * 0.35f, cy + h * 0.5f)
                     lineTo(cx, cy + h * 0.72f)
                     lineTo(cx + w * 0.35f, cy + h * 0.5f)

@@ -85,6 +85,7 @@ fun CommandScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0C121A))
             )
         },
+        bottomBar = { com.example.game.ads.AdMobBannerBar() },
         containerColor = GunmetalBlack,
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->

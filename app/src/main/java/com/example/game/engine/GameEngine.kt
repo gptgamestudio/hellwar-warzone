@@ -113,11 +113,45 @@ class GameEngine(
     // Wave and spawner timers
     private var enemySpawnTimer: Float = 1.0f
     private var gameTime: Float = 0f
+    private var hudSyncTimer: Float = 0f
+    private var bossFireBreathCooldown: Float = 0f
     var bossSpawned: Boolean = false
     private var waveNumber: Int = 1
 
     private val _hudState = MutableStateFlow(GameHudState())
     val hudState: StateFlow<GameHudState> = _hudState.asStateFlow()
+
+    companion object {
+        const val MAX_BULLETS = 96
+        const val MAX_ROCKETS = 24
+        const val MAX_MISSILES = 20
+        const val MAX_PARTICLES = 180
+        const val MAX_ACTIVE_ENEMIES = 18
+        const val MAX_HAZARDS = 16
+        const val MAX_STRUCTURES = 140
+        private const val HUD_SYNC_INTERVAL = 0.04f
+    }
+
+    private fun addBullet(bullet: TracerBullet) {
+        if (bullets.size >= MAX_BULLETS) {
+            bullets.removeAt(0)
+        }
+        bullets.add(bullet)
+    }
+
+    private fun addRocket(rocket: RocketCluster) {
+        if (rockets.size >= MAX_ROCKETS) {
+            rockets.removeAt(0)
+        }
+        rockets.add(rocket)
+    }
+
+    private fun addMissile(missile: GuidedMissile) {
+        if (missiles.size >= MAX_MISSILES) {
+            missiles.removeAt(0)
+        }
+        missiles.add(missile)
+    }
 
     init {
         player.applyConfiguration(initialHeloClass, initialSkin, initialUpgrades)
@@ -164,6 +198,8 @@ class GameEngine(
         creditsEarned = 0
         missionProgress = 0f
         gameTime = 0f
+        hudSyncTimer = 0f
+        bossFireBreathCooldown = 0f
         waveNumber = 1
         bossSpawned = false
         isGameOver = false
@@ -186,8 +222,12 @@ class GameEngine(
 
     fun update(delta: Float) {
         if (isGameOver) return
+        val safeDelta = if (delta.isFinite()) delta.coerceIn(0.0001f, 0.16f) else 0.016f
+        updateStep(safeDelta)
+    }
 
-        gameTime += delta
+    private fun updateStep(safeDelta: Float) {
+        gameTime += safeDelta
         missionProgress = (gameTime / 100.0f).coerceIn(0f, 1f)
 
         // Boss trigger at 40% mission progress
@@ -196,48 +236,52 @@ class GameEngine(
         }
 
         // 1. Update 4-Directional Player Movement
-        updatePlayerMovement(delta)
+        updatePlayerMovement(safeDelta)
 
         // 2. Camera tracking with velocity look-ahead
-        camera.updateFollow(player.pos.x, player.pos.y, delta, player.velocity.x, player.velocity.y)
+        camera.updateFollow(player.pos.x, player.pos.y, safeDelta, player.velocity.x, player.velocity.y)
 
         // 3. Rotor spin animations
-        player.mainRotorAngle = (player.mainRotorAngle + 38.0f * delta) % (kotlin.math.PI.toFloat() * 2f)
-        player.tailRotorAngle = (player.tailRotorAngle + 48.0f * delta) % (kotlin.math.PI.toFloat() * 2f)
+        player.mainRotorAngle = (player.mainRotorAngle + 38.0f * safeDelta) % (kotlin.math.PI.toFloat() * 2f)
+        player.tailRotorAngle = (player.tailRotorAngle + 48.0f * safeDelta) % (kotlin.math.PI.toFloat() * 2f)
 
         // 4. Weapons processing (Machine guns, Rockets, Missiles)
-        updateWeapons(delta)
+        updateWeapons(safeDelta)
 
         // 5. Update Target-Lock system
-        updateTargetLock(delta)
+        updateTargetLock(safeDelta)
 
         // 6. Progressive Endless Environment & Hazards
-        updateEnvironment(delta)
+        updateEnvironment(safeDelta)
 
         // 7. Enemy AI & Spawner
-        updateEnemies(delta)
+        updateEnemies(safeDelta)
 
         // 8. Boss AI
-        updateBoss(delta)
+        updateBoss(safeDelta)
 
         // 9. Projectile Physics
-        updateProjectiles(delta)
+        updateProjectiles(safeDelta)
 
         // 10. Collision Detection
         checkCollisions()
 
-        // 10. Particle lifecycles
-        updateParticles(delta)
+        // 11. Particle lifecycles
+        updateParticles(safeDelta)
 
-        // 11. Threat alerts
+        // 12. Threat alerts
         threatAlert?.let {
-            it.timer -= delta
+            it.timer -= safeDelta
             if (it.timer <= 0f) {
                 threatAlert = null
             }
         }
 
-        updateHud()
+        hudSyncTimer += safeDelta
+        if (hudSyncTimer >= HUD_SYNC_INTERVAL || isGameOver || isVictory) {
+            hudSyncTimer = 0f
+            updateHud()
+        }
     }
 
     /**
@@ -325,8 +369,8 @@ class GameEngine(
                 val bulletSpeed = 75.0f
 
                 val dmg = player.mgDamage
-                bullets.add(TracerBullet(leftMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
-                bullets.add(TracerBullet(rightMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
+                addBullet(TracerBullet(leftMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
+                addBullet(TracerBullet(rightMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
                 audioSystem?.playMachineGun()
             } else {
                 player.activeMuzzleFlash = false
@@ -364,12 +408,30 @@ class GameEngine(
      * Target-Lock Guided Missile Acquisition System
      */
     private fun updateTargetLock(delta: Float) {
-        // Find best target in forward cone (boss or closest high-priority enemy) within radar range
-        val maxDist = player.radarRange
-        val candidate = activeBoss ?: enemies.filter { it.pos.y > player.pos.y && (it.pos - player.pos).length() <= maxDist }.minByOrNull { (it.pos - player.pos).length() }
+        // Find best target in forward cone (boss or closest high-priority enemy) within radar range without allocating temporary lists
+        val boss = activeBoss
+        val candidateId: String? = if (boss != null) {
+            boss.id
+        } else {
+            val maxDistSq = player.radarRange * player.radarRange
+            var bestId: String? = null
+            var bestDistSq = Float.MAX_VALUE
+            for (enemy in enemies) {
+                if (enemy.pos.y > player.pos.y) {
+                    val dx = enemy.pos.x - player.pos.x
+                    val dy = enemy.pos.y - player.pos.y
+                    val dz = enemy.pos.z - player.pos.z
+                    val dSq = dx * dx + dy * dy + dz * dz
+                    if (dSq <= maxDistSq && dSq < bestDistSq) {
+                        bestDistSq = dSq
+                        bestId = enemy.id
+                    }
+                }
+            }
+            bestId
+        }
 
-        if (candidate != null) {
-            val candidateId = if (candidate is BossCombatEntity) candidate.id else (candidate as EnemyTarget).id
+        if (candidateId != null) {
             if (player.lockedTargetId == candidateId) {
                 val lockSpeed = 2.0f + (player.upgrades.radarLevel * 0.5f)
                 player.lockProgress = (player.lockProgress + delta * lockSpeed).coerceAtMost(1.0f)
@@ -407,9 +469,10 @@ class GameEngine(
                 damage = player.rocketDamage,
                 splashRadius = 4.5f
             )
-            rockets.add(rocket)
+            addRocket(rocket)
             createExplosion(podOffset, Color(0xFFFF9100), count = 4, speed = 3f)
         }
+        updateHud()
     }
 
     /**
@@ -429,11 +492,12 @@ class GameEngine(
         val rightPod = Vector3D(player.pos.x + 1.8f, player.pos.y + 1.0f, player.pos.z - 0.3f)
 
         val dmg = player.missileDamage
-        missiles.add(GuidedMissile(UUID.randomUUID().toString(), leftPod, Vector3D(-2.5f, 22.0f, 0f), targetId, damage = dmg))
-        missiles.add(GuidedMissile(UUID.randomUUID().toString(), rightPod, Vector3D(2.5f, 22.0f, 0f), targetId, damage = dmg))
+        addMissile(GuidedMissile(UUID.randomUUID().toString(), leftPod, Vector3D(-2.5f, 22.0f, 0f), targetId, damage = dmg))
+        addMissile(GuidedMissile(UUID.randomUUID().toString(), rightPod, Vector3D(2.5f, 22.0f, 0f), targetId, damage = dmg))
 
         createExplosion(leftPod, Color(0xFFFF6D00), count = 8, speed = 5f)
         createExplosion(rightPod, Color(0xFFFF6D00), count = 8, speed = 5f)
+        updateHud()
     }
 
     /**
@@ -473,10 +537,10 @@ class GameEngine(
                     if (enemy.attackTimer >= 1.4f && distToPlayer < 45f && enemy.pos.y > player.pos.y - 6f) {
                         enemy.attackTimer = 0f
                         val aim = (player.pos - enemy.pos).normalized()
-                        bullets.add(TracerBullet(enemy.pos.copy(z = enemy.pos.z - 0.2f), aim * 28.0f, damage = 12f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = enemy.pos.z - 0.2f), aim * 28.0f, damage = 12f, isPlayer = false))
                         if (Math.random() < 0.4) {
-                            bullets.add(TracerBullet(Vector3D(enemy.pos.x - 0.8f, enemy.pos.y, enemy.pos.z), aim * 24.0f, damage = 18f, isPlayer = false))
-                            bullets.add(TracerBullet(Vector3D(enemy.pos.x + 0.8f, enemy.pos.y, enemy.pos.z), aim * 24.0f, damage = 18f, isPlayer = false))
+                            addBullet(TracerBullet(Vector3D(enemy.pos.x - 0.8f, enemy.pos.y, enemy.pos.z), aim * 24.0f, damage = 18f, isPlayer = false))
+                            addBullet(TracerBullet(Vector3D(enemy.pos.x + 0.8f, enemy.pos.y, enemy.pos.z), aim * 24.0f, damage = 18f, isPlayer = false))
                         }
                     }
                 }
@@ -490,7 +554,7 @@ class GameEngine(
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 0.25f && distToPlayer < 50f && enemy.pos.y > player.pos.y) {
                         enemy.attackTimer = 0f
-                        bullets.add(TracerBullet(enemy.pos.copy(), Vector3D(0f, -40.0f, 0f), damage = 15f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(), Vector3D(0f, -40.0f, 0f), damage = 15f, isPlayer = false))
                     }
                 }
 
@@ -505,7 +569,7 @@ class GameEngine(
                     if (enemy.attackTimer >= 2.2f && distToPlayer < 45f && enemy.pos.y > player.pos.y - 8f) {
                         enemy.attackTimer = 0f
                         val aim = (player.pos - enemy.pos).normalized()
-                        bullets.add(TracerBullet(enemy.pos.copy(z = 0.8f), aim * 32.0f, damage = 25f, isPlayer = false, isTankShell = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aim * 32.0f, damage = 25f, isPlayer = false, isTankShell = true))
                         createExplosion(enemy.pos.copy(z = 0.8f), Color(0xFFFF9100), count = 6, speed = 4f)
                     }
                 }
@@ -517,7 +581,7 @@ class GameEngine(
                     if (enemy.attackTimer >= 2.0f && distToPlayer < 46f && enemy.pos.y > player.pos.y - 6f) {
                         enemy.attackTimer = 0f
                         val aim = (player.pos - enemy.pos).normalized()
-                        bullets.add(TracerBullet(enemy.pos.copy(z = 1.0f), aim * 30.0f, damage = 22f, isPlayer = false, isFlakBurst = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 1.0f), aim * 30.0f, damage = 22f, isPlayer = false, isFlakBurst = true))
                     }
                 }
 
@@ -539,7 +603,7 @@ class GameEngine(
                             damage = 38f,
                             isEnemy = true
                         )
-                        missiles.add(missile)
+                        addMissile(missile)
                         createExplosion(enemy.pos.copy(z = 1.2f), Color(0xFFFF3D00), count = 10, speed = 5f)
                     }
                 }
@@ -554,7 +618,7 @@ class GameEngine(
                     if (enemy.attackTimer >= 1.6f && distToPlayer < 40f && enemy.pos.y > player.pos.y - 10f) {
                         enemy.attackTimer = 0f
                         val aim = (player.pos - enemy.pos).normalized()
-                        bullets.add(TracerBullet(enemy.pos.copy(z = 0.5f), aim * 24.0f, damage = 8f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.5f), aim * 24.0f, damage = 8f, isPlayer = false))
                     }
                 }
 
@@ -568,7 +632,7 @@ class GameEngine(
                     if (enemy.attackTimer >= 2.8f && distToPlayer < 42f && enemy.pos.y > player.pos.y - 12f) {
                         enemy.attackTimer = 0f
                         val aim = (player.pos - enemy.pos).normalized()
-                        bullets.add(TracerBullet(enemy.pos.copy(z = 0.8f), aim * 20.0f, damage = 25f, isPlayer = false, isFlakBurst = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aim * 20.0f, damage = 25f, isPlayer = false, isFlakBurst = true))
                     }
                 }
 
@@ -579,7 +643,7 @@ class GameEngine(
                     if (enemy.attackTimer >= 2.2f && distToPlayer < 46f && enemy.pos.y > player.pos.y - 8f) {
                         enemy.attackTimer = 0f
                         val aim = (player.pos - enemy.pos).normalized()
-                        bullets.add(TracerBullet(enemy.pos.copy(z = 4.0f), aim * 32.0f, damage = 18f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 4.0f), aim * 32.0f, damage = 18f, isPlayer = false))
                     }
                 }
             }
@@ -602,6 +666,7 @@ class GameEngine(
     }
 
     private fun spawnEnemy(category: EnemyCategory, x: Float, y: Float) {
+        if (enemies.size >= MAX_ACTIVE_ENEMIES) return
         val hpMultiplier = 1.0f + (missionProgress * 0.5f)
         val isGround = category != EnemyCategory.ATTACK_HELICOPTER && category != EnemyCategory.FIGHTER_AIRCRAFT
         val z = if (isGround) 0.1f else 9.5f
@@ -753,11 +818,16 @@ class GameEngine(
             }
             BossAttackMode.FIRE_BREATH -> {
                 boss.modeTimer += delta
-                val aim = (player.pos - (boss.pos + boss.chargeOffset)).normalized()
-                bullets.add(TracerBullet(boss.pos.copy(y = boss.pos.y - 1.5f), aim * 34f, damage = 14f, isPlayer = false, isFlakBurst = true))
-                createExplosion(boss.pos.copy(y = boss.pos.y - 1.5f), Color(0xFFFF5722), count = 3, speed = 6f)
+                bossFireBreathCooldown -= delta
+                if (bossFireBreathCooldown <= 0f) {
+                    bossFireBreathCooldown = 0.12f
+                    val aim = (player.pos - (boss.pos + boss.chargeOffset)).normalized()
+                    addBullet(TracerBullet(boss.pos.copy(y = boss.pos.y - 1.5f), aim * 34f, damage = 14f, isPlayer = false, isFlakBurst = true))
+                    createExplosion(boss.pos.copy(y = boss.pos.y - 1.5f), Color(0xFFFF5722), count = 3, speed = 6f)
+                }
                 if (boss.modeTimer >= 1.5f) {
                     boss.currentAttackMode = BossAttackMode.CRUISING
+                    bossFireBreathCooldown = 0f
                 }
             }
             else -> {}
@@ -779,12 +849,12 @@ class GameEngine(
                                 boss.currentAttackMode = BossAttackMode.FIREBALL_SALVO
                                 for (offset in listOf(-2.8f, 0f, 2.8f)) {
                                     val fireDir = Vector3D(aim.x + (offset * 0.08f), aim.y, aim.z).normalized()
-                                    bullets.add(TracerBullet(boss.pos.copy(z = 10f), fireDir * 28.0f, damage = 18f, isPlayer = false))
+                                    addBullet(TracerBullet(boss.pos.copy(z = 10f), fireDir * 28.0f, damage = 18f, isPlayer = false))
                                 }
                             } else {
                                 boss.currentAttackMode = BossAttackMode.WING_SHOCKWAVE
-                                bullets.add(TracerBullet(boss.pos.copy(), Vector3D(-24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
-                                bullets.add(TracerBullet(boss.pos.copy(), Vector3D(24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
+                                addBullet(TracerBullet(boss.pos.copy(), Vector3D(-24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
+                                addBullet(TracerBullet(boss.pos.copy(), Vector3D(24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
                                 camera.screenShake = 2.0f
                             }
                         }
@@ -793,6 +863,7 @@ class GameEngine(
                                 roll < 0.35 -> {
                                     boss.currentAttackMode = BossAttackMode.FIRE_BREATH
                                     boss.modeTimer = 0f
+                                    bossFireBreathCooldown = 0f
                                     audioSystem?.playDragonRoar()
                                 }
                                 roll < 0.70 -> {
@@ -805,7 +876,7 @@ class GameEngine(
                                     boss.currentAttackMode = BossAttackMode.FIREBALL_SALVO
                                     for (i in -2..2) {
                                         val fireDir = Vector3D(aim.x + (i * 0.12f), aim.y, aim.z).normalized()
-                                        bullets.add(TracerBullet(boss.pos.copy(z = 10f), fireDir * 32.0f, damage = 20f, isPlayer = false))
+                                        addBullet(TracerBullet(boss.pos.copy(z = 10f), fireDir * 32.0f, damage = 20f, isPlayer = false))
                                     }
                                 }
                             }
@@ -820,11 +891,12 @@ class GameEngine(
                             } else {
                                 boss.currentAttackMode = BossAttackMode.FIRE_BREATH
                                 boss.modeTimer = 0f
+                                bossFireBreathCooldown = 0f
                                 audioSystem?.playDragonRoar()
                             }
                             for (i in -3..3) {
                                 val fireDir = Vector3D(aim.x + (i * 0.15f), aim.y, aim.z).normalized()
-                                bullets.add(TracerBullet(boss.pos.copy(z = 10f), fireDir * 36.0f, damage = 24f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(z = 10f), fireDir * 36.0f, damage = 24f, isPlayer = false))
                             }
                         }
                     }
@@ -839,10 +911,10 @@ class GameEngine(
                             boss.currentAttackMode = BossAttackMode.PLASMA_CANNONS
                             audioSystem?.playPlasmaCharge()
                             if (leftAlive) {
-                                bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x - 4.2f), aim * 26f, damage = 18f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 4.2f), aim * 26f, damage = 18f, isPlayer = false))
                             }
                             if (rightAlive) {
-                                bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x + 4.2f), aim * 26f, damage = 18f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 4.2f), aim * 26f, damage = 18f, isPlayer = false))
                             }
                         }
                         boss.phase == 2 -> {
@@ -855,8 +927,8 @@ class GameEngine(
                                 boss.currentAttackMode = BossAttackMode.HOMING_PLASMA
                                 val m1 = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3f), Vector3D(-2f, -16f, 0f), "PLAYER", 32f, isEnemy = true)
                                 val m2 = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3f), Vector3D(2f, -16f, 0f), "PLAYER", 32f, isEnemy = true)
-                                missiles.add(m1)
-                                missiles.add(m2)
+                                addMissile(m1)
+                                addMissile(m2)
                             }
                         }
                         else -> {
@@ -864,11 +936,11 @@ class GameEngine(
                             boss.currentAttackMode = BossAttackMode.ANTIMATTER_SWEEP
                             audioSystem?.playPlasmaCharge()
                             for (i in -4..4) {
-                                bullets.add(TracerBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.09f, -34f, 0f), damage = 22f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.09f, -34f, 0f), damage = 22f, isPlayer = false))
                             }
                             if (leftAlive || rightAlive) {
                                 val m = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(), Vector3D(0f, -18f, 0f), "PLAYER", 35f, isEnemy = true)
-                                missiles.add(m)
+                                addMissile(m)
                             }
                         }
                     }
@@ -879,14 +951,14 @@ class GameEngine(
                         boss.phase == 1 -> {
                             boss.currentAttackMode = BossAttackMode.SIEGE_CANNONS
                             audioSystem?.playHeavyCannon()
-                            bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x - 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
-                            bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x + 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
+                            addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
+                            addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
                         }
                         boss.phase == 2 -> {
                             if (roll < 0.5) {
                                 boss.currentAttackMode = BossAttackMode.FLAK_MINEFIELD
                                 for (i in -2..2) {
-                                    bullets.add(TracerBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.15f, aim.y * 0.8f, 0f) * 22f, damage = 20f, isPlayer = false, isFlakBurst = true))
+                                    addBullet(TracerBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.15f, aim.y * 0.8f, 0f) * 22f, damage = 20f, isPlayer = false, isFlakBurst = true))
                                 }
                             } else {
                                 boss.currentAttackMode = BossAttackMode.SUMMON_REINFORCEMENTS
@@ -905,7 +977,7 @@ class GameEngine(
                                 boss.currentAttackMode = BossAttackMode.SIEGE_CANNONS
                                 audioSystem?.playHeavyCannon()
                                 for (i in -2..2) {
-                                    bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x + i * 1.5f), aim * 28f, damage = 30f, isPlayer = false, isTankShell = true))
+                                    addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + i * 1.5f), aim * 28f, damage = 30f, isPlayer = false, isTankShell = true))
                                 }
                             }
                         }
@@ -921,18 +993,18 @@ class GameEngine(
                         boss.phase == 1 -> {
                             boss.currentAttackMode = BossAttackMode.GATLING_BARRAGE
                             if (gatlingAlive) {
-                                bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
-                                bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
                             }
                         }
                         boss.phase == 2 -> {
                             if (roll < 0.5) {
                                 boss.currentAttackMode = BossAttackMode.MISSILE_SALVO
                                 if (leftMissileAlive) {
-                                    missiles.add(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
+                                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
                                 }
                                 if (rightMissileAlive) {
-                                    missiles.add(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
+                                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
                                 }
                             } else {
                                 boss.currentAttackMode = BossAttackMode.JET_AIRSTRIKE_SUPPORT
@@ -945,14 +1017,14 @@ class GameEngine(
                             // Phase 3: Titan Overdrive
                             boss.currentAttackMode = BossAttackMode.TITAN_OVERDRIVE
                             if (gatlingAlive) {
-                                bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
-                                bullets.add(TracerBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
+                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
                             }
                             if (leftMissileAlive) {
-                                missiles.add(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
+                                addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
                             }
                             if (rightMissileAlive) {
-                                missiles.add(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
+                                addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
                             }
                         }
                     }
@@ -1040,6 +1112,9 @@ class GameEngine(
     }
 
     private fun updateProjectiles(delta: Float) {
+        val minProjY = camera.y - 30f
+        val maxProjY = player.pos.y + 85f
+
         // Bullets
         val bIt = bullets.iterator()
         while (bIt.hasNext()) {
@@ -1048,8 +1123,9 @@ class GameEngine(
             b.pos.y += b.velocity.y * delta
             b.pos.z += b.velocity.z * delta
             b.life -= delta
-            if (b.life <= 0f) {
-                if (b.isFlakBurst) {
+            val outOfCorridor = b.pos.y < minProjY || b.pos.y > maxProjY || kotlin.math.abs(b.pos.x - player.pos.x) > 85f
+            if (b.life <= 0f || outOfCorridor) {
+                if (b.life <= 0f && b.isFlakBurst) {
                     createExplosion(b.pos, Color(0xFFFF9100), count = 10, speed = 6f)
                 }
                 bIt.remove()
@@ -1069,8 +1145,10 @@ class GameEngine(
             r.pos.y += r.velocity.y * delta
             r.pos.z += r.velocity.z * delta
 
-            if (r.life <= 0f) {
-                createExplosion(r.pos, Color(0xFFFF6D00), count = 12, speed = 8f)
+            if (r.life <= 0f || r.pos.y > maxProjY) {
+                if (r.life <= 0f) {
+                    createExplosion(r.pos, Color(0xFFFF6D00), count = 12, speed = 8f)
+                }
                 rIt.remove()
             }
         }
@@ -1092,7 +1170,7 @@ class GameEngine(
             if (targetPos != null) {
                 val toTarget = (targetPos - m.pos).normalized()
                 val currentDir = m.velocity.normalized()
-                val turnRate = 6.0f * delta
+                val turnRate = (6.0f * delta).coerceAtMost(1.0f)
                 val newDir = Vector3D(
                     currentDir.x + (toTarget.x - currentDir.x) * turnRate,
                     currentDir.y + (toTarget.y - currentDir.y) * turnRate,
@@ -1109,8 +1187,10 @@ class GameEngine(
             m.pos.y += m.velocity.y * delta
             m.pos.z += m.velocity.z * delta
 
-            if (m.life <= 0f) {
-                createExplosion(m.pos, Color(0xFFFF3D00), count = 16, speed = 9f)
+            if (m.life <= 0f || m.pos.y < minProjY - 15f || m.pos.y > maxProjY + 25f) {
+                if (m.life <= 0f) {
+                    createExplosion(m.pos, Color(0xFFFF3D00), count = 16, speed = 9f)
+                }
                 mIt.remove()
             }
         }
@@ -1409,7 +1489,16 @@ class GameEngine(
     }
 
     fun createExplosion(center: Vector3D, color: Color, count: Int, speed: Float) {
-        for (i in 0 until count) {
+        val availableHeadroom = (MAX_PARTICLES - particles.size).coerceAtLeast(0)
+        val spawnCount = if (particles.size >= MAX_PARTICLES) {
+            minOf(count, 4)
+        } else {
+            minOf(count, maxOf(4, availableHeadroom))
+        }
+        for (i in 0 until spawnCount) {
+            if (particles.size >= MAX_PARTICLES) {
+                particles.removeAt(0)
+            }
             val theta = Math.random().toFloat() * kotlin.math.PI.toFloat() * 2f
             val phi = (Math.random().toFloat() - 0.5f) * kotlin.math.PI.toFloat()
             val spd = (Math.random().toFloat() * 0.8f + 0.2f) * speed
@@ -1532,13 +1621,9 @@ class GameEngine(
                 )
             )
 
-            // Spawn localized active barracks defenders only if barracks is still standing
-            if (!isAlreadyDestroyed) {
-                spawnEnemy(empireDefenders[0], posX - 3.5f, posY + 1.5f)
-                spawnEnemy(empireDefenders[1], posX + 3.5f, posY + 1.5f)
-                if (i % 2 == 0) {
-                    spawnEnemy(empireDefenders[2], posX, posY + 4.0f)
-                }
+            // Spawn localized defenders initially only for frontline barracks (Y <= 95); deeper sectors activate lazily as player flies north
+            if (!isAlreadyDestroyed && posY <= 95f) {
+                spawnBarracksDefenders(barracks)
             }
         }
 
@@ -1573,6 +1658,19 @@ class GameEngine(
         )
     }
 
+    private fun spawnBarracksDefenders(barracks: EnemyBarracks) {
+        if (barracks.isDestroyed || barracks.defendersSpawned) return
+        barracks.defendersSpawned = true
+        val defenders = barracks.defenderTypes
+        if (defenders.size >= 2) {
+            spawnEnemy(defenders[0], barracks.pos.x - 3.5f, barracks.pos.y + 1.5f)
+            spawnEnemy(defenders[1], barracks.pos.x + 3.5f, barracks.pos.y + 1.5f)
+        }
+        if (defenders.size >= 3 && barracks.index % 2 == 0) {
+            spawnEnemy(defenders[2], barracks.pos.x, barracks.pos.y + 4.0f)
+        }
+    }
+
     private fun generateInitialEnvironment() {
         initOpenWorldObjectives()
         furthestGeneratedY = -20f
@@ -1589,10 +1687,16 @@ class GameEngine(
             furthestGeneratedY += 30f
         }
 
-        // Discover nearby barracks on exploration radar
+        // Discover nearby barracks on exploration radar & activate defenders lazily near player
         for (b in allBarracks) {
             if (!b.isDiscovered && (b.pos - player.pos).length() < player.radarRange + 25f) {
                 b.isDiscovered = true
+            }
+            if (!b.isDestroyed && !b.defendersSpawned &&
+                b.pos.y >= player.pos.y - 20f && b.pos.y <= player.pos.y + 75f &&
+                enemies.size < MAX_ACTIVE_ENEMIES
+            ) {
+                spawnBarracksDefenders(b)
             }
         }
 
@@ -1629,10 +1733,19 @@ class GameEngine(
                 hIt.remove()
             }
         }
+        while (hazards.size > MAX_HAZARDS) {
+            hazards.removeAt(0)
+        }
 
         // Clean up distant decorative structures to maintain Android performance (keeping Barracks and HQ intact)
         structures.removeAll {
             it.type != StructureType.BARRACKS_FORT && it.type != StructureType.HEADQUARTERS_FORT && it.pos.y < camera.y - 80.0f
+        }
+        while (structures.size > MAX_STRUCTURES) {
+            val idx = structures.indexOfFirst {
+                it.type != StructureType.BARRACKS_FORT && it.type != StructureType.HEADQUARTERS_FORT
+            }
+            if (idx >= 0) structures.removeAt(idx) else break
         }
     }
 

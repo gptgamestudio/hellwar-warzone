@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Privacy Policy — Helicopter War (com.hellwar.game)</title>
-  <meta name="description" content="Official Privacy Policy for Helicopter War Android game covering Google Sign-In, Firebase Cloud Firestore saves, and Google AdMob advertising." />
+  <title>Privacy &amp; Security Policy — Helicopter War (com.hellwar.game)</title>
+  <meta name="description" content="Official Privacy and Zero-Trust Owner-Only Security Policy for Helicopter War Android game (com.hellwar.game)." />
   <link rel="canonical" href="https://gptgamestudio.github.io/hellwar-warzone/privacy.html" />
   <style>
     body {
@@ -22,27 +22,41 @@
     p, li { color: #354c3e; }
     ul { padding-left: 20px; }
     a { color: #146c38; font-weight: 600; }
+    .policy-box {
+      background: #ffffff;
+      border: 1px solid #d0dfd4;
+      border-left: 4px solid #146c38;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin: 16px 0;
+    }
   </style>
 </head>
 <body>
-  <h1>Privacy Policy — Helicopter War</h1>
+  <h1>Privacy &amp; Security Policy — Helicopter War</h1>
   <p><strong>Package Name:</strong> com.hellwar.game &nbsp;|&nbsp; <strong>Developer:</strong> GPT Game Studio &nbsp;|&nbsp; <strong>Effective Date:</strong> November 2026</p>
 
-  <h2>1. Information We Collect</h2>
+  <div class="policy-box">
+    <strong>Zero-Trust Owner-Only Access Policy:</strong> Players have <strong>no access</strong> to any other player's data, global user lists, Cloud Firestore security rules, backend administration, or project infrastructure. Administrative control belongs exclusively to the verified project owner account, and authenticated players can access only their own scoped game record (<code>users/{uid}</code>).
+  </div>
+
+  <h2>1. Strict Owner-Account-Only Access Rules</h2>
   <ul>
-    <li><strong>Google Sign-In / Firebase Authentication:</strong> When you sign in with Google, we store your Firebase User ID (UID) and pilot callsign to link and synchronize your game campaign progress across devices.</li>
-    <li><strong>Cloud Firestore Game Data:</strong> We store your War Credits, high score, destroyed enemy barracks records, and Empire Headquarters victories.</li>
-    <li><strong>Google AdMob SDK:</strong> The app uses Google Mobile Ads SDK to display Banner, Interstitial, and optional Rewarded Video ads. Google AdMob may process the Android Advertising ID and ad diagnostics under Google's Privacy Policy.</li>
+    <li><strong>Backend &amp; Security Rules Administration:</strong> Only the official project owner account has administrative permissions over Firebase configuration, Cloud Firestore Security Rules, AdMob settings, and GitHub deployment secrets. Players cannot view, modify, or bypass security rules.</li>
+    <li><strong>Per-Player Account Isolation (<code>request.auth.uid == userId</code>):</strong> An authenticated player may only read and write strictly within their own <code>users/{uid}</code> profile and campaign subcollections. Listing other accounts, reading another player's progress, or deleting server ledgers is permanently denied at the database rules layer.</li>
+    <li><strong>Zero Unauthenticated Database Access:</strong> Unauthenticated callers are denied all reads and writes by default (<code>allow read, write: if false</code>).</li>
   </ul>
 
-  <h2>2. How Data Is Used</h2>
-  <p>
-    Authentication and Cloud Firestore records are used strictly to verify pilot identity, prevent duplicate reward tampering, and synchronize progression across devices.
-  </p>
+  <h2>2. Information We Collect</h2>
+  <ul>
+    <li><strong>Google Sign-In / Firebase Authentication:</strong> When you sign in with Google, we store your Firebase User ID (UID) and pilot callsign strictly to bind your game progress to your own account.</li>
+    <li><strong>Cloud Firestore Game Data:</strong> Stores only your own War Credits, high score, destroyed enemy barracks records, and Empire Headquarters victories.</li>
+    <li><strong>Google AdMob SDK:</strong> Displays Banner, Interstitial, and optional Rewarded Video ads. Google AdMob may process the Android Advertising ID and ad diagnostics under Google's Privacy Policy.</li>
+  </ul>
 
   <h2>3. Data Security &amp; Deletion</h2>
   <p>
-    All network communication uses HTTPS/TLS encryption and zero-trust Cloud Firestore rules isolate records per authenticated UID. To request data deletion, email
+    All network communication uses HTTPS/TLS encryption and zero-trust Cloud Firestore rules isolate records per authenticated UID. To request deletion of your account data, contact the project owner at
     <a href="mailto:benpasiglandingin@gmail.com">benpasiglandingin@gmail.com</a>.
   </p>
 

@@ -674,6 +674,47 @@ class ExampleUnitTest {
             com.example.game.ads.AdMobManager.APP_ADS_TXT_RECORD
         )
     }
+
+    @Test
+    fun `verify long session combat prevents entity and projectile overload`() {
+        val engine = GameEngine(selectedEmpire = EmpireType.DRAGON)
+        engine.player.isAutoFiring = true
+        engine.spawnEmpireBoss()
+
+        // Simulate 3,600 frames (~60s at 60 FPS) of intense sustained combat
+        for (frame in 0 until 3600) {
+            engine.player.health = engine.player.maxHealth
+            engine.player.armor = engine.player.maxArmor
+            engine.player.shield = engine.player.maxShield
+            engine.isUpPressed = frame % 120 < 90
+            engine.isLeftPressed = frame % 180 in 0..45
+            engine.isRightPressed = frame % 180 in 46..90
+
+            if (frame % 90 == 0) {
+                engine.player.rocketAmmo = engine.player.maxRocketAmmo
+                engine.launchRocketBarrage()
+            }
+            if (frame % 120 == 0) {
+                engine.player.missileAmmo = engine.player.maxMissileAmmo
+                engine.launchMissiles()
+            }
+
+            engine.update(1f / 60f)
+
+            assertTrue("Bullets must stay bounded", engine.bullets.size <= GameEngine.MAX_BULLETS)
+            assertTrue("Rockets must stay bounded", engine.rockets.size <= GameEngine.MAX_ROCKETS)
+            assertTrue("Missiles must stay bounded", engine.missiles.size <= GameEngine.MAX_MISSILES)
+            assertTrue("Particles must stay bounded", engine.particles.size <= GameEngine.MAX_PARTICLES)
+            assertTrue("Active enemies must stay bounded", engine.enemies.size <= GameEngine.MAX_ACTIVE_ENEMIES)
+            assertTrue("Hazards must stay bounded", engine.hazards.size <= GameEngine.MAX_HAZARDS)
+            assertTrue("Structures must stay bounded", engine.structures.size <= GameEngine.MAX_STRUCTURES)
+        }
+
+        assertTrue("Player X must remain finite", engine.player.pos.x.isFinite())
+        assertTrue("Player Y must remain finite", engine.player.pos.y.isFinite())
+        assertTrue("Player Z must remain finite", engine.player.pos.z.isFinite())
+        assertTrue("Camera Y must remain finite", engine.camera.y.isFinite())
+    }
 }
 
 

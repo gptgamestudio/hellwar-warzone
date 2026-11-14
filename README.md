@@ -94,6 +94,13 @@ Battle across **4 distinct warzones**, each guarded by **50 unique fortified bar
 
 ---
 
+## Security Rules & Owner-Only Access Policy
+- **Project Owner Account Only (Backend & Admin):** Only the verified developer owner account (`gptgamestudio`) holds administrative access to Firebase backend (`hellwar-warzone`), Firestore Security Rules, signing keys, and GitHub Secrets. Players have **zero access** to backend configuration, database administration, or rules modification.
+- **Strict Player Data Isolation (`request.auth.uid == userId`):** Global database access defaults to deny (`allow read, write: if false`). Authenticated Google Sign-In players can only `get`/update their **own** `users/{uid}` document and append-only battle ledgers; `list` across users, cross-player reads/writes, unauthenticated access, and deletions are strictly blocked in `firestore.rules`.
+- **Full Policy:** See [`privacy.html`](privacy.html) / [Official Privacy & Security Policy](https://gptgamestudio.github.io/hellwar-warzone/privacy.html).
+
+---
+
 ## GitHub Actions Secrets & Google Search Console Setup
 
 ### 1. Optional CI Secrets (No Keys Exposed in Source)

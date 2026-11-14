@@ -23,9 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,7 +70,9 @@ fun ConnectionGateScreen(
     onRetry: () -> Unit,
     onEnterGame: () -> Unit,
     onSignOut: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSignInStarted: () -> Unit = {},
+    onAuthSuccess: () -> Unit = {}
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "radar_sweep")
     val pulse by infiniteTransition.animateFloat(
@@ -238,8 +240,15 @@ fun ConnectionGateScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 GoogleSignInButton(
-                                    onAuthSuccess = { authError = null },
-                                    onAuthError = { msg -> authError = msg }
+                                    onBeforeSignIn = onSignInStarted,
+                                    onAuthSuccess = {
+                                        authError = null
+                                        onAuthSuccess()
+                                    },
+                                    onAuthError = { msg -> authError = msg },
+                                    onAuthCancelled = {
+                                        authError = "Google Sign-In was dismissed. Tap SIGN IN WITH GOOGLE to enter."
+                                    }
                                 )
                                 if (!authError.isNullOrBlank()) {
                                     Spacer(modifier = Modifier.height(10.dp))
@@ -278,7 +287,7 @@ fun ConnectionGateScreen(
                                         .testTag("sign_out_gate_button")
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Logout,
+                                        imageVector = Icons.AutoMirrored.Filled.Logout,
                                         contentDescription = "Sign Out",
                                         tint = Color(0xFFCFD8DC),
                                         modifier = Modifier.size(18.dp)
@@ -346,6 +355,32 @@ fun ConnectionGateScreen(
                                     color = Color.White,
                                     fontFamily = FontFamily.Monospace
                                 )
+                            }
+                            if (currentUser != null) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = onSignOut,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("sign_out_offline_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Logout,
+                                        contentDescription = "Sign Out",
+                                        tint = Color(0xFFCFD8DC),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "SWITCH ACCOUNT / SIGN OUT",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFCFD8DC),
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
                             }
                         }
                     }

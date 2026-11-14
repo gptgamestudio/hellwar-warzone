@@ -17,7 +17,7 @@ data class Vector3D(
 
     fun normalized(): Vector3D {
         val len = length()
-        return if (len > 0.0001f) Vector3D(x / len, y / len, z / len) else Vector3D(0f, 0f, 0f)
+        return if (len.isFinite() && len > 0.0001f) Vector3D(x / len, y / len, z / len) else Vector3D(0f, 0f, 0f)
     }
 }
 
@@ -90,15 +90,17 @@ class Camera3D(
         val depth = relY * cosP - relZ * sinP
         val height = relY * sinP + relZ * cosP
 
-        if (depth <= 1.0f) return null // Behind camera plane
+        if (!depth.isFinite() || !height.isFinite() || depth <= 1.0f) return null // Behind camera plane
 
         // High FOV scale ensuring player helicopter spans 20-28% screen width
         val fov = 520.0f
         val scale = fov / depth
+        if (!scale.isFinite()) return null
 
         val projX = (screenWidth / 2f) + (relX * scale)
         // Position player helicopter prominently at 63% screen height (lower-middle area above center-bottom D-pad)
         val projY = (screenHeight * 0.63f) - (height * scale)
+        if (!projX.isFinite() || !projY.isFinite()) return null
 
         return ProjectedPoint(
             screenPos = Offset(projX, projY),
