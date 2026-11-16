@@ -144,7 +144,13 @@ jobs:
             echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
             echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            VERSION_NAME=$(grep -m1 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+            if [ -n "$VERSION_NAME" ]; then
+              echo "tag=v${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Publish GitHub Release APK
@@ -171,6 +177,6 @@ jobs:
           python3 .github/scripts/update-release-metadata.py "${{ steps.release_meta.outputs.tag }}" dist-apk/helicopter-war.apk
           git add README.md index.html hosting/index.html release-info.json hosting/release-info.json sitemap.xml hosting/sitemap.xml
           if ! git diff --cached --quiet; then
-            git commit -m "chore(release): update site and README for ${{ steps.release_meta.outputs.tag }}"
+            git commit -m "chore(release): update site and README for ${{ steps.release_meta.outputs.tag }} [skip ci]"
             git push origin main
           fi

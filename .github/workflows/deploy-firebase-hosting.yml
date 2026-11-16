@@ -8,6 +8,9 @@ on:
       - 'firebase.json'
       - '.firebaserc'
       - '.github/workflows/deploy-firebase-hosting.yml'
+  workflow_run:
+    workflows: [ "Build Android APK" ]
+    types: [ completed ]
   workflow_dispatch:
 
 jobs:
@@ -16,6 +19,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
       - name: Check Firebase Service Account secret
         id: check_secret

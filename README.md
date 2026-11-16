@@ -27,22 +27,22 @@
 | Field | Details |
 |---|---|
 | **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)](https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk)** |
-| **Latest Version** | `v1.0.1` (`versionCode 2`) |
-| **APK File** | `helicopter-war.apk` (`35.10 MB`) |
+| **Latest Version** | `v1.0.2` (`versionCode 3`) |
+| **APK File** | `helicopter-war.apk` (`35.21 MB`) |
 | **Official Website (GitHub Pages)** | [gptgamestudio.github.io/hellwar-warzone](https://gptgamestudio.github.io/hellwar-warzone/) |
 | **Official Website (Firebase)** | [hellwar-warzone.web.app](https://hellwar-warzone.web.app/) |
 | **All Releases** | [View GitHub Releases](https://github.com/gptgamestudio/hellwar-warzone/releases) |
 <!-- RELEASE_INFO_END -->
 
 ### How Direct APK Releases Auto-Update
-Whenever a version tag (`v*`, e.g., `v1.0.2`) or manual release dispatch runs in GitHub Actions:
-1. `.github/workflows/build-apk.yml` compiles, runs all 38+ unit tests, and verifies `helicopter-war.apk`.
-2. Publishes `helicopter-war.apk` directly to GitHub Releases (`make_latest: true`), automatically updating the permanent Direct APK URL above.
-3. Synchronizes `README.md`, `index.html`, `hosting/index.html`, `release-info.json`, `hosting/release-info.json`, and sitemaps with the latest version, file size, and direct APK download URL.
+Whenever you push changes to `main` (e.g., via AI Studio **Push to GitHub**), push a `v*` tag, or trigger manual dispatch in GitHub Actions:
+1. `.github/workflows/build-apk.yml` compiles, runs all unit tests, and verifies `helicopter-war.apk`.
+2. Automatically publishes/updates `helicopter-war.apk` on GitHub Releases (`make_latest: true`), keeping the permanent Direct APK URL above always up to date.
+3. Synchronizes `README.md`, `index.html`, `hosting/index.html`, `release-info.json`, `hosting/release-info.json`, and sitemaps, then auto-deploys GitHub Pages & Firebase Hosting.
 
 ---
 
-## Release Highlights (`v1.0.1`)
+## Release Highlights (`v1.0.2`)
 - **Pro Campaign & Boss Combat System:** 5 Main Hearts (10 hits per heart), 24h cap of 10 Rewarded Ad continues (+5 Hearts), Interstitial continues, strict sequential Empire unlock (50 Barracks per Empire &rarr; Danger Zone Boss 100 hits &rarr; HQ 1,000 hits), Countermeasure Flare, Overdrive Plasma Cannon, and Hangar checkpoint resume (`CONTINUE STAGE`).
 - **CI/CD & Google Sign-In Resilience:** Hardened JDK 21 / Android SDK workflow, dynamic `default_web_client_id` resolution, automated keystore materialization, and chained GitHub Pages deployment.
 - **Official Websites & Direct APK Delivery:** Mobile-responsive download portals on GitHub Pages (`gptgamestudio.github.io/hellwar-warzone`) and Firebase Hosting (`hellwar-warzone.web.app`) pointing directly to `helicopter-war.apk`.
