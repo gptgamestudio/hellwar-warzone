@@ -15,12 +15,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -88,6 +89,7 @@ fun MainMenuScreen(
     modifier: Modifier = Modifier
 ) {
     val isRewardedReady by AdMobManager.isRewardedReady.collectAsState()
+    val isRewardedFetching by AdMobManager.isRewardedFetching.collectAsState()
 
     Box(modifier = modifier.fillMaxSize().background(Color(0xFF090D14))) {
         // Hero Cinematic Background: Combat helicopter in military hangar
@@ -114,11 +116,15 @@ fun MainMenuScreen(
                 )
         )
 
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Column(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .widthIn(max = 620.dp)
                     .padding(horizontal = 18.dp, vertical = 12.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -282,9 +288,9 @@ fun MainMenuScreen(
 
             // 6. WAR COMMAND
             MenuSecondaryButton(
-                icon = Icons.Default.Assignment,
+                icon = Icons.AutoMirrored.Filled.Assignment,
                 title = "WAR COMMAND",
-                subtitle = "Combat Orders, Dossiers & Intel",
+                subtitle = "Live Campaign Orders & Bounties",
                 accentColor = Color(0xFFA78BFA),
                 onClick = onWarCommand,
                 tag = "menu_war_command"
@@ -292,11 +298,11 @@ fun MainMenuScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 7. ONLINE LEADERBOARD
+            // 7. PILOT COMBAT RECORD (Zero-Trust Cloud Dossier)
             MenuSecondaryButton(
                 icon = Icons.Default.Leaderboard,
-                title = "ONLINE LEADERBOARD",
-                subtitle = "Global Ace Rankings & Statistics",
+                title = "PILOT COMBAT RECORD",
+                subtitle = "Verified Firestore Stats & Theater Dossier",
                 accentColor = HealthGreen,
                 onClick = onLeaderboard,
                 tag = "menu_online_leaderboard"
@@ -309,8 +315,11 @@ fun MainMenuScreen(
                 icon = Icons.Default.CardGiftcard,
                 title = "SUPPLY AIRDROP (+${AdMobManager.REWARDED_CREDITS_BONUS} CR)",
                 subtitle = supplyAdStatus
-                    ?: if (isRewardedReady) "Rewarded Video Ready — Boost War Credits"
-                    else "Preparing Supply Video Ad...",
+                    ?: when {
+                        isRewardedReady -> "Rewarded Video Ready — Boost War Credits"
+                        isRewardedFetching -> "Preparing Supply Video Ad..."
+                        else -> "Tap to Retry Loading Supply Video Ad"
+                    },
                 accentColor = MilitaryGold,
                 onClick = onWatchSupplyAd,
                 tag = "menu_rewarded_supply_ad"

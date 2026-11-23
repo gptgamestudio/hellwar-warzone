@@ -32,15 +32,24 @@ func _physics_process(delta: float) -> void:
 	global_position += move_vec * current_speed * delta
 
 func _on_impact(body: Node3D) -> void:
-	if body.has_method("take_damage") and not (body is PlayerHelicopter):
+	if body == self or body is PlayerHelicopter or body.is_in_group("player"):
+		return
+	if body.has_method("take_damage"):
 		body.take_damage(damage)
-	_explode()
+	_explode(body)
 
 func _on_area_impact(area: Area3D) -> void:
-	if area.has_method("take_damage") and not (area is PlayerHelicopter):
+	if area == self or area is PlayerHelicopter or area.is_in_group("player") or area.is_in_group("player_projectiles"):
+		return
+	if area.has_method("take_damage"):
 		area.take_damage(damage)
-	_explode()
+	_explode(area)
 
-func _explode() -> void:
-	# Area splash damage to surrounding enemies
+func _explode(direct_hit: Node = null) -> void:
+	if get_tree() != null:
+		for enemy in get_tree().get_nodes_in_group("enemies"):
+			if enemy == direct_hit or not is_instance_valid(enemy) or not (enemy is Node3D):
+				continue
+			if global_position.distance_to(enemy.global_position) <= splash_radius and enemy.has_method("take_damage"):
+				enemy.take_damage(damage * 0.5)
 	queue_free()

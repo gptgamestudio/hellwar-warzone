@@ -37,7 +37,10 @@ sealed class OnlineStatus {
  * Real Android network monitor enforcing the strict ONLINE-ONLY architecture.
  * Offline play is strictly prevented. Uses ConnectivityManager and real HTTP handshake.
  */
-class NetworkMonitor(private val context: Context) {
+class NetworkMonitor(
+    private val context: Context,
+    private val pingProbe: (suspend () -> Long?)? = null
+) {
     private val connectivityManager =
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
@@ -65,8 +68,19 @@ class NetworkMonitor(private val context: Context) {
         }
 
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+            if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                heartbeatJob?.cancel()
+                _status.value = OnlineStatus.OfflineError(
+                    reason = "SATELLITE DATA LINK SEVERED: Active network lost internet capability.",
+                    errorCode = "ERR_NET_LOST",
+                    isHardwareDisconnected = true
+                )
+            } else if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
                 _status.value !is OnlineStatus.Connected
+            ) {
+                triggerConnectionVerification()
+            } else if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+                _status.value is OnlineStatus.Connected
             ) {
                 triggerConnectionVerification()
             }
@@ -90,9 +104,22 @@ class NetworkMonitor(private val context: Context) {
         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
         val hasInternet = activeNetwork != null && capabilities != null &&
             capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        if (hasInternet || _status.value !is OnlineStatus.OfflineError) {
+        val isValidated = hasInternet &&
+            capabilities!!.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+
+        if (!hasInternet) {
+            heartbeatJob?.cancel()
+            _status.value = OnlineStatus.OfflineError(
+                reason = "NO INTERNET CONNECTION: Internet connection is mandatory for War Command.",
+                errorCode = "ERR_OFFLINE_FORBIDDEN",
+                isHardwareDisconnected = true
+            )
+            return
+        }
+
+        if (isValidated) {
             _status.value = OnlineStatus.Connected(
-                latencyMs = (_status.value as? OnlineStatus.Connected)?.latencyMs ?: 28L,
+                latencyMs = (_status.value as? OnlineStatus.Connected)?.latencyMs ?: 32L,
                 serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
                 networkType = resolveNetType(capabilities)
             )
@@ -133,29 +160,9 @@ class NetworkMonitor(private val context: Context) {
 
             val netType = resolveNetType(capabilities)
             val isValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            val pingResult = if (isValidated) runPingProbe() else null
 
-            // Fast path when Android OS already validated internet connectivity; run ping to measure latency
-            if (isValidated) {
-                _status.value = OnlineStatus.Connected(
-                    latencyMs = 35L,
-                    serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
-                    networkType = netType
-                )
-                val measured = executeRealPing()
-                if (measured != null) {
-                    _status.value = OnlineStatus.Connected(
-                        latencyMs = measured,
-                        serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
-                        networkType = netType
-                    )
-                }
-                startHeartbeat()
-                return@launch
-            }
-
-            // Secondary ping check when NET_CAPABILITY_VALIDATED hasn't propagated yet
-            val pingResult = executeRealPing()
-            if (pingResult != null) {
+            if (isValidated && pingResult != null) {
                 _status.value = OnlineStatus.Connected(
                     latencyMs = pingResult,
                     serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
@@ -164,12 +171,20 @@ class NetworkMonitor(private val context: Context) {
                 startHeartbeat()
             } else {
                 _status.value = OnlineStatus.OfflineError(
-                    reason = "WAR-NET AUTHENTICATION FAILED: Unable to establish secure handshake with Empire servers.",
+                    reason = if (!isValidated) {
+                        "NETWORK NOT VALIDATED: Waiting for carrier/Wi-Fi captive-portal verification."
+                    } else {
+                        "WAR-NET AUTHENTICATION FAILED: Unable to reach live servers."
+                    },
                     errorCode = "ERR_AUTH_TIMEOUT",
                     isHardwareDisconnected = false
                 )
             }
         }
+    }
+
+    private suspend fun runPingProbe(): Long? {
+        return if (pingProbe != null) pingProbe.invoke() else executeRealPing()
     }
 
     private suspend fun executeRealPing(): Long? = withContext(Dispatchers.IO) {
@@ -215,16 +230,14 @@ class NetworkMonitor(private val context: Context) {
                 val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
                 val hasInternet = activeNetwork != null && capabilities != null &&
                     capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                val hasValidatedNetwork = hasInternet &&
-                    capabilities!!.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                val ping = executeRealPing() ?: if (hasValidatedNetwork) 45L else null
-                if (ping == null && !hasInternet) {
+                val ping = if (hasInternet) runPingProbe() else null
+                if (ping == null) {
                     consecutiveFailures++
-                    if (consecutiveFailures >= 2) {
+                    if (!hasInternet || consecutiveFailures >= 2) {
                         _status.value = OnlineStatus.OfflineError(
-                            reason = "HEARTBEAT DROPPED: Satellite communication interrupted.",
+                            reason = "HEARTBEAT DROPPED: Live server communication interrupted.",
                             errorCode = "ERR_HEARTBEAT_LOST",
-                            isHardwareDisconnected = true
+                            isHardwareDisconnected = !hasInternet
                         )
                         break
                     }

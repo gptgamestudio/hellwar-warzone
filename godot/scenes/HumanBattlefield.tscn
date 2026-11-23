@@ -1,6 +1,11 @@
-[gd_scene load_steps=5 format=3 uid="uid://human_battlefield_01"]
+[gd_scene load_steps=9 format=3 uid="uid://human_battlefield_01"]
 
 [ext_resource type="Script" path="res://scripts/environment/environment_generator.gd" id="1_gen"]
+[ext_resource type="PackedScene" uid="uid://player_helo_01" path="res://scenes/PlayerHelicopter.tscn" id="2_player"]
+[ext_resource type="Script" path="res://scripts/camera/camera_follow.gd" id="3_camera"]
+[ext_resource type="PackedScene" uid="uid://game_hud_01" path="res://scenes/GameHUD.tscn" id="4_hud"]
+[ext_resource type="PackedScene" uid="uid://boss_human_01" path="res://scenes/BossHuman.tscn" id="5_boss"]
+[ext_resource type="PackedScene" path="res://assets/models/env_human_airbase.glb" id="6_env_chunk"]
 
 [sub_resource type="Environment" id="Environment_human"]
 background_mode = 1
@@ -16,6 +21,8 @@ volumetric_fog_albedo = Color(0.6, 0.75, 0.9, 1.0)
 [node name="HumanBattlefield" type="Node3D"]
 script = ExtResource("1_gen")
 current_empire = 3
+player_target = NodePath("PlayerHelicopter")
+human_chunk_scene = ExtResource("6_env_chunk")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_human")
@@ -30,3 +37,15 @@ shadow_enabled = true
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="GroundCollision"]
 shape = SubResource("WorldBoundaryShape3D_ground")
+
+[node name="PlayerHelicopter" parent="." instance=ExtResource("2_player")]
+
+[node name="CameraFollow" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.469472, 0.882948, 0, -0.882948, 0.469472, 0, 35, 19)
+current = true
+script = ExtResource("3_camera")
+target = NodePath("../PlayerHelicopter")
+
+[node name="BossHuman" parent="." instance=ExtResource("5_boss")]
+
+[node name="GameHUD" parent="." instance=ExtResource("4_hud")]

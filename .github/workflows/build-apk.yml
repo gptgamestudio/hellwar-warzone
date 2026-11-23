@@ -11,6 +11,7 @@ on:
       - 'sitemap.xml'
       - 'robots.txt'
       - 'release-info.json'
+      - 'app-ads.txt'
       - 'hosting/**'
     tags: [ 'v*' ]
   workflow_dispatch:
@@ -65,66 +66,53 @@ jobs:
               printf '%s' "$GS_JSON_B64" | base64 -d > app/google-services.json
               echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 secret."
             else
-              echo "WARNING: app/google-services.json not found in repo or secrets; building without Firebase client config."
+              echo "::error::Missing app/google-services.json in repo and secrets (GOOGLE_SERVICES_JSON or GOOGLE_SERVICES_JSON_BASE64)."
+              exit 1
             fi
           fi
 
-      - name: Materialize signing keystore
+      - name: Materialize production release keystore
         env:
-          KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
           REL_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           STORE_PW: ${{ secrets.STORE_PASSWORD }}
           KEY_PW: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$REL_KEYSTORE_B64" ] && [ -n "$STORE_PW" ] && [ -n "$KEY_PW" ]; then
-            printf '%s' "$REL_KEYSTORE_B64" | base64 -d > my-upload-key.jks
-            echo "BUILD_MODE=release" >> "$GITHUB_ENV"
-            echo "Restored release upload keystore from secrets."
-          else
-            echo "BUILD_MODE=debug" >> "$GITHUB_ENV"
-            if [ ! -f debug.keystore ]; then
-              if [ -n "$KEYSTORE_B64" ]; then
-                printf '%s' "$KEYSTORE_B64" | base64 -d > debug.keystore
-                echo "Restored debug.keystore from DEBUG_KEYSTORE_BASE64 secret."
-              elif [ -f debug.keystore.base64 ]; then
-                base64 -d debug.keystore.base64 > debug.keystore
-                echo "Restored debug.keystore from debug.keystore.base64."
-              else
-                keytool -genkeypair -v -keystore debug.keystore \
-                  -storepass android -alias androiddebugkey -keypass android \
-                  -keyalg RSA -keysize 2048 -validity 10000 \
-                  -dname "CN=Android Debug,O=Android,C=US"
-                echo "Generated CI fallback debug.keystore."
-              fi
-            fi
-            keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android | grep -E "SHA1:|SHA256:" || true
+          if [ -z "$REL_KEYSTORE_B64" ] || [ -z "$STORE_PW" ] || [ -z "$KEY_PW" ]; then
+            echo "::error::Missing required production release secrets: RELEASE_KEYSTORE_BASE64, STORE_PASSWORD, and KEY_PASSWORD are all mandatory (debug keystore fallback is disabled)."
+            exit 1
           fi
+          printf '%s' "$REL_KEYSTORE_B64" | base64 -d > my-upload-key.jks
+          keytool -list -v -keystore my-upload-key.jks -alias upload -storepass "$STORE_PW" | grep -E "Alias name:|SHA1:|SHA256:"
+          echo "Verified production upload keystore."
 
-      - name: Build installable Android APK
+      - name: Run unit tests
+        run: |
+          gradle clean :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build signed production release APK
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ "$BUILD_MODE" = "release" ]; then
-            export KEYSTORE_PATH="$PWD/my-upload-key.jks"
-            gradle assembleRelease --no-daemon --stacktrace
-          else
-            gradle assembleDebug --no-daemon --stacktrace
-          fi
+          export KEYSTORE_PATH="$PWD/my-upload-key.jks"
+          gradle assembleRelease --no-daemon --stacktrace
 
-      - name: Run unit tests
-        run: |
-          gradle :app:testDebugUnitTest --no-daemon --stacktrace
-
-      - name: Package and verify helicopter-war.apk
+      - name: Package and verify signed helicopter-war.apk
         run: |
           mkdir -p dist-apk
-          if [ "$BUILD_MODE" = "release" ]; then
-            cp app/build/outputs/apk/release/*.apk dist-apk/helicopter-war.apk
-          else
-            cp app/build/outputs/apk/debug/*.apk dist-apk/helicopter-war.apk
+          APK_SRC=$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' ! -name '*-unsigned.apk' | head -n 1)
+          if [ -z "$APK_SRC" ] || [ ! -s "$APK_SRC" ]; then
+            echo "::error::Signed release APK not found in app/build/outputs/apk/release."
+            exit 1
           fi
-          test -s dist-apk/helicopter-war.apk
+          cp "$APK_SRC" dist-apk/helicopter-war.apk
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          APKSIGNER="$(command -v apksigner || find "$SDK_ROOT/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::apksigner not found in Android SDK build-tools."
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs dist-apk/helicopter-war.apk
           ls -lh dist-apk/helicopter-war.apk
 
       - name: Upload APK artifact
@@ -169,12 +157,12 @@ jobs:
       - name: Auto-update website, README, and sitemap with verified release
         if: steps.release_meta.outputs.should_release == 'true'
         run: |
+          cp dist-apk/helicopter-war.apk "$RUNNER_TEMP/helicopter-war.apk"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
-          git checkout main
-          git pull --rebase origin main || true
-          python3 .github/scripts/update-release-metadata.py "${{ steps.release_meta.outputs.tag }}" dist-apk/helicopter-war.apk
+          git checkout -B main origin/main
+          python3 .github/scripts/update-release-metadata.py "${{ steps.release_meta.outputs.tag }}" "$RUNNER_TEMP/helicopter-war.apk"
           git add README.md index.html hosting/index.html release-info.json hosting/release-info.json sitemap.xml hosting/sitemap.xml
           if ! git diff --cached --quiet; then
             git commit -m "chore(release): update site and README for ${{ steps.release_meta.outputs.tag }} [skip ci]"

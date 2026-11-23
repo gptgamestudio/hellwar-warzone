@@ -46,8 +46,17 @@ fun GamePlayScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = remember(context) { context.findActivity() }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val campaignService = remember { com.example.game.network.WarNetCampaignService.getInstance(context) }
+    val settingsManager = remember(context) { com.example.game.network.TacticalSettingsManager.getInstance(context) }
+    val tacticalSettings by settingsManager.settings.collectAsState()
+    val isFullScreenAdShowing by AdMobManager.isFullScreenAdShowing.collectAsState()
     val audioSystem = remember(context) { com.example.game.audio.CombatAudioSystem(context.applicationContext) }
+
+    LaunchedEffect(tacticalSettings.sfxEnabled, isFullScreenAdShowing) {
+        audioSystem.isMuted = !tacticalSettings.sfxEnabled || isFullScreenAdShowing
+    }
+
     DisposableEffect(audioSystem) {
         onDispose {
             audioSystem.release()
@@ -61,9 +70,15 @@ fun GamePlayScreen(
             initialHeloClass = profile.selectedHelicopterClass,
             initialSkin = profile.selectedSkin,
             initialUpgrades = upgrades,
-            campaignService = campaignService
+            campaignService = campaignService,
+            initialScreenShakeEnabled = tacticalSettings.screenShakeEnabled,
+            initialAutoFire = tacticalSettings.autoFireByDefault
         )
     }
+    LaunchedEffect(engine, tacticalSettings.screenShakeEnabled) {
+        engine.isScreenShakeEnabled = tacticalSettings.screenShakeEnabled
+    }
+
     val renderer = remember { Renderer3D() }
     val hudState by engine.hudState.collectAsState()
     var isPaused by remember { mutableStateOf(false) }
@@ -117,10 +132,18 @@ fun GamePlayScreen(
         }
     }
 
-    // Preload ads on sortie launch for smooth transitions
-    LaunchedEffect(Unit) {
-        AdMobManager.loadInterstitial(context)
-        AdMobManager.loadRewarded(context)
+    // Preload ads on sortie launch and resume
+    DisposableEffect(lifecycleOwner, context) {
+        AdMobManager.ensureAdsLoaded(context)
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                AdMobManager.ensureAdsLoaded(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     val saveAndReturnToDashboard: () -> Unit = {
@@ -139,9 +162,9 @@ fun GamePlayScreen(
         saveAndReturnToDashboard()
     }
 
-    // High performance 60 FPS game loop with delta timing and true pause freeze
-    LaunchedEffect(engine, isPaused) {
-        if (isPaused) return@LaunchedEffect
+    // High performance 60 FPS game loop with delta timing and true pause / ad freeze
+    LaunchedEffect(engine, isPaused, isFullScreenAdShowing) {
+        if (isPaused || isFullScreenAdShowing) return@LaunchedEffect
         var lastFrameTime = 0L
         while (true) {
             withFrameNanos { frameTimeNanos ->
@@ -216,7 +239,8 @@ fun GamePlayScreen(
                         }
                     }
                 } else null,
-                onClaimDebriefAdBonus = onClaimDebriefAdBonus
+                onClaimDebriefAdBonus = onClaimDebriefAdBonus,
+                hapticsEnabled = tacticalSettings.hapticsEnabled
             )
         }
 

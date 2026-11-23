@@ -28,6 +28,7 @@ import com.example.game.ads.findActivity
 import com.example.game.model.EmpireType
 import com.example.game.model.PlayerProfile
 import com.example.game.network.CampaignProgressionManager
+import com.example.game.network.HangarPersistenceManager
 import com.example.game.network.NetworkMonitor
 import com.example.game.network.OnlineStatus
 import com.example.game.network.SortieCheckpoint
@@ -77,8 +78,15 @@ class MainActivity : ComponentActivity() {
                 val onlineStatus by networkMonitor.status.collectAsState()
                 val flowUser by remember { Firebase.auth.authStateFlow() }
                     .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
-                var manualAuthTick by remember { mutableStateOf(0) }
+                var manualAuthTick by remember { mutableIntStateOf(0) }
                 var autoSignInJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+                // Reload AdMob inventory whenever satellite link transitions back online
+                LaunchedEffect(onlineStatus) {
+                    if (onlineStatus is OnlineStatus.Connected) {
+                        AdMobManager.ensureAdsLoaded(applicationContext)
+                    }
+                }
 
                 // Attempt silent auto-sign-in for previously authorized Google users
                 LaunchedEffect(Unit) {
@@ -100,9 +108,7 @@ class MainActivity : ComponentActivity() {
                     val signedInUser = remember(flowUser, manualAuthTick) {
                         flowUser ?: Firebase.auth.currentUser
                     }
-                    val isHardwareOffline = onlineStatus is OnlineStatus.OfflineError &&
-                        (onlineStatus as OnlineStatus.OfflineError).isHardwareDisconnected
-                    if (signedInUser == null || isHardwareOffline) {
+                    if (signedInUser == null || onlineStatus !is OnlineStatus.Connected) {
                         ConnectionGateScreen(
                             onlineStatus = onlineStatus,
                             currentUser = signedInUser,
@@ -168,6 +174,9 @@ private fun AuthenticatedGameNavigation(
     val progressionManager = remember(context) {
         CampaignProgressionManager.getInstance(context.applicationContext)
     }
+    val hangarPersistence = remember(context) {
+        HangarPersistenceManager.getInstance(context.applicationContext)
+    }
     val campaignState by campaignService.campaignState.collectAsState()
 
     val displayCallsign = remember(user.uid, user.displayName, campaignState.authenticatedPilotCallsign) {
@@ -199,14 +208,23 @@ private fun AuthenticatedGameNavigation(
     var activeResumeCheckpoint by remember(user.uid) { mutableStateOf<SortieCheckpoint?>(null) }
     var sortieSessionId by remember(user.uid) { mutableIntStateOf(0) }
     var adContinueQuota by remember(user.uid) { mutableStateOf(progressionManager.getAdContinueQuota(user.uid)) }
-    var profile by remember { mutableStateOf(PlayerProfile(callsign = displayCallsign)) }
+    var hangarState by remember(user.uid) { mutableStateOf(hangarPersistence.loadState(user.uid)) }
     var adFeedbackMessage by remember { mutableStateOf<String?>(null) }
 
-    val syncedProfile = profile.copy(
-        callsign = displayCallsign,
-        credits = maxOf(profile.credits, campaignState.credits.toInt()),
-        highScore = maxOf(profile.highScore, campaignState.highScore.toInt())
-    )
+    val availableCredits = remember(campaignState.credits, hangarState.creditsSpent) {
+        (campaignState.credits.toInt() - hangarState.creditsSpent).coerceAtLeast(0)
+    }
+    val syncedProfile = remember(displayCallsign, availableCredits, campaignState.highScore, hangarState) {
+        PlayerProfile(
+            callsign = displayCallsign,
+            credits = availableCredits,
+            highScore = campaignState.highScore.toInt(),
+            selectedHelicopterClass = hangarState.selectedHelicopterClass,
+            selectedSkin = hangarState.selectedSkin,
+            unlockedHelicopters = hangarState.unlockedHelicopters.toMutableSet(),
+            upgradesMap = hangarState.upgradesByClass.mapValues { (_, up) -> up.copy() }.toMutableMap()
+        )
+    }
 
     val refreshProgression: () -> Unit = {
         savedCheckpoint = progressionManager.loadCheckpoint(user.uid)
@@ -247,7 +265,6 @@ private fun AuthenticatedGameNavigation(
                 activity = activity,
                 onRewardEarned = { bonus ->
                     campaignService.grantRewardedAdSupplyDrop(bonus)
-                    profile = syncedProfile.copy(credits = syncedProfile.credits + bonus)
                     onGranted(bonus)
                     onStatus("SUPPLY DROP CREDITED: +$bonus CR")
                 },
@@ -386,7 +403,13 @@ private fun AuthenticatedGameNavigation(
             BackHandler { currentScreen = GameScreen.MAIN_MENU }
             GarageScreen(
                 profile = syncedProfile,
-                onProfileUpdated = { updated -> profile = updated },
+                onProfileUpdated = { updated ->
+                    hangarState = hangarPersistence.applyTransaction(
+                        uid = user.uid,
+                        previousCredits = availableCredits,
+                        updatedProfile = updated
+                    )
+                },
                 onWatchSupplyAd = { onStatus ->
                     triggerRewardedSupplyDrop({}, onStatus)
                 },
@@ -398,6 +421,7 @@ private fun AuthenticatedGameNavigation(
         GameScreen.COMMAND -> {
             BackHandler { currentScreen = GameScreen.MAIN_MENU }
             CommandScreen(
+                campaignState = campaignState,
                 onBack = { currentScreen = GameScreen.MAIN_MENU },
                 modifier = modifier
             )
@@ -406,6 +430,8 @@ private fun AuthenticatedGameNavigation(
         GameScreen.LEADERBOARD -> {
             BackHandler { currentScreen = GameScreen.MAIN_MENU }
             LeaderboardScreen(
+                profile = syncedProfile,
+                campaignState = campaignState,
                 onBack = { currentScreen = GameScreen.MAIN_MENU },
                 modifier = modifier
             )

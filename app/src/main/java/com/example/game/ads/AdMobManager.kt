@@ -33,6 +33,8 @@ object AdMobManager {
 
     const val REWARDED_CREDITS_BONUS = 1000
     private const val INTERSTITIAL_COOLDOWN_MS = 60_000L
+    private const val MAX_RETRY_ATTEMPTS = 4
+    private const val BASE_RETRY_DELAY_MS = 4_000L
 
     private val initialized = AtomicBoolean(false)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -40,10 +42,14 @@ object AdMobManager {
     @Volatile
     private var interstitialAd: InterstitialAd? = null
     private val isInterstitialLoading = AtomicBoolean(false)
+    @Volatile
+    private var interstitialRetryAttempt: Int = 0
 
     @Volatile
     private var rewardedAd: RewardedAd? = null
     private val isRewardedLoading = AtomicBoolean(false)
+    @Volatile
+    private var rewardedRetryAttempt: Int = 0
 
     @Volatile
     private var lastInterstitialShownMs: Long = 0L
@@ -60,6 +66,12 @@ object AdMobManager {
     private val _isRewardedFetching = MutableStateFlow(false)
     val isRewardedFetching: StateFlow<Boolean> = _isRewardedFetching.asStateFlow()
 
+    private val _isFullScreenAdShowing = MutableStateFlow(false)
+    val isFullScreenAdShowing: StateFlow<Boolean> = _isFullScreenAdShowing.asStateFlow()
+
+    private val _lastRewardedError = MutableStateFlow<String?>(null)
+    val lastRewardedError: StateFlow<String?> = _lastRewardedError.asStateFlow()
+
     fun initialize(context: Context) {
         if (!initialized.compareAndSet(false, true)) return
         val appContext = context.applicationContext
@@ -67,18 +79,37 @@ object AdMobManager {
             MobileAds.initialize(appContext) {
                 _isSdkInitialized.value = true
                 mainHandler.post {
-                    loadInterstitial(appContext)
-                    loadRewarded(appContext)
+                    loadInterstitial(appContext, resetRetry = true)
+                    loadRewarded(appContext, resetRetry = true)
                 }
             }
         } catch (t: Throwable) {
+            initialized.set(false)
             Log.w(TAG, "MobileAds SDK initialization skipped or unavailable: ${t.message}")
+        }
+    }
+
+    /**
+     * Re-triggers ad preloading after network recovery or UI resume when buffers are empty.
+     */
+    fun ensureAdsLoaded(context: Context) {
+        val appContext = context.applicationContext
+        if (!initialized.get()) {
+            initialize(appContext)
+            return
+        }
+        if (interstitialAd == null && !isInterstitialLoading.get()) {
+            loadInterstitial(appContext, resetRetry = true)
+        }
+        if (rewardedAd == null && !isRewardedLoading.get()) {
+            loadRewarded(appContext, resetRetry = true)
         }
     }
 
     fun buildAdRequest(): AdRequest = AdRequest.Builder().build()
 
-    fun loadInterstitial(context: Context) {
+    fun loadInterstitial(context: Context, resetRetry: Boolean = false) {
+        if (resetRetry) interstitialRetryAttempt = 0
         if (interstitialAd != null || !isInterstitialLoading.compareAndSet(false, true)) return
         val appContext = context.applicationContext
         mainHandler.post {
@@ -90,6 +121,7 @@ object AdMobManager {
                     object : InterstitialAdLoadCallback() {
                         override fun onAdLoaded(ad: InterstitialAd) {
                             interstitialAd = ad
+                            interstitialRetryAttempt = 0
                             isInterstitialLoading.set(false)
                             _isInterstitialReady.value = true
                         }
@@ -98,7 +130,8 @@ object AdMobManager {
                             interstitialAd = null
                             isInterstitialLoading.set(false)
                             _isInterstitialReady.value = false
-                            Log.w(TAG, "Interstitial failed to load: ${error.message}")
+                            Log.w(TAG, "Interstitial failed to load (code=${error.code}): ${error.message}")
+                            scheduleInterstitialRetry(appContext)
                         }
                     }
                 )
@@ -110,6 +143,18 @@ object AdMobManager {
         }
     }
 
+    private fun scheduleInterstitialRetry(appContext: Context) {
+        val attempt = interstitialRetryAttempt
+        if (attempt >= MAX_RETRY_ATTEMPTS) return
+        interstitialRetryAttempt = attempt + 1
+        val delayMs = BASE_RETRY_DELAY_MS * (1L shl attempt)
+        mainHandler.postDelayed({
+            if (interstitialAd == null) {
+                loadInterstitial(appContext, resetRetry = false)
+            }
+        }, delayMs)
+    }
+
     fun showInterstitialIfReady(
         activity: Activity?,
         onContinue: () -> Unit
@@ -118,9 +163,9 @@ object AdMobManager {
         val now = SystemClock.elapsedRealtime()
         val cooldownPassed = lastInterstitialShownMs == 0L || (now - lastInterstitialShownMs) >= INTERSTITIAL_COOLDOWN_MS
 
-        if (activity == null || activity.isFinishing || currentAd == null || !cooldownPassed) {
+        if (activity == null || activity.isFinishing || activity.isDestroyed || currentAd == null || !cooldownPassed || _isFullScreenAdShowing.value) {
             if (activity != null && currentAd == null) {
-                loadInterstitial(activity.applicationContext)
+                loadInterstitial(activity.applicationContext, resetRetry = true)
             }
             onContinue()
             return
@@ -129,38 +174,45 @@ object AdMobManager {
         val appContext = activity.applicationContext
         currentAd.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdShowedFullScreenContent() {
+                _isFullScreenAdShowing.value = true
                 lastInterstitialShownMs = SystemClock.elapsedRealtime()
             }
 
             override fun onAdDismissedFullScreenContent() {
                 interstitialAd = null
                 _isInterstitialReady.value = false
-                loadInterstitial(appContext)
+                _isFullScreenAdShowing.value = false
+                loadInterstitial(appContext, resetRetry = true)
                 onContinue()
             }
 
             override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                 interstitialAd = null
                 _isInterstitialReady.value = false
-                loadInterstitial(appContext)
+                _isFullScreenAdShowing.value = false
+                loadInterstitial(appContext, resetRetry = true)
                 onContinue()
             }
         }
 
         try {
+            _isFullScreenAdShowing.value = true
             currentAd.show(activity)
         } catch (t: Throwable) {
             interstitialAd = null
             _isInterstitialReady.value = false
-            loadInterstitial(appContext)
+            _isFullScreenAdShowing.value = false
+            loadInterstitial(appContext, resetRetry = true)
             onContinue()
         }
     }
 
-    fun loadRewarded(context: Context) {
+    fun loadRewarded(context: Context, resetRetry: Boolean = false) {
+        if (resetRetry) rewardedRetryAttempt = 0
         if (rewardedAd != null || !isRewardedLoading.compareAndSet(false, true)) return
         val appContext = context.applicationContext
         _isRewardedFetching.value = true
+        _lastRewardedError.value = null
         mainHandler.post {
             try {
                 RewardedAd.load(
@@ -170,9 +222,11 @@ object AdMobManager {
                     object : RewardedAdLoadCallback() {
                         override fun onAdLoaded(ad: RewardedAd) {
                             rewardedAd = ad
+                            rewardedRetryAttempt = 0
                             isRewardedLoading.set(false)
                             _isRewardedFetching.value = false
                             _isRewardedReady.value = true
+                            _lastRewardedError.value = null
                         }
 
                         override fun onAdFailedToLoad(error: LoadAdError) {
@@ -180,7 +234,9 @@ object AdMobManager {
                             isRewardedLoading.set(false)
                             _isRewardedFetching.value = false
                             _isRewardedReady.value = false
-                            Log.w(TAG, "Rewarded failed to load: ${error.message}")
+                            _lastRewardedError.value = error.message
+                            Log.w(TAG, "Rewarded failed to load (code=${error.code}): ${error.message}")
+                            scheduleRewardedRetry(appContext)
                         }
                     }
                 )
@@ -188,9 +244,22 @@ object AdMobManager {
                 isRewardedLoading.set(false)
                 _isRewardedFetching.value = false
                 _isRewardedReady.value = false
+                _lastRewardedError.value = t.message
                 Log.w(TAG, "Rewarded load threw: ${t.message}")
             }
         }
+    }
+
+    private fun scheduleRewardedRetry(appContext: Context) {
+        val attempt = rewardedRetryAttempt
+        if (attempt >= MAX_RETRY_ATTEMPTS) return
+        rewardedRetryAttempt = attempt + 1
+        val delayMs = BASE_RETRY_DELAY_MS * (1L shl attempt)
+        mainHandler.postDelayed({
+            if (rewardedAd == null) {
+                loadRewarded(appContext, resetRetry = false)
+            }
+        }, delayMs)
     }
 
     fun showRewardedAd(
@@ -200,9 +269,9 @@ object AdMobManager {
         onUnavailable: () -> Unit = {}
     ) {
         val currentAd = rewardedAd
-        if (activity == null || activity.isFinishing || currentAd == null) {
-            if (activity != null) {
-                loadRewarded(activity.applicationContext)
+        if (activity == null || activity.isFinishing || activity.isDestroyed || currentAd == null || _isFullScreenAdShowing.value) {
+            if (activity != null && currentAd == null) {
+                loadRewarded(activity.applicationContext, resetRetry = true)
             }
             onUnavailable()
             return
@@ -212,10 +281,15 @@ object AdMobManager {
         var rewardGranted = false
 
         currentAd.fullScreenContentCallback = object : FullScreenContentCallback() {
+            override fun onAdShowedFullScreenContent() {
+                _isFullScreenAdShowing.value = true
+            }
+
             override fun onAdDismissedFullScreenContent() {
                 rewardedAd = null
                 _isRewardedReady.value = false
-                loadRewarded(appContext)
+                _isFullScreenAdShowing.value = false
+                loadRewarded(appContext, resetRetry = true)
                 if (!rewardGranted) {
                     onDismissedWithoutReward()
                 }
@@ -224,12 +298,14 @@ object AdMobManager {
             override fun onAdFailedToShowFullScreenContent(adError: AdError) {
                 rewardedAd = null
                 _isRewardedReady.value = false
-                loadRewarded(appContext)
+                _isFullScreenAdShowing.value = false
+                loadRewarded(appContext, resetRetry = true)
                 onUnavailable()
             }
         }
 
         try {
+            _isFullScreenAdShowing.value = true
             currentAd.show(activity) { _ ->
                 rewardGranted = true
                 onRewardEarned(REWARDED_CREDITS_BONUS)
@@ -237,7 +313,8 @@ object AdMobManager {
         } catch (t: Throwable) {
             rewardedAd = null
             _isRewardedReady.value = false
-            loadRewarded(appContext)
+            _isFullScreenAdShowing.value = false
+            loadRewarded(appContext, resetRetry = true)
             onUnavailable()
         }
     }

@@ -57,6 +57,7 @@ import com.google.android.gms.ads.AdListener
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
 import com.google.android.gms.ads.LoadAdError
+import kotlinx.coroutines.delay
 
 @Composable
 fun AdMobBannerBar(
@@ -67,6 +68,23 @@ fun AdMobBannerBar(
     var adViewRef by remember { mutableStateOf<AdView?>(null) }
     var needsReload by remember { mutableStateOf(false) }
     var lastRetryAtMs by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(needsReload, adViewRef) {
+        val view = adViewRef ?: return@LaunchedEffect
+        if (needsReload) {
+            delay(15_000L)
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (needsReload && now - lastRetryAtMs >= 14_000L) {
+                lastRetryAtMs = now
+                needsReload = false
+                try {
+                    view.loadAd(AdMobManager.buildAdRequest())
+                } catch (_: Throwable) {
+                    needsReload = true
+                }
+            }
+        }
+    }
 
     DisposableEffect(lifecycleOwner, adViewRef) {
         val view = adViewRef
@@ -81,6 +99,7 @@ fun AdMobBannerBar(
                         try {
                             view.loadAd(AdMobManager.buildAdRequest())
                         } catch (_: Throwable) {
+                            needsReload = true
                         }
                     }
                 }
@@ -169,6 +188,24 @@ fun MovableBottomBannerDock(
         label = "game_zone_lift"
     )
 
+    // Retry banner load in place when visible if a previous ad request failed
+    LaunchedEffect(needsReload, isBannerVisible, adViewRef) {
+        val view = adViewRef ?: return@LaunchedEffect
+        if (needsReload && isBannerVisible) {
+            delay(12_000L)
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (needsReload && isBannerVisible && now - lastRetryAtMs >= 10_000L) {
+                lastRetryAtMs = now
+                needsReload = false
+                try {
+                    view.loadAd(AdMobManager.buildAdRequest())
+                } catch (_: Throwable) {
+                    needsReload = true
+                }
+            }
+        }
+    }
+
     // Keep AdView visibility and pause/resume strictly synced so hidden mode never records obscured impressions
     LaunchedEffect(isBannerVisible, adViewRef) {
         val view = adViewRef ?: return@LaunchedEffect
@@ -182,6 +219,7 @@ fun MovableBottomBannerDock(
                 try {
                     view.loadAd(AdMobManager.buildAdRequest())
                 } catch (_: Throwable) {
+                    needsReload = true
                 }
             }
         } else {
@@ -190,13 +228,23 @@ fun MovableBottomBannerDock(
         }
     }
 
-    DisposableEffect(lifecycleOwner, adViewRef) {
+    DisposableEffect(lifecycleOwner, adViewRef, isBannerVisible) {
         val view = adViewRef
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
-                    if (isBannerVisible) {
-                        view?.resume()
+                    if (isBannerVisible && view != null) {
+                        view.resume()
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (needsReload && now - lastRetryAtMs >= 10_000L) {
+                            lastRetryAtMs = now
+                            needsReload = false
+                            try {
+                                view.loadAd(AdMobManager.buildAdRequest())
+                            } catch (_: Throwable) {
+                                needsReload = true
+                            }
+                        }
                     }
                 }
                 Lifecycle.Event.ON_PAUSE -> view?.pause()

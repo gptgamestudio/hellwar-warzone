@@ -120,13 +120,15 @@ class CampaignProgressionManager(
     }
 
     fun isStageCompleted(empire: EmpireType, campaignState: GlobalCampaignState?, uid: String = "default"): Boolean {
-        val cloudCompleted = when (empire) {
-            EmpireType.DRAGON -> campaignState?.dragonProgress?.isHeadquartersDestroyed == true
-            EmpireType.ALIEN -> campaignState?.alienProgress?.isHeadquartersDestroyed == true
-            EmpireType.ORC -> campaignState?.orcProgress?.isHeadquartersDestroyed == true
-            EmpireType.HUMAN -> campaignState?.humanProgress?.isHeadquartersDestroyed == true
+        if (campaignState != null) {
+            return when (empire) {
+                EmpireType.DRAGON -> campaignState.dragonProgress.isHeadquartersDestroyed
+                EmpireType.ALIEN -> campaignState.alienProgress.isHeadquartersDestroyed
+                EmpireType.ORC -> campaignState.orcProgress.isHeadquartersDestroyed
+                EmpireType.HUMAN -> campaignState.humanProgress.isHeadquartersDestroyed
+            }
         }
-        return cloudCompleted || getLocallyCompletedStages(uid).contains(empire.name)
+        return getLocallyCompletedStages(uid).contains(empire.name)
     }
 
     /**

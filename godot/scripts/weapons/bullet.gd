@@ -19,11 +19,25 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 
 func _on_body_entered(body: Node3D) -> void:
-	if body.has_method("take_damage") and body != self:
+	if body == self or body is PlayerHelicopter or body.is_in_group("player"):
+		return
+	if body.has_method("take_damage"):
 		body.take_damage(damage)
 		queue_free()
 
 func _on_area_entered(area: Area3D) -> void:
-	if area.has_method("take_damage") and area != self:
+	if area == self or area is PlayerHelicopter or area.is_in_group("player") or area.is_in_group("player_projectiles"):
+		return
+	var parent := area.get_parent()
+	if area.is_in_group("weak_points") and parent != null:
+		if parent.has_method("take_weak_point_damage"):
+			parent.take_weak_point_damage(damage)
+			queue_free()
+			return
+		elif parent.has_method("hit_rear_boiler"):
+			parent.hit_rear_boiler(damage)
+			queue_free()
+			return
+	if area.has_method("take_damage"):
 		area.take_damage(damage)
 		queue_free()

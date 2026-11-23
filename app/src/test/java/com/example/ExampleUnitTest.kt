@@ -836,7 +836,104 @@ class ExampleUnitTest {
         assertTrue("Overdrive spawns plasma volley", resumedEngine.bullets.any { it.isPlayerPlasma })
         assertEquals(0f, resumedEngine.player.overdriveCharge, 0.01f)
     }
+
+    @Test
+    fun `verify tactical settings manager and engine camera shake toggle`() {
+        val settingsMgr = com.example.game.network.TacticalSettingsManager(prefs = null)
+        assertTrue(settingsMgr.settings.value.sfxEnabled)
+        assertTrue(settingsMgr.settings.value.screenShakeEnabled)
+        assertTrue(settingsMgr.settings.value.hapticsEnabled)
+        assertTrue(settingsMgr.settings.value.autoFireByDefault)
+
+        settingsMgr.setSfxEnabled(false)
+        settingsMgr.setScreenShakeEnabled(false)
+        settingsMgr.setHapticsEnabled(false)
+        settingsMgr.setAutoFireByDefault(false)
+
+        assertFalse(settingsMgr.settings.value.sfxEnabled)
+        assertFalse(settingsMgr.settings.value.screenShakeEnabled)
+        assertFalse(settingsMgr.settings.value.hapticsEnabled)
+        assertFalse(settingsMgr.settings.value.autoFireByDefault)
+
+        val engine = GameEngine(
+            selectedEmpire = EmpireType.DRAGON,
+            initialScreenShakeEnabled = false,
+            initialAutoFire = false
+        )
+        assertFalse("Initial auto-fire respects setting", engine.player.isAutoFiring)
+        engine.camera.screenShake = 5.0f
+        engine.update(0.016f)
+        assertEquals("Camera shake stays suppressed when disabled", 0f, engine.camera.screenShake, 0.001f)
+    }
+
+    @Test
+    fun `verify hangar persistence spend delta tracks cumulative creditsSpent`() {
+        val hangarMgr = com.example.game.network.HangarPersistenceManager(prefs = null)
+        val initial = hangarMgr.loadState("uid_alpha")
+        assertEquals(0, initial.creditsSpent)
+
+        val purchased = com.example.game.model.PlayerProfile(
+            credits = 10500,
+            selectedHelicopterClass = com.example.game.model.HelicopterClass.HEAVY_GUNSHIP
+        ).apply {
+            unlockedHelicopters.add(com.example.game.model.HelicopterClass.HEAVY_GUNSHIP.id)
+        }
+        val next = hangarMgr.applyTransaction(
+            uid = "uid_alpha",
+            previousCredits = 18500,
+            updatedProfile = purchased
+        )
+        assertEquals(8000, next.creditsSpent)
+        assertEquals(com.example.game.model.HelicopterClass.HEAVY_GUNSHIP, next.selectedHelicopterClass)
+        assertTrue(next.unlockedHelicopters.contains(com.example.game.model.HelicopterClass.HEAVY_GUNSHIP.id))
+    }
+
+    @Test
+    fun `verify locked headquarters cannot be falsely destroyed before unlocking`() {
+        val engine = GameEngine(selectedEmpire = EmpireType.DRAGON)
+        val hq = engine.enemyHeadquarters!!
+        assertFalse("HQ starts locked", hq.isUnlocked)
+
+        engine.destroyHeadquarters()
+
+        assertFalse("Locked HQ must remain intact", hq.isDestroyed)
+        assertFalse("Victory must remain false when HQ is locked", engine.isVictory)
+    }
+
+    @Test
+    fun `verify live server stage status strictly overrides local completion cache`() {
+        val mgr = com.example.game.network.CampaignProgressionManager(prefs = null)
+        val uid = "pilot_live_strict"
+        mgr.markStageCompleted(uid, EmpireType.DRAGON)
+
+        val liveFalseState = com.example.game.network.GlobalCampaignState(
+            dragonProgress = com.example.game.network.CampaignEmpireProgress(
+                empire = EmpireType.DRAGON,
+                destroyedCount = 12,
+                isHeadquartersUnlocked = false,
+                isHeadquartersDestroyed = false
+            ),
+            isServerConnected = true
+        )
+        assertFalse(
+            "Connected server false must remain false even if local cache had true",
+            mgr.isStageCompleted(EmpireType.DRAGON, liveFalseState, uid)
+        )
+        assertFalse(
+            "Stage 2 must remain locked when live server reports Stage 1 HQ intact",
+            mgr.isStageUnlocked(EmpireType.ALIEN, liveFalseState, uid)
+        )
+
+        val liveTrueState = liveFalseState.copy(
+            dragonProgress = liveFalseState.dragonProgress.copy(
+                destroyedCount = 50,
+                isHeadquartersUnlocked = true,
+                isHeadquartersDestroyed = true
+            )
+        )
+        assertTrue(
+            "Connected server true must unlock next stage",
+            mgr.isStageUnlocked(EmpireType.ALIEN, liveTrueState, uid)
+        )
+    }
 }
-
-
-

@@ -7,21 +7,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AssignmentTurnedIn
-import androidx.compose.material.icons.filled.MilitaryTech
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,16 +31,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.game.model.EmpireType
 import com.example.game.model.WarOrder
+import com.example.game.network.GlobalCampaignState
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.GunmetalBlack
@@ -51,19 +53,52 @@ import com.example.ui.theme.MilitaryGold
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommandScreen(
+    campaignState: GlobalCampaignState = GlobalCampaignState(),
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val sampleOrders = listOf(
-        WarOrder("ORD-01", "OPERATION CINDER RAIN", EmpireType.DRAGON, "Neutralize 15 Pyro Drakes in Volcano Sector", 8, 15, 3500),
-        WarOrder("ORD-02", "PROJECT MOTHERSHIP CRACKDOWN", EmpireType.ALIEN, "Down 10 Plasma UFO Saucers with Hellfire Missiles", 4, 10, 4200),
-        WarOrder("ORD-03", "IRONFANG SUPPLY BLOCKADE", EmpireType.ORC, "Demolish 6 Orc Bombardier Zeppelins", 6, 6, 5000, isCompleted = true),
-        WarOrder("ORD-04", "ROGUE BLACKWATCH PURGE", EmpireType.HUMAN, "Destroy 12 Renegade AH-64 Gunships", 3, 12, 3800)
-    )
+    val liveOrders = remember(campaignState) {
+        val theaters = listOf(
+            Triple("ORD-01", "OPERATION VOLCANO BREACH", campaignState.dragonProgress),
+            Triple("ORD-02", "PROJECT MOTHERSHIP CRACKDOWN", campaignState.alienProgress),
+            Triple("ORD-03", "IRONFANG SIEGE BLOCKADE", campaignState.orcProgress),
+            Triple("ORD-04", "ROGUE BLACKWATCH PURGE", campaignState.humanProgress)
+        )
+        buildList {
+            theaters.forEachIndexed { idx, (id, title, progress) ->
+                add(
+                    WarOrder(
+                        id = id,
+                        title = title,
+                        empire = progress.empire,
+                        requirement = "Destroy all 50 ${progress.empire.name} fortified barracks (+200 CR each)",
+                        current = progress.destroyedCount.coerceIn(0, 50),
+                        target = 50,
+                        rewardCredits = 10_000,
+                        isCompleted = progress.destroyedCount >= 50
+                    )
+                )
+                add(
+                    WarOrder(
+                        id = "HQ-0${idx + 1}",
+                        title = "${progress.empire.name} CITADEL CONQUEST",
+                        empire = progress.empire,
+                        requirement = "Neutralize ${progress.empire.bossName} & annihilate Main HQ",
+                        current = if (progress.isHeadquartersDestroyed) 1 else 0,
+                        target = 1,
+                        rewardCredits = 2500,
+                        isCompleted = progress.isHeadquartersDestroyed
+                    )
+                )
+            }
+        }
+    }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0),
                 title = {
                     Text(
                         text = "WAR COMMAND CENTER",
@@ -74,7 +109,7 @@ fun CommandScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, modifier = Modifier.testTag("command_back_button")) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
@@ -89,27 +124,47 @@ fun CommandScreen(
         containerColor = GunmetalBlack,
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp)
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter
         ) {
-            Text(
-                text = "ACTIVE HIGH COMMAND BATTLE ORDERS",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = CyberCyan,
-                fontFamily = FontFamily.Monospace
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxSize()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 620.dp)
+                    .padding(16.dp)
             ) {
-                items(sampleOrders) { order ->
-                    WarOrderCard(order = order)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "LIVE HIGH COMMAND ORDERS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyberCyan,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = "${campaignState.totalBarracksDestroyed}/200 CLEARED",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = HealthGreen,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(liveOrders, key = { it.id }) { order ->
+                        WarOrderCard(order = order)
+                    }
                 }
             }
         }
@@ -133,7 +188,10 @@ private fun WarOrderCard(order: WarOrder) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(
                         modifier = Modifier
                             .background(order.empire.primaryColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
@@ -159,8 +217,8 @@ private fun WarOrderCard(order: WarOrder) {
 
                 if (order.isCompleted) {
                     Icon(
-                        imageVector = Icons.Default.AssignmentTurnedIn,
-                        contentDescription = "Done",
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = "Completed",
                         tint = HealthGreen,
                         modifier = Modifier.size(18.dp)
                     )
@@ -178,7 +236,7 @@ private fun WarOrderCard(order: WarOrder) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 LinearProgressIndicator(
-                    progress = { (order.current.toFloat() / order.target).coerceIn(0f, 1f) },
+                    progress = { (order.current.toFloat() / order.target.coerceAtLeast(1)).coerceIn(0f, 1f) },
                     modifier = Modifier
                         .weight(1f)
                         .height(6.dp)
@@ -202,10 +260,10 @@ private fun WarOrderCard(order: WarOrder) {
                 horizontalArrangement = Arrangement.End
             ) {
                 Text(
-                    text = "BOUNTY: +${order.rewardCredits} CR",
+                    text = if (order.isCompleted) "BOUNTY CREDITED (+${order.rewardCredits} CR)" else "TOTAL REWARD: +${order.rewardCredits} CR",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Black,
-                    color = MilitaryGold,
+                    color = if (order.isCompleted) HealthGreen else MilitaryGold,
                     fontFamily = FontFamily.Monospace
                 )
             }

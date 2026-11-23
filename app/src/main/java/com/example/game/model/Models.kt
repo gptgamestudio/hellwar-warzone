@@ -222,6 +222,25 @@ data class PlayerProfile(
     fun getUpgrades(heloClass: HelicopterClass): HelicopterUpgrades {
         return upgradesMap.getOrPut(heloClass.id) { HelicopterUpgrades() }
     }
+
+    fun deepCopy(
+        credits: Int = this.credits,
+        selectedHelicopterClass: HelicopterClass = this.selectedHelicopterClass,
+        selectedSkin: HelicopterSkin = this.selectedSkin
+    ): PlayerProfile = PlayerProfile(
+        callsign = callsign,
+        rank = rank,
+        battleRating = battleRating,
+        credits = credits,
+        totalKills = totalKills,
+        highScore = highScore,
+        missionsCompleted = missionsCompleted,
+        selectedEmpire = selectedEmpire,
+        selectedHelicopterClass = selectedHelicopterClass,
+        selectedSkin = selectedSkin,
+        unlockedHelicopters = unlockedHelicopters.toMutableSet(),
+        upgradesMap = upgradesMap.mapValues { (_, up) -> up.copy() }.toMutableMap()
+    )
 }
 
 data class HelicopterStats(

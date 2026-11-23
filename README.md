@@ -26,26 +26,28 @@
 <!-- RELEASE_INFO_START -->
 | Field | Details |
 |---|---|
-| **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)](https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk)** |
-| **Latest Version** | `v1.0.2` (`versionCode 3`) |
+| **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)](https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.3/helicopter-war.apk)** |
+| **Latest Version** | `v1.0.3` (`versionCode 4`) |
 | **APK File** | `helicopter-war.apk` (`35.21 MB`) |
+| **Release Date** | `2026-11-21` |
 | **Official Website (GitHub Pages)** | [gptgamestudio.github.io/hellwar-warzone](https://gptgamestudio.github.io/hellwar-warzone/) |
 | **Official Website (Firebase)** | [hellwar-warzone.web.app](https://hellwar-warzone.web.app/) |
-| **All Releases** | [View GitHub Releases](https://github.com/gptgamestudio/hellwar-warzone/releases) |
+| **All Releases** | [View v1.0.3 Release Notes](https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.3) |
 <!-- RELEASE_INFO_END -->
 
 ### How Direct APK Releases Auto-Update
 Whenever you push changes to `main` (e.g., via AI Studio **Push to GitHub**), push a `v*` tag, or trigger manual dispatch in GitHub Actions:
-1. `.github/workflows/build-apk.yml` compiles, runs all unit tests, and verifies `helicopter-war.apk`.
+1. `.github/workflows/build-apk.yml` runs unit tests (`:app:testDebugUnitTest`) first, compiles, and verifies `helicopter-war.apk`.
 2. Automatically publishes/updates `helicopter-war.apk` on GitHub Releases (`make_latest: true`), keeping the permanent Direct APK URL above always up to date.
-3. Synchronizes `README.md`, `index.html`, `hosting/index.html`, `release-info.json`, `hosting/release-info.json`, and sitemaps, then auto-deploys GitHub Pages & Firebase Hosting.
+3. Synchronizes `README.md`, `index.html`, `hosting/index.html`, `release-info.json`, `hosting/release-info.json`, and sitemaps on `main`, then auto-deploys GitHub Pages & Firebase Hosting.
 
 ---
 
-## Release Highlights (`v1.0.2`)
-- **Pro Campaign & Boss Combat System:** 5 Main Hearts (10 hits per heart), 24h cap of 10 Rewarded Ad continues (+5 Hearts), Interstitial continues, strict sequential Empire unlock (50 Barracks per Empire &rarr; Danger Zone Boss 100 hits &rarr; HQ 1,000 hits), Countermeasure Flare, Overdrive Plasma Cannon, and Hangar checkpoint resume (`CONTINUE STAGE`).
-- **CI/CD & Google Sign-In Resilience:** Hardened JDK 21 / Android SDK workflow, dynamic `default_web_client_id` resolution, automated keystore materialization, and chained GitHub Pages deployment.
-- **Official Websites & Direct APK Delivery:** Mobile-responsive download portals on GitHub Pages (`gptgamestudio.github.io/hellwar-warzone`) and Firebase Hosting (`hellwar-warzone.web.app`) pointing directly to `helicopter-war.apk`.
+## Release Highlights (`v1.0.3`)
+- **AdMob Reliability & Combat Pause Sync:** Exponential retry backoff for Interstitial and Rewarded supply ads, automatic ad reload on network reconnect and banner resume, and clean audio mute + simulation freeze while fullscreen ads are presented.
+- **Persistent Hangar Economy & Settings:** Per-UID Hangar purchase/upgrade persistence (`HangarPersistenceManager`) fixes credit balance desyncs, eliminates per-frame 3D preview allocations, and wires real SFX, Haptics, Auto-Fire, and Camera Shake toggles (`TacticalSettingsManager`).
+- **Live Cloud Dossiers & UI Layout Polish:** Replaced static Command Orders and fake leaderboard entries with live Firestore theater progress and Zero-Trust UID Pilot Combat Record, fixed nested `WindowInsets` double-padding, and added adaptive tablet centering.
+- **Auto-Update CI/CD & Hosting:** Unit tests gate release packaging cleanly, `my-upload-key.jks` stays git-ignored, and `deploy-github-pages.yml` / `deploy-firebase-hosting.yml` deploy fresh `main` `hosting/` metadata after verified APK builds.
 
 ---
 
@@ -104,15 +106,32 @@ Battle across **4 distinct warzones**, each guarded by **50 unique fortified bar
 
 ---
 
-## GitHub Actions Secrets & Google Search Console Setup
+## GitHub Actions Secrets, Release Fingerprints & Search Console Setup
 
-### 1. Optional CI Secrets (No Keys Exposed in Source)
-To enable full Google Sign-In + Firebase Firestore in CI-built APKs and Firebase Hosting auto-deploy, add these in **Repo Settings &rarr; Secrets and variables &rarr; Actions**:
-- `GOOGLE_SERVICES_JSON`: Contents of your `app/google-services.json`
-- `DEBUG_KEYSTORE_BASE64`: Contents of `debug.keystore.base64` (keeps SHA-1 matching Firebase Android OAuth)
-- `FIREBASE_SERVICE_ACCOUNT_HELLWAR_WARZONE`: Optional JSON key for Firebase Hosting auto-deploy
+### 1. Mandatory GitHub Actions Release Secrets (No Keys Exposed in Source)
+`.github/workflows/build-apk.yml` builds signed production APKs (`assembleRelease`) and **fails fast** if required release credentials are missing (`debug.keystore` fallback is strictly disabled). Configure these in **Repo Settings &rarr; Secrets and variables &rarr; Actions**:
 
-### 2. Google Search Console Verification
+- **Mandatory Production Signing Secrets:**
+  - `RELEASE_KEYSTORE_BASE64`: Base64-encoded production release keystore (`my-upload-key.jks` containing key alias `upload`)
+  - `STORE_PASSWORD`: Store password for the production release keystore
+  - `KEY_PASSWORD`: Key password for the `upload` alias inside the production release keystore
+- **Firebase Configuration Secret (Required if `app/google-services.json` is not present in workspace):**
+  - `GOOGLE_SERVICES_JSON` *(or `GOOGLE_SERVICES_JSON_BASE64`)*: Raw or Base64-encoded `app/google-services.json` for `com.hellwar.game` (`hellwar-warzone`)
+- **Optional CI Hosting Secret:**
+  - `FIREBASE_SERVICE_ACCOUNT_HELLWAR_WARZONE`: Service account JSON key for automatic Firebase Hosting deploys (`deploy-firebase-hosting.yml`)
+
+> **Security Note:** Never commit `*.jks`, `*.keystore`, `*.p12`, `*.pfx`, or `*keystore*.base64` files to Git. Keep all signing keys and passwords solely in GitHub Actions Secrets / AI Studio Secrets.
+
+### 2. Firebase Release SHA-1 & SHA-256 Fingerprint Requirements
+Production APKs signed with `RELEASE_KEYSTORE_BASE64` use a different certificate than the local debug keystore. Currently, `app/google-services.json` only registers the debug SHA-1 fingerprint (`2ae4319cf426595dca272bf5fb15b0db007afd8d`). For **Google Sign-In (`CredentialManager`)** and **Firebase Authentication** to succeed on release builds:
+1. Extract your upload keystore's **SHA-1** and **SHA-256** fingerprints locally:
+   ```bash
+   keytool -list -v -keystore my-upload-key.jks -alias upload
+   ```
+2. Open **Firebase Console &rarr; Project Settings (`hellwar-warzone`) &rarr; Your apps &rarr; `com.hellwar.game` (Android)** and add both the **Release SHA-1** and **Release SHA-256** fingerprints.
+3. Download the updated `google-services.json` and update `app/google-services.json` (and your `GOOGLE_SERVICES_JSON` / `GOOGLE_SERVICES_JSON_BASE64` secret if used).
+
+### 3. Google Search Console Verification
 1. Open [Google Search Console](https://search.google.com/search-console) &rarr; **Add Property** &rarr; **URL prefix**: `https://gptgamestudio.github.io/hellwar-warzone/`.
 2. Choose **HTML tag** verification, copy the `content="..."` token, and replace `YOUR_GOOGLE_SEARCH_CONSOLE_TOKEN` inside `index.html` (line with `google-site-verification`).
 3. Push to GitHub, wait ~1 minute for GitHub Pages deployment, tap **Verify** in Search Console, then open **Sitemaps** and submit `sitemap.xml`.

@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3 uid="uid://boss_human_01"]
+[gd_scene load_steps=6 format=3 uid="uid://boss_human_01"]
 
 [ext_resource type="Script" path="res://scripts/bosses/human_supreme_commander.gd" id="1_titan"]
+[ext_resource type="PackedScene" path="res://assets/models/boss_super_helicopter.glb" id="2_model"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_titan_fuselage"]
 size = Vector3(5.5, 3.2, 11.0)
@@ -17,6 +18,8 @@ script = ExtResource("1_titan")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("BoxShape3D_titan_fuselage")
+
+[node name="BossModel" parent="." instance=ExtResource("2_model")]
 
 [node name="VulcanTurretSubsystem" type="Area3D" parent="." groups=["subsystems"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.0, -4.5)

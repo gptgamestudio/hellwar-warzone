@@ -1,6 +1,7 @@
-[gd_scene load_steps=4 format=3 uid="uid://boss_orc_01"]
+[gd_scene load_steps=5 format=3 uid="uid://boss_orc_01"]
 
 [ext_resource type="Script" path="res://scripts/bosses/orc_warlord.gd" id="1_orc"]
+[ext_resource type="PackedScene" path="res://assets/models/boss_orc_war_machine.glb" id="2_model"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_zeppelin"]
 radius = 3.2
@@ -17,6 +18,8 @@ script = ExtResource("1_orc")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 transform = Transform3D(0, 0, 1, 0, 1, 0, -1, 0, 0, 0, 0, 0)
 shape = SubResource("CapsuleShape3D_zeppelin")
+
+[node name="BossModel" parent="." instance=ExtResource("2_model")]
 
 [node name="RearBoilerWeakPoint" type="Area3D" parent="." groups=["weak_points"]]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 4.5)

@@ -1,0 +1,80 @@
+[gd_scene load_steps=12 format=3 uid="uid://player_helo_01"]
+
+[ext_resource type="Script" path="res://scripts/player/player_helicopter.gd" id="1_player_script"]
+[ext_resource type="PackedScene" uid="uid://weapon_bullet_01" path="res://scenes/Bullet.tscn" id="2_bullet"]
+[ext_resource type="PackedScene" uid="uid://weapon_missile_01" path="res://scenes/Missile.tscn" id="3_missile"]
+[ext_resource type="PackedScene" path="res://assets/models/player_helicopter.glb" id="4_model"]
+[ext_resource type="PackedScene" uid="uid://weapon_rocket_01" path="res://scenes/Rocket.tscn" id="5_rocket"]
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_hull"]
+size = Vector3(3.2, 1.4, 6.5)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rotor"]
+albedo_color = Color(0.15, 0.18, 0.22, 1.0)
+metallic = 0.7
+roughness = 0.35
+
+[sub_resource type="BoxMesh" id="BoxMesh_main_rotor"]
+size = Vector3(6.8, 0.08, 0.38)
+
+[sub_resource type="BoxMesh" id="BoxMesh_tail_rotor"]
+size = Vector3(0.08, 1.35, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_shield"]
+transparency = 1
+albedo_color = Color(0.2, 0.8, 1.0, 0.18)
+emission_enabled = true
+emission = Color(0.1, 0.7, 1.0, 1.0)
+emission_energy_multiplier = 0.7
+
+[sub_resource type="SphereMesh" id="SphereMesh_shield"]
+radius = 2.9
+height = 2.4
+
+[node name="PlayerHelicopter" type="CharacterBody3D" groups=["player"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.0, 6.0)
+script = ExtResource("1_player_script")
+bullet_scene = ExtResource("2_bullet")
+missile_scene = ExtResource("3_missile")
+rocket_scene = ExtResource("5_rocket")
+left_gun_muzzle = NodePath("LeftGunMuzzle")
+right_gun_muzzle = NodePath("RightGunMuzzle")
+left_missile_pod = NodePath("LeftMissilePod")
+right_missile_pod = NodePath("RightMissilePod")
+main_rotor_mesh = NodePath("HelicopterBodyMesh/MainRotorMesh")
+tail_rotor_mesh = NodePath("HelicopterBodyMesh/TailRotorMesh")
+helicopter_body_mesh = NodePath("HelicopterBodyMesh")
+shield_mesh = NodePath("ShieldMesh")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("BoxShape3D_hull")
+
+[node name="HelicopterBodyMesh" type="Node3D" parent="."]
+
+[node name="AirframeModel" parent="HelicopterBodyMesh" instance=ExtResource("4_model")]
+
+[node name="MainRotorMesh" type="MeshInstance3D" parent="HelicopterBodyMesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.0, 0)
+material_override = SubResource("StandardMaterial3D_rotor")
+mesh = SubResource("BoxMesh_main_rotor")
+
+[node name="TailRotorMesh" type="MeshInstance3D" parent="HelicopterBodyMesh"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.22, 0.5, 3.35)
+material_override = SubResource("StandardMaterial3D_rotor")
+mesh = SubResource("BoxMesh_tail_rotor")
+
+[node name="ShieldMesh" type="MeshInstance3D" parent="."]
+material_override = SubResource("StandardMaterial3D_shield")
+mesh = SubResource("SphereMesh_shield")
+
+[node name="LeftGunMuzzle" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.1, -0.2, -3.1)
+
+[node name="RightGunMuzzle" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.1, -0.2, -3.1)
+
+[node name="LeftMissilePod" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.7, -0.35, -1.2)
+
+[node name="RightMissilePod" type="Marker3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.7, -0.35, -1.2)

@@ -40,9 +40,47 @@ func _physics_process(_delta: float) -> void:
 
 func _spawn_chunk(z_pos: float) -> void:
 	var chunk: Node3D = Node3D.new()
+	var chunk_scene: PackedScene = _resolve_empire_chunk_scene()
+	if chunk_scene != null:
+		var env_instance := chunk_scene.instantiate()
+		if env_instance is Node3D:
+			# Offset Y by -0.6 so top surface of 1.2m GLB terrain sits flush at GroundCollision (y = 0)
+			env_instance.position = Vector3(0.0, -0.6, 0.0)
+			chunk.add_child(env_instance)
+		elif env_instance != null:
+			env_instance.queue_free()
 	add_child(chunk)
 	chunk.global_position = Vector3(0.0, 0.0, z_pos)
 	chunks.append(chunk)
+
+func _resolve_empire_chunk_scene() -> PackedScene:
+	var fallback_path: String = "res://assets/models/battlefield_environment.glb"
+	var configured_scene: PackedScene = null
+	match current_empire:
+		EmpireType.DRAGON:
+			configured_scene = dragon_chunk_scene
+			fallback_path = "res://assets/models/env_dragon_volcano.glb"
+		EmpireType.ALIEN:
+			configured_scene = alien_chunk_scene
+			fallback_path = "res://assets/models/env_alien_planet.glb"
+		EmpireType.ORC:
+			configured_scene = orc_chunk_scene
+			fallback_path = "res://assets/models/env_orc_wasteland.glb"
+		EmpireType.HUMAN:
+			configured_scene = human_chunk_scene
+			fallback_path = "res://assets/models/env_human_airbase.glb"
+
+	if configured_scene != null:
+		return configured_scene
+	if ResourceLoader.exists(fallback_path):
+		var loaded := load(fallback_path)
+		if loaded is PackedScene:
+			return loaded
+	if ResourceLoader.exists("res://assets/models/battlefield_environment.glb"):
+		var base_loaded := load("res://assets/models/battlefield_environment.glb")
+		if base_loaded is PackedScene:
+			return base_loaded
+	return null
 
 func transition_to_empire(new_empire: EmpireType) -> void:
 	current_empire = new_empire

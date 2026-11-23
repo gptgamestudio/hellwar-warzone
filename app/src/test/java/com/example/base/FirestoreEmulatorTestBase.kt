@@ -21,8 +21,23 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 
+import java.net.InetSocketAddress
+import java.net.Socket
+
 @RunWith(RobolectricTestRunner::class)
-@Config(manifest = Config.NONE)
+@Config(
+    manifest = Config.NONE,
+    shadows = [
+        ShadowLocalFirebaseAuth::class,
+        ShadowLocalFirebaseFirestore::class,
+        ShadowLocalQuery::class,
+        ShadowLocalCollectionReference::class,
+        ShadowLocalDocumentReference::class,
+        ShadowLocalTransaction::class,
+        ShadowLocalDocumentSnapshot::class,
+        ShadowLocalQuerySnapshot::class
+    ]
+)
 @LooperMode(LooperMode.Mode.INSTRUMENTATION_TEST)
 abstract class FirestoreEmulatorTestBase {
 
@@ -30,8 +45,22 @@ abstract class FirestoreEmulatorTestBase {
     protected lateinit var auth: FirebaseAuth
     protected lateinit var databaseId: String
 
+    protected var isUsingLiveEmulators: Boolean = false
+        private set
+
     @Before
     open fun setUpFirebase() {
+        val emulatorsAvailable = isEmulatorReachable(EMULATOR_HOST, FIRESTORE_PORT) &&
+            isEmulatorReachable(EMULATOR_HOST, AUTH_PORT)
+        isUsingLiveEmulators = emulatorsAvailable
+        LocalFirebaseRuleEngine.useLocalShadows = !emulatorsAvailable
+        if (LocalFirebaseRuleEngine.useLocalShadows) {
+            LocalFirebaseRuleEngine.reset()
+            println("[WarNetCampaignRuleTest] Backend: LOCAL_IN_MEMORY_SHADOWS (emulators unreachable at $EMULATOR_HOST:$FIRESTORE_PORT / $AUTH_PORT)")
+        } else {
+            println("[WarNetCampaignRuleTest] Backend: LIVE_FIREBASE_EMULATORS ($EMULATOR_HOST:$FIRESTORE_PORT / $AUTH_PORT)")
+        }
+
         val context = ApplicationProvider.getApplicationContext<Context>()
         val resId = context.resources.getIdentifier("firestore_database_id", "string", context.packageName)
         databaseId = if (resId != 0) context.getString(resId) else DEFAULT_TEST_DB_ID
@@ -65,6 +94,9 @@ abstract class FirestoreEmulatorTestBase {
     @After
     open fun tearDownFirebase() {
         auth.signOut()
+        if (LocalFirebaseRuleEngine.useLocalShadows) {
+            LocalFirebaseRuleEngine.reset()
+        }
     }
 
     protected suspend fun signInTestUser(email: String): String = withContext(Dispatchers.IO) {
@@ -85,6 +117,17 @@ abstract class FirestoreEmulatorTestBase {
             current = current.cause
         }
         return null
+    }
+
+    private fun isEmulatorReachable(host: String, port: Int): Boolean {
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), 150)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private companion object {

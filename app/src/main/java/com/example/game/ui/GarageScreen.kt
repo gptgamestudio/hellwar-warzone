@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -46,12 +48,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,19 +99,36 @@ fun GarageScreen(
 
     val currentUpgrades = profile.getUpgrades(currentHeloClass)
 
-    // Interactive 3D Hangar Preview rotation
+    // Interactive 3D Hangar Preview rotation using a single remembered preview engine
     var previewRotorAngle by remember { mutableFloatStateOf(0f) }
-    val dummyPlayer = remember(currentHeloClass, currentSkin, currentUpgrades) {
-        PlayerHelo().apply {
-            applyConfiguration(currentHeloClass, currentSkin, currentUpgrades)
+    val previewEngine = remember(currentHeloClass, currentSkin, currentUpgrades) {
+        com.example.game.engine.GameEngine(
+            initialHeloClass = currentHeloClass,
+            initialSkin = currentSkin,
+            initialUpgrades = currentUpgrades
+        )
+    }
+    LaunchedEffect(previewEngine) {
+        var lastNs = 0L
+        while (true) {
+            withFrameNanos { frameNs ->
+                if (lastNs != 0L) {
+                    val dt = ((frameNs - lastNs) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+                    previewRotorAngle = (previewRotorAngle + dt * 14f) % (kotlin.math.PI.toFloat() * 2f)
+                    previewEngine.player.mainRotorAngle = previewRotorAngle
+                    previewEngine.player.tailRotorAngle = previewRotorAngle * 1.5f
+                }
+                lastNs = frameNs
+            }
         }
     }
     val renderer = remember { Renderer3D() }
-    val camera = remember { Camera3D(x = 0f, y = -14f, z = 24f) }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
+                windowInsets = WindowInsets(0),
                 title = {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
@@ -165,30 +186,31 @@ fun GarageScreen(
         containerColor = GunmetalBlack,
         modifier = modifier.fillMaxSize()
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter
         ) {
-            // 1. Live 3D Helicopter Hangar Viewport
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(230.dp)
-                    .background(Color(0xFF0A1017))
-                    .border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2836)))
+                    .widthIn(max = 620.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    previewRotorAngle += 0.08f
-                    dummyPlayer.mainRotorAngle = previewRotorAngle
-                    dummyPlayer.tailRotorAngle = previewRotorAngle * 1.5f
-                    // Render 3D helicopter in the center of the viewport
-                    dummyPlayer.pos = com.example.game.engine.Vector3D(0f, 0f, 9.5f)
-                    renderer.render(this, com.example.game.engine.GameEngine(initialHeloClass = currentHeloClass, initialSkin = currentSkin, initialUpgrades = currentUpgrades).apply {
-                        this.player.mainRotorAngle = previewRotorAngle
-                    }, size.width, size.height)
-                }
+                // 1. Live 3D Helicopter Hangar Viewport
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(230.dp)
+                        .background(Color(0xFF0A1017))
+                        .border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2836)))
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        @Suppress("UNUSED_VARIABLE")
+                        val rotorTick = previewRotorAngle
+                        renderer.render(this, previewEngine, size.width, size.height)
+                    }
 
                 // Overlay Callout Badges
                 Row(
@@ -371,18 +393,25 @@ fun GarageScreen(
                     },
                     onDeployHelicopter = { chosen ->
                         if (profile.unlockedHelicopters.contains(chosen.id)) {
-                            profile.selectedHelicopterClass = chosen
-                            onProfileUpdated(profile)
+                            val updated = profile.deepCopy(selectedHelicopterClass = chosen)
+                            onProfileUpdated(updated)
                             transactionMessage = "DEPLOYMENT CONFIRMED: ${chosen.title}"
                             messageIsError = false
                         }
                     },
                     onUnlockHelicopter = { chosen ->
-                        if (profile.credits >= chosen.unlockCost) {
-                            profile.credits -= chosen.unlockCost
-                            profile.unlockedHelicopters.add(chosen.id)
-                            profile.selectedHelicopterClass = chosen
-                            onProfileUpdated(profile)
+                        if (profile.unlockedHelicopters.contains(chosen.id)) {
+                            val updated = profile.deepCopy(selectedHelicopterClass = chosen)
+                            onProfileUpdated(updated)
+                            transactionMessage = "DEPLOYMENT CONFIRMED: ${chosen.title}"
+                            messageIsError = false
+                        } else if (profile.credits >= chosen.unlockCost) {
+                            val updated = profile.deepCopy(
+                                credits = profile.credits - chosen.unlockCost,
+                                selectedHelicopterClass = chosen
+                            )
+                            updated.unlockedHelicopters.add(chosen.id)
+                            onProfileUpdated(updated)
                             transactionMessage = "PURCHASE VALIDATED: ${chosen.title} UNLOCKED!"
                             messageIsError = false
                         } else {
@@ -412,15 +441,16 @@ fun GarageScreen(
                             transactionMessage = "TRANSACTION REJECTED: NEED $cost CR"
                             messageIsError = true
                         } else {
-                            profile.credits -= cost
+                            val updated = profile.deepCopy(credits = profile.credits - cost)
+                            val updatedUpgrades = updated.getUpgrades(currentHeloClass)
                             when (category) {
-                                UpgradeType.ENGINE -> currentUpgrades.engineLevel++
-                                UpgradeType.ARMOR -> currentUpgrades.armorLevel++
-                                UpgradeType.WEAPON -> currentUpgrades.weaponLevel++
-                                UpgradeType.DEFENSE -> currentUpgrades.defenseLevel++
-                                UpgradeType.RADAR -> currentUpgrades.radarLevel++
+                                UpgradeType.ENGINE -> updatedUpgrades.engineLevel++
+                                UpgradeType.ARMOR -> updatedUpgrades.armorLevel++
+                                UpgradeType.WEAPON -> updatedUpgrades.weaponLevel++
+                                UpgradeType.DEFENSE -> updatedUpgrades.defenseLevel++
+                                UpgradeType.RADAR -> updatedUpgrades.radarLevel++
                             }
-                            onProfileUpdated(profile)
+                            onProfileUpdated(updated)
                             transactionMessage = "UPGRADE INSTALLED: $category LEVEL ${currentLvl + 1}"
                             messageIsError = false
                         }
@@ -431,15 +461,16 @@ fun GarageScreen(
                     currentSkin = currentSkin,
                     onSelectSkin = { skin ->
                         currentSkin = skin
-                        profile.selectedSkin = skin
-                        onProfileUpdated(profile)
+                        val updated = profile.deepCopy(selectedSkin = skin)
+                        onProfileUpdated(updated)
                         transactionMessage = "APPLIED CAMO SKIN: ${skin.label.uppercase()}"
                         messageIsError = false
                     }
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+            }
         }
     }
 }

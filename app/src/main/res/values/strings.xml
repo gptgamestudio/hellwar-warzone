@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Helicopter War</string>
+    <string name="settings_copy_user_id">COPY USER ID</string>
+    <string name="settings_user_id_copied">USER ID COPIED</string>
 </resources>

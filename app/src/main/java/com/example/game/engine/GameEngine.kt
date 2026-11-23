@@ -76,10 +76,13 @@ class GameEngine(
     val initialHeloClass: com.example.game.model.HelicopterClass = com.example.game.model.HelicopterClass.SCOUT,
     val initialSkin: com.example.game.model.HelicopterSkin = com.example.game.model.HelicopterSkin.TACTICAL_BLACK,
     val initialUpgrades: com.example.game.model.HelicopterUpgrades = com.example.game.model.HelicopterUpgrades(),
-    val campaignService: WarNetCampaignService? = null
+    val campaignService: WarNetCampaignService? = null,
+    initialScreenShakeEnabled: Boolean = true,
+    private val initialAutoFire: Boolean = true
 ) {
     val player = PlayerHelo()
     val camera = Camera3D()
+    var isScreenShakeEnabled: Boolean = initialScreenShakeEnabled
 
     // 4 Independent directional input states (held = true)
     var isUpPressed: Boolean = false
@@ -197,6 +200,7 @@ class GameEngine(
         player.rollAngle = 0f
         player.pitchAngle = 0f
         player.lockedTargetId = null
+        player.isAutoFiring = initialAutoFire
 
         isUpPressed = false
         isDownPressed = false
@@ -297,7 +301,8 @@ class GameEngine(
         isVictory = false
 
         for (b in allBarracks) {
-            if (checkpoint.destroyedBarracksIds.contains(b.id)) {
+            val allowedByServer = campaignService == null || campaignService.isBarracksDestroyed(b.id)
+            if (checkpoint.destroyedBarracksIds.contains(b.id) && allowedByServer) {
                 b.isDestroyed = true
                 b.health = 0f
                 b.hitsRemaining = 0
@@ -307,17 +312,21 @@ class GameEngine(
         barracksDestroyedCount = allBarracks.count { it.isDestroyed }
 
         enemyHeadquarters?.let { hq ->
-            hq.isUnlocked = checkpoint.hqUnlocked || barracksDestroyedCount >= 50
-            hq.isBossDefeated = checkpoint.bossDefeated
+            hq.isUnlocked = if (campaignService != null) {
+                barracksDestroyedCount >= 50 && campaignService.isHeadquartersUnlocked(selectedEmpire)
+            } else {
+                checkpoint.hqUnlocked || barracksDestroyedCount >= 50
+            }
+            hq.isBossDefeated = checkpoint.bossDefeated && hq.isUnlocked
             hq.hitsRemaining = checkpoint.hqHitsRemaining.coerceIn(1, hq.maxHits)
             hq.health = hq.hitsRemaining.toFloat()
         }
 
-        if (checkpoint.bossSpawned && !checkpoint.bossDefeated) {
+        if (checkpoint.bossSpawned && !(enemyHeadquarters?.isBossDefeated ?: false) && (enemyHeadquarters?.isUnlocked == true)) {
             spawnEmpireBoss()
             activeBoss?.bossHitsRemaining = checkpoint.bossHitsRemaining.coerceIn(1, 100)
         } else {
-            bossSpawned = checkpoint.bossSpawned
+            bossSpawned = checkpoint.bossSpawned && (enemyHeadquarters?.isUnlocked == true)
         }
 
         camera.x = player.pos.x
@@ -406,7 +415,10 @@ class GameEngine(
         // 1. Update 4-Directional Player Movement
         updatePlayerMovement(safeDelta)
 
-        // 2. Camera tracking with velocity look-ahead
+        // 2. Camera tracking with velocity look-ahead (respecting tactical camera shake toggle)
+        if (!isScreenShakeEnabled) {
+            camera.screenShake = 0f
+        }
         camera.updateFollow(player.pos.x, player.pos.y, safeDelta, player.velocity.x, player.velocity.y)
 
         // 3. Rotor spin animations
@@ -1810,7 +1822,13 @@ class GameEngine(
 
     fun destroyHeadquarters() {
         val hq = enemyHeadquarters ?: return
-        if (hq.isDestroyed) return
+        if (hq.isDestroyed || (!hq.isUnlocked && !hq.isBossDefeated)) return
+        if (campaignService != null &&
+            barracksDestroyedCount < 50 &&
+            !campaignService.isHeadquartersUnlocked(selectedEmpire)
+        ) {
+            return
+        }
         hq.health = 0f
         hq.hitsRemaining = 0
         hq.isDestroyed = true

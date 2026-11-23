@@ -31,13 +31,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -101,9 +101,18 @@ fun HudOverlay(
     adContinueQuota: AdContinueQuota = AdContinueQuota(0),
     onWatchAdContinue: ((onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit)? = null,
     nextStageEmpire: EmpireType? = null,
-    onAutoDeployNextStage: ((EmpireType) -> Unit)? = null
+    onAutoDeployNextStage: ((EmpireType) -> Unit)? = null,
+    hapticsEnabled: Boolean = true
 ) {
     var showPauseDialog by remember { mutableStateOf(false) }
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val pulseHaptic = remember(hapticsEnabled, haptic) {
+        {
+            if (hapticsEnabled) {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            }
+        }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         // TOP HUD: Health, Armor, Score, Radar, Mission Progress & BOSS HEALTH
@@ -253,7 +262,7 @@ fun HudOverlay(
                     shape = RoundedCornerShape(8.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     modifier = Modifier
-                        .height(34.dp)
+                        .height(42.dp)
                         .testTag("auto_fire_toggle")
                 ) {
                     Text(
@@ -266,12 +275,18 @@ fun HudOverlay(
 
                 FlareCountermeasureButton(
                     hudState = hudState,
-                    onActivate = { engine.activateFlareCountermeasure() }
+                    onActivate = {
+                        pulseHaptic()
+                        engine.activateFlareCountermeasure()
+                    }
                 )
 
                 MultipleRocketButton(
                     hudState = hudState,
-                    onLaunch = { engine.launchRocketBarrage() }
+                    onLaunch = {
+                        pulseHaptic()
+                        engine.launchRocketBarrage()
+                    }
                 )
             }
 
@@ -289,12 +304,18 @@ fun HudOverlay(
             ) {
                 OverdriveWeaponButton(
                     hudState = hudState,
-                    onActivate = { engine.activateOverdriveBeam() }
+                    onActivate = {
+                        pulseHaptic()
+                        engine.activateOverdriveBeam()
+                    }
                 )
 
                 DedicatedMissileButton(
                     hudState = hudState,
-                    onLaunch = { engine.launchMissiles() }
+                    onLaunch = {
+                        pulseHaptic()
+                        engine.launchMissiles()
+                    }
                 )
             }
         }
@@ -972,7 +993,7 @@ private fun CrossDirectionalTouchControls(
         ) {
             // LEFT Button (Sideways Left)
             DirectionButton(
-                icon = Icons.Default.KeyboardArrowLeft,
+                icon = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
                 label = "LEFT",
                 onPressChange = { engine.isLeftPressed = it },
                 modifier = Modifier.size(width = btnWidth, height = btnHeight).testTag("control_left")
@@ -988,7 +1009,7 @@ private fun CrossDirectionalTouchControls(
 
             // RIGHT Button (Sideways Right)
             DirectionButton(
-                icon = Icons.Default.KeyboardArrowRight,
+                icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 label = "RIGHT",
                 onPressChange = { engine.isRightPressed = it },
                 modifier = Modifier.size(width = btnWidth, height = btnHeight).testTag("control_right")

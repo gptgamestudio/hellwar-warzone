@@ -36,10 +36,10 @@
     "name": "Helicopter War: Empire Endless Battle",
     "operatingSystem": "Android 7.0+",
     "applicationCategory": "GameApplication",
-    "softwareVersion": "1.0.2",
-    "datePublished": "2026-11-16",
+    "softwareVersion": "1.0.3",
+    "datePublished": "2026-11-21",
     "fileSize": "35.21 MB",
-    "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk",
+    "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.3/helicopter-war.apk",
     "image": "https://gptgamestudio.github.io/hellwar-warzone/assets/site/hero-gunship.jpg",
     "screenshot": [
       "https://gptgamestudio.github.io/hellwar-warzone/assets/site/screenshot-sortie.jpg",
@@ -292,6 +292,122 @@
       color: var(--ink);
       font-size: 0.88rem;
     }
+    .faq-list {
+      display: grid;
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .faq-item {
+      background: #f8fbf9;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .faq-item summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 14px 16px;
+      font-weight: 700;
+      color: var(--ink);
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .faq-item summary::-webkit-details-marker { display: none; }
+    .faq-item summary::after {
+      content: "+";
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      flex-shrink: 0;
+    }
+    .faq-item[open] summary::after { content: "\2212"; }
+    .faq-item[open] summary {
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-alt);
+    }
+    .faq-answer {
+      padding: 12px 16px 14px;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+    .faq-answer code {
+      background: var(--surface-alt);
+      padding: 2px 6px;
+      border-radius: 6px;
+      color: var(--ink);
+      font-size: 0.86rem;
+    }
+    .release-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 14px;
+    }
+    .release-card {
+      background: #f8fbf9;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .release-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .release-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+    }
+    .release-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.84rem;
+      color: var(--muted);
+    }
+    .release-date {
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .release-badge {
+      display: inline-block;
+      background: #e1f4e7;
+      color: var(--primary-dark);
+      font-weight: 800;
+      font-size: 0.72rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+    }
+    .release-changes {
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .release-changes li { margin-bottom: 4px; }
+    .release-links {
+      margin-top: 10px;
+      font-size: 0.86rem;
+      font-weight: 600;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+    .release-status {
+      color: var(--muted);
+      font-size: 0.92rem;
+      padding: 12px 14px;
+      background: #f8fbf9;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
     footer {
       margin-top: 40px;
       padding-top: 20px;
@@ -315,6 +431,8 @@
         <a href="#screenshots">Screenshots</a>
         <a href="#features">Features</a>
         <a href="#install">Install APK</a>
+        <a href="#faq">FAQ</a>
+        <a href="#version-history">Version History</a>
       </nav>
     </div>
   </header>
@@ -332,21 +450,21 @@
 
         <div class="actions">
           <!-- RELEASE_BUTTONS_START -->
-          <a id="download-apk-btn" class="btn btn-primary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk" download="helicopter-war.apk" rel="noopener">
-            Download helicopter-war.apk (Direct APK)
+          <a id="download-apk-btn" class="btn btn-primary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.3/helicopter-war.apk" download="helicopter-war.apk" rel="noopener">
+            Download helicopter-war.apk (v1.0.3 &middot; 35.21 MB)
           </a>
-          <a id="all-releases-btn" class="btn btn-secondary" href="https://github.com/gptgamestudio/hellwar-warzone/releases" target="_blank" rel="noopener">
-            All GitHub Releases
+          <a id="all-releases-btn" class="btn btn-secondary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.3" target="_blank" rel="noopener">
+            Release v1.0.3 Notes
           </a>
           <!-- RELEASE_BUTTONS_END -->
         </div>
 
         <div class="stats-bar">
           <!-- RELEASE_STATS_START -->
-          <div class="stat-item"><span>Latest Version</span><strong id="meta-version">v1.0.2</strong></div>
+          <div class="stat-item"><span>Latest Version</span><strong id="meta-version">v1.0.3</strong></div>
           <div class="stat-item"><span>APK File</span><strong id="meta-filename">helicopter-war.apk</strong></div>
-          <div class="stat-item"><span>Verified Build Size</span><strong id="meta-size">35.21 MB</strong></div>
-          <div class="stat-item"><span>Build Date</span><strong id="meta-date">2026-11-16</strong></div>
+          <div class="stat-item"><span>File Size</span><strong id="meta-size">35.21 MB</strong></div>
+          <div class="stat-item"><span>Release Date</span><strong id="meta-date">2026-11-21</strong></div>
           <!-- RELEASE_STATS_END -->
         </div>
         <p class="live-note" id="live-release-status">
@@ -459,6 +577,76 @@
       </div>
     </section>
 
+    <section id="faq" aria-labelledby="faq-heading">
+      <div class="panel">
+        <h2 id="faq-heading" class="section-title">Frequently Asked Questions</h2>
+        <p class="section-sub" style="margin-bottom:0;">
+          Troubleshooting tips for Android APK sideloading, installation conflicts, Google Sign-In, and Cloud Firestore progress syncing.
+        </p>
+
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary>Why does Android block the APK with an "Unknown apps" warning?</summary>
+            <div class="faq-answer">
+              Because <code>helicopter-war.apk</code> is distributed directly via GitHub Releases rather than Google Play, Android asks you to approve your browser or Files app once. Tap <strong>Settings</strong> on the prompt &rarr; enable <strong>Allow from this source</strong> &rarr; go back and tap <strong>Install</strong>.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>Installation fails with "App not installed" or a package conflict error</summary>
+            <div class="faq-answer">
+              First check that your device runs <strong>Android 7.0+ (API 24)</strong> and has at least <strong>100 MB</strong> of free storage. If you previously installed an older test or debug build of <code>com.hellwar.game</code>, Android will reject updates signed with a different certificate &mdash; uninstall the old build first, then install the fresh <code>helicopter-war.apk</code>. Your Google Cloud saves remain intact.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>What if my browser renames the download or fails partway through?</summary>
+            <div class="faq-answer">
+              Some mobile download managers stall or rename GitHub release redirects. Try downloading directly using Chrome or Android's built-in browser from the <a href="https://github.com/gptgamestudio/hellwar-warzone/releases/latest" target="_blank" rel="noopener">GitHub Releases</a> page and make sure the saved file ends in <code>.apk</code>.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>How do I fix Google Sign-In errors on the Connection Gate screen?</summary>
+            <div class="faq-answer">
+              Helicopter War uses Android Credential Manager with Google Sign-In. Ensure your phone has an active Google account logged in, <strong>Google Play Services</strong> is updated, automatic <strong>Date &amp; time</strong> is enabled in Android Settings, and any VPN/firewall is not blocking Google or Firebase endpoints.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>How does my campaign progress sync across devices or after reinstalling?</summary>
+            <div class="faq-answer">
+              Your War Credits, high scores, destroyed barracks (out of 200), and defeated Headquarters bosses are stored in Cloud Firestore strictly per authenticated user ID (<code>users/{uid}</code>). Sign in with the exact same Google account on your new or reinstalled device to load your synced progress.
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary>Why does the game require an active internet connection to play?</summary>
+            <div class="faq-answer">
+              To protect campaign integrity and prevent desynced rewards, barracks destructions, boss victories, and Hangar purchases sync directly with Cloud Firestore in real time. If your connection drops, reconnect to Wi-Fi or mobile data and tap <strong>Retry</strong> on the Connection Gate screen.
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section id="version-history" aria-labelledby="version-history-heading">
+      <div class="panel">
+        <h2 id="version-history-heading" class="section-title">Version History</h2>
+        <p class="section-sub" style="margin-bottom:0;">
+          Latest three releases fetched live from GitHub Releases, showing release dates and key updates.
+        </p>
+
+        <div id="release-history-list" class="release-list" aria-live="polite">
+          <p class="release-status">Loading recent releases from GitHub...</p>
+        </div>
+
+        <p style="margin-top:14px;font-size:0.88rem;color:var(--muted);">
+          <a href="https://github.com/gptgamestudio/hellwar-warzone/releases" target="_blank" rel="noopener">Browse full release archive on GitHub &rarr;</a>
+        </p>
+      </div>
+    </section>
+
     <section id="developer">
       <div class="panel">
         <h2 class="section-title">Developer &amp; Repository Information</h2>
@@ -534,6 +722,170 @@
           if (statusEl) {
             statusEl.textContent = "Direct APK download configured at GitHub Releases latest/download/helicopter-war.apk.";
           }
+        });
+    })();
+
+    (function loadVersionHistory() {
+      var container = document.getElementById("release-history-list");
+      if (!container) return;
+
+      function isSafeHttpsUrl(url) {
+        return typeof url === "string" && url.indexOf("https://") === 0;
+      }
+
+      function extractKeyChanges(body) {
+        if (typeof body !== "string" || !body.trim()) {
+          return ["Official Android APK release published via GitHub Releases."];
+        }
+        var lines = body.split(/\r?\n/);
+        var changes = [];
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (!line) continue;
+          if (/^#{1,6}\s+/.test(line)) continue;
+          if (/^[-*_]{3,}$/.test(line)) continue;
+          if (/^\*\*Full Changelog\*\*:/i.test(line)) continue;
+          line = line.replace(/^([-*+]|\d+\.)\s+/, "");
+          line = line.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+          line = line.replace(/[*`]/g, "").trim();
+          if (line.length > 0) {
+            changes.push(line);
+          }
+          if (changes.length >= 5) break;
+        }
+        if (changes.length === 0) {
+          return ["Maintenance updates and release packaging improvements."];
+        }
+        return changes;
+      }
+
+      function renderFallback(message) {
+        container.replaceChildren();
+        var p = document.createElement("p");
+        p.className = "release-status";
+        p.textContent = message + " ";
+        var link = document.createElement("a");
+        link.href = "https://github.com/gptgamestudio/hellwar-warzone/releases";
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = "View releases on GitHub";
+        p.appendChild(link);
+        p.appendChild(document.createTextNode("."));
+        container.appendChild(p);
+      }
+
+      fetch("https://api.github.com/repos/gptgamestudio/hellwar-warzone/releases?per_page=6")
+        .then(function (res) {
+          if (!res.ok) throw new Error("Failed to load release history");
+          return res.json();
+        })
+        .then(function (releases) {
+          if (!Array.isArray(releases)) {
+            renderFallback("No release data returned from GitHub.");
+            return;
+          }
+
+          var recent = releases.filter(function (r) {
+            return r && !r.draft;
+          }).slice(0, 3);
+
+          if (recent.length === 0) {
+            renderFallback("No published releases found yet.");
+            return;
+          }
+
+          container.replaceChildren();
+
+          recent.forEach(function (release, index) {
+            var card = document.createElement("article");
+            card.className = "release-card";
+
+            var header = document.createElement("div");
+            header.className = "release-header";
+
+            var title = document.createElement("h3");
+            title.className = "release-title";
+            title.textContent = release.name || release.tag_name || "Release";
+            header.appendChild(title);
+
+            var meta = document.createElement("div");
+            meta.className = "release-meta";
+
+            if (index === 0) {
+              var latestBadge = document.createElement("span");
+              latestBadge.className = "release-badge";
+              latestBadge.textContent = "LATEST";
+              meta.appendChild(latestBadge);
+            } else if (release.prerelease) {
+              var preBadge = document.createElement("span");
+              preBadge.className = "release-badge";
+              preBadge.textContent = "PRE-RELEASE";
+              meta.appendChild(preBadge);
+            }
+
+            if (release.tag_name) {
+              var tagBadge = document.createElement("span");
+              tagBadge.className = "release-badge";
+              tagBadge.textContent = release.tag_name;
+              meta.appendChild(tagBadge);
+            }
+
+            var rawDate = release.published_at || release.created_at || "";
+            var dateSpan = document.createElement("span");
+            dateSpan.className = "release-date";
+            dateSpan.textContent = rawDate ? rawDate.slice(0, 10) : "Date unavailable";
+            meta.appendChild(dateSpan);
+
+            header.appendChild(meta);
+            card.appendChild(header);
+
+            var changesList = document.createElement("ul");
+            changesList.className = "release-changes";
+            var keyChanges = extractKeyChanges(release.body);
+            keyChanges.forEach(function (item) {
+              var li = document.createElement("li");
+              li.textContent = item;
+              changesList.appendChild(li);
+            });
+            card.appendChild(changesList);
+
+            var assets = Array.isArray(release.assets) ? release.assets : [];
+            var apkAsset = assets.find(function (a) { return a && a.name === "helicopter-war.apk"; })
+              || assets.find(function (a) { return a && a.name && a.name.endsWith(".apk"); });
+
+            if ((apkAsset && isSafeHttpsUrl(apkAsset.browser_download_url)) || isSafeHttpsUrl(release.html_url)) {
+              var linksRow = document.createElement("div");
+              linksRow.className = "release-links";
+
+              if (apkAsset && isSafeHttpsUrl(apkAsset.browser_download_url)) {
+                var apkLink = document.createElement("a");
+                apkLink.href = apkAsset.browser_download_url;
+                apkLink.setAttribute("download", apkAsset.name || "helicopter-war.apk");
+                apkLink.rel = "noopener";
+                var sizeLabel = apkAsset.size > 0
+                  ? " (" + (apkAsset.size / (1024 * 1024)).toFixed(2) + " MB)"
+                  : "";
+                apkLink.textContent = "Download " + (apkAsset.name || "helicopter-war.apk") + sizeLabel;
+                linksRow.appendChild(apkLink);
+              }
+
+              if (isSafeHttpsUrl(release.html_url)) {
+                var notesLink = document.createElement("a");
+                notesLink.href = release.html_url;
+                notesLink.target = "_blank";
+                notesLink.rel = "noopener";
+                notesLink.textContent = "Release Notes";
+                linksRow.appendChild(notesLink);
+              }
+
+              card.appendChild(linksRow);
+            }
+
+            container.appendChild(card);
+          });
+        })
+        .catch(function () {
+          renderFallback("Unable to load live release history from GitHub right now.");
         });
     })();
   </script>

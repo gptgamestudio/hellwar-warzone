@@ -276,9 +276,19 @@ class WarNetCampaignService private constructor(
     /**
      * Synchronous combat-loop hook: deduplicates immediately via synced state and
      * persists atomically to Cloud Firestore on IO dispatcher.
+     * Rejects unauthenticated callers and rolls back local state if Firestore denies the write.
      */
     @Synchronized
     fun recordBarracksDestruction(barracks: EnemyBarracks): BarracksDestructionResult {
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
+            _campaignState.value = buildState(
+                isConnected = false,
+                error = "Authentication required to record barracks destruction."
+            )
+            return BarracksDestructionResult.AlreadyDestroyed
+        }
+
         val added = synchronized(destroyedBarracksIds) {
             if (destroyedBarracksIds.contains(barracks.id)) {
                 false
@@ -292,18 +302,25 @@ class WarNetCampaignService private constructor(
         }
 
         val newCount = getDestroyedCount(barracks.empire)
-        _campaignState.value = buildState(isConnected = auth.currentUser != null)
+        _campaignState.value = buildState(isConnected = true)
 
-        if (auth.currentUser != null) {
-            scope.launch {
-                val res = repository.recordBarracksDestruction(
-                    barracksId = barracks.id,
-                    empire = barracks.empire.name,
-                    barracksIndex = barracks.index,
-                    damageDealt = barracks.maxHealth.toDouble()
-                )
-                if (res.isFailure) {
-                    syncFromCloud(currentCallsign)
+        scope.launch {
+            val res = repository.recordBarracksDestruction(
+                barracksId = barracks.id,
+                empire = barracks.empire.name,
+                barracksIndex = barracks.index,
+                damageDealt = barracks.maxHealth.toDouble().coerceAtLeast(320.0)
+            )
+            if (res.isFailure) {
+                synchronized(destroyedBarracksIds) {
+                    destroyedBarracksIds.remove(barracks.id)
+                }
+                val syncRes = syncFromCloud(currentCallsign)
+                if (syncRes.isFailure) {
+                    _campaignState.value = buildState(
+                        isConnected = false,
+                        error = res.exceptionOrNull()?.localizedMessage ?: "Failed to verify barracks with Cloud Firestore."
+                    )
                 }
             }
         }
@@ -323,14 +340,24 @@ class WarNetCampaignService private constructor(
             barracksId = barracks.id,
             empire = barracks.empire.name,
             barracksIndex = barracks.index,
-            damageDealt = barracks.maxHealth.toDouble()
+            damageDealt = barracks.maxHealth.toDouble().coerceAtLeast(320.0)
         )
         res.onSuccess { outcome ->
-            if (outcome is BarracksDestructionResult.FirstTimeDestroyed || outcome is BarracksDestructionResult.AlreadyDestroyed) {
-                synchronized(destroyedBarracksIds) {
-                    destroyedBarracksIds.add(barracks.id)
+            when (outcome) {
+                is BarracksDestructionResult.FirstTimeDestroyed -> {
+                    synchronized(destroyedBarracksIds) {
+                        destroyedBarracksIds.add(barracks.id)
+                    }
+                    profileCredits += outcome.creditsAwarded.toLong()
+                    profileHighScore += outcome.scoreAwarded.toLong()
+                    _campaignState.value = buildState(isConnected = true)
                 }
-                _campaignState.value = buildState(isConnected = true)
+                is BarracksDestructionResult.AlreadyDestroyed -> {
+                    synchronized(destroyedBarracksIds) {
+                        destroyedBarracksIds.add(barracks.id)
+                    }
+                    _campaignState.value = buildState(isConnected = true)
+                }
             }
         }
         return res
@@ -338,18 +365,30 @@ class WarNetCampaignService private constructor(
 
     @Synchronized
     fun recordHeadquartersDestruction(empire: EmpireType) {
-        if (!isHeadquartersUnlocked(empire)) return
-        synchronized(destroyedHqEmpires) {
+        val currentUser = auth.currentUser
+        if (currentUser == null || !isHeadquartersUnlocked(empire)) return
+        val wasAdded = synchronized(destroyedHqEmpires) {
             destroyedHqEmpires.add(empire.name)
         }
-        _campaignState.value = buildState(isConnected = auth.currentUser != null)
+        if (!wasAdded) return
+        _campaignState.value = buildState(isConnected = true)
 
-        if (auth.currentUser != null) {
-            scope.launch {
-                repository.recordHeadquartersVictory(
-                    empire = empire.name,
-                    bossId = "BOSS_${empire.name}"
-                )
+        scope.launch {
+            val res = repository.recordHeadquartersVictory(
+                empire = empire.name,
+                bossId = "BOSS_${empire.name}"
+            )
+            if (res.isFailure) {
+                synchronized(destroyedHqEmpires) {
+                    destroyedHqEmpires.remove(empire.name)
+                }
+                val syncRes = syncFromCloud(currentCallsign)
+                if (syncRes.isFailure) {
+                    _campaignState.value = buildState(
+                        isConnected = false,
+                        error = res.exceptionOrNull()?.localizedMessage ?: "Failed to verify HQ victory with Cloud Firestore."
+                    )
+                }
             }
         }
     }
@@ -360,8 +399,12 @@ class WarNetCampaignService private constructor(
             bossId = "BOSS_${empire.name}"
         )
         res.onSuccess {
-            synchronized(destroyedHqEmpires) {
+            val added = synchronized(destroyedHqEmpires) {
                 destroyedHqEmpires.add(empire.name)
+            }
+            if (added) {
+                profileCredits += 2500L
+                profileHighScore += 15000L
             }
             _campaignState.value = buildState(isConnected = true)
         }
@@ -370,15 +413,26 @@ class WarNetCampaignService private constructor(
 
     @Synchronized
     fun grantRewardedAdSupplyDrop(creditsAmount: Int = com.example.game.ads.AdMobManager.REWARDED_CREDITS_BONUS) {
+        val currentUser = auth.currentUser ?: return
         val safeBonus = creditsAmount.coerceIn(1, 2500)
         profileCredits += safeBonus.toLong()
-        _campaignState.value = buildState(isConnected = auth.currentUser != null)
+        _campaignState.value = buildState(isConnected = true)
 
-        if (auth.currentUser != null) {
-            scope.launch {
-                val res = repository.awardSupplyDropCredits(safeBonus.toLong())
-                if (res.isFailure) {
-                    syncFromCloud(currentCallsign)
+        scope.launch {
+            val res = repository.awardSupplyDropCredits(safeBonus.toLong())
+            if (res.isFailure) {
+                profileCredits = (profileCredits - safeBonus.toLong()).coerceAtLeast(0L)
+                val syncRes = syncFromCloud(currentCallsign)
+                if (syncRes.isFailure) {
+                    _campaignState.value = buildState(
+                        isConnected = false,
+                        error = res.exceptionOrNull()?.localizedMessage ?: "Failed to credit supply drop in Cloud Firestore."
+                    )
+                }
+            } else {
+                res.getOrNull()?.let { authoritativeCredits ->
+                    profileCredits = authoritativeCredits
+                    _campaignState.value = buildState(isConnected = auth.currentUser?.uid == currentUser.uid)
                 }
             }
         }
