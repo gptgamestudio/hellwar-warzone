@@ -2,7 +2,6 @@ package com.example.ads
 
 import android.content.Context
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import com.example.game.ads.AdConsentManager
 import com.example.game.ads.AdMobManager
@@ -18,18 +17,15 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class AdMobSsvAndConsentTest {
-
-    @get:Rule
-    val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var context: Context
 
@@ -106,8 +102,9 @@ class AdMobSsvAndConsentTest {
             isConsentGatheringComplete = true
         )
 
+        val activity = Robolectric.buildActivity(ComponentActivity::class.java).create().get()
         AdMobManager.showRewardedAd(
-            activity = composeRule.activity,
+            activity = activity,
             ssvUserId = "pilot_uid_42",
             ssvCustomData = "nonce_abc",
             onRewardEarned = { rewardEarnedTriggered = true },
