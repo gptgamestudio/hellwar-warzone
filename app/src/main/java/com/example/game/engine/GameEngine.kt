@@ -115,11 +115,35 @@ class GameEngine(
     val camera = Camera3D()
     var isScreenShakeEnabled: Boolean = initialScreenShakeEnabled
 
-    // 4 Independent directional input states (held = true)
+    // 4 Independent directional input states (held = true) & 360-degree analog virtual joystick vector
     var isUpPressed: Boolean = false
     var isDownPressed: Boolean = false
     var isLeftPressed: Boolean = false
     var isRightPressed: Boolean = false
+    var joystickInputX: Float = 0f
+    var joystickInputY: Float = 0f
+
+    fun setJoystickInput(x: Float, y: Float) {
+        val rawX = if (x.isFinite()) x else 0f
+        val rawY = if (y.isFinite()) y else 0f
+        val mag = kotlin.math.sqrt(rawX * rawX + rawY * rawY)
+        if (mag > 1f) {
+            joystickInputX = rawX / mag
+            joystickInputY = rawY / mag
+        } else {
+            joystickInputX = rawX
+            joystickInputY = rawY
+        }
+    }
+
+    fun clearMovementInputs() {
+        isUpPressed = false
+        isDownPressed = false
+        isLeftPressed = false
+        isRightPressed = false
+        joystickInputX = 0f
+        joystickInputY = 0f
+    }
 
     // Entities in active combat
     val bullets = mutableListOf<TracerBullet>()
@@ -312,10 +336,7 @@ class GameEngine(
         player.lockedTargetId = null
         player.isAutoFiring = initialAutoFire
 
-        isUpPressed = false
-        isDownPressed = false
-        isLeftPressed = false
-        isRightPressed = false
+        clearMovementInputs()
 
         bullets.clear()
         rockets.clear()
@@ -729,8 +750,8 @@ class GameEngine(
      * - Battlefield boundary enforcement.
      */
     private fun updatePlayerMovement(delta: Float) {
-        var inputX = 0f
-        var inputY = 0f
+        var inputX = joystickInputX.coerceIn(-1f, 1f)
+        var inputY = joystickInputY.coerceIn(-1f, 1f)
 
         if (isLeftPressed) inputX -= 1f
         if (isRightPressed) inputX += 1f
@@ -738,8 +759,18 @@ class GameEngine(
         if (isDownPressed) inputY -= 1f
 
         val inputLen = kotlin.math.sqrt(inputX * inputX + inputY * inputY)
-        val dirX = if (inputLen > 0.001f) (inputX / inputLen) else 0f
-        val dirY = if (inputLen > 0.001f) (inputY / inputLen) else 0f
+        val dirX: Float
+        val dirY: Float
+        if (inputLen > 1f) {
+            dirX = inputX / inputLen
+            dirY = inputY / inputLen
+        } else if (inputLen > 0.001f) {
+            dirX = inputX
+            dirY = inputY
+        } else {
+            dirX = 0f
+            dirY = 0f
+        }
 
         val effectiveMaxSpeed = player.flightSpeed
         val targetVelX = dirX * effectiveMaxSpeed

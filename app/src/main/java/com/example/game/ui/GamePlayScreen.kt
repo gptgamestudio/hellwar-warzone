@@ -1,5 +1,6 @@
 package com.example.game.ui
 
+import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -342,13 +343,25 @@ fun GamePlayScreen(
             AdMobManager.ensureAdsLoaded(context)
         }
     }
-    DisposableEffect(lifecycleOwner, context, canRequestAds) {
+    DisposableEffect(lifecycleOwner, context, canRequestAds, activity) {
+        activity?.let { act ->
+            if (act.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
+        }
         if (canRequestAds) {
             AdMobManager.ensureAdsLoaded(context)
         }
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && AdConsentManager.canRequestAds.value) {
-                AdMobManager.ensureAdsLoaded(context)
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                activity?.let { act ->
+                    if (act.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                        act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }
+                }
+                if (AdConsentManager.canRequestAds.value) {
+                    AdMobManager.ensureAdsLoaded(context)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

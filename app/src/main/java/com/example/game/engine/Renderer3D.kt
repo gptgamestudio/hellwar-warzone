@@ -38,8 +38,8 @@ class Renderer3D {
         val camera = engine.camera
         val minVisY = camera.y - 18f
         val maxVisY = camera.y + 165f
-        val minVisX = camera.x - 135f
-        val maxVisX = camera.x + 135f
+        val minVisX = camera.x - 220f
+        val maxVisX = camera.x + 220f
 
         // 1. Sky / Atmosphere
         drawAtmosphere(scope, width, height, engine.selectedEmpire)
@@ -308,11 +308,16 @@ class Renderer3D {
             }
         }
 
-        // 1. Open-world ground plane in 3D perspective
-        val horizL = camera.project(Vector3D(camera.x - 220f, safeFarY, 0f), width, height)
-        val horizR = camera.project(Vector3D(camera.x + 220f, safeFarY, 0f), width, height)
-        val nearL = camera.project(Vector3D(camera.x - 220f, safeNearY, 0f), width, height)
-        val nearR = camera.project(Vector3D(camera.x + 220f, safeNearY, 0f), width, height)
+        // 1. Open-world ground plane in 3D perspective (plus full-width horizon base fill for wide landscape)
+        scope.drawRect(
+            color = baseTerrainColor,
+            topLeft = Offset(0f, height * 0.43f),
+            size = Size(width, height * 0.57f)
+        )
+        val horizL = camera.project(Vector3D(camera.x - 420f, safeFarY, 0f), width, height)
+        val horizR = camera.project(Vector3D(camera.x + 420f, safeFarY, 0f), width, height)
+        val nearL = camera.project(Vector3D(camera.x - 420f, safeNearY, 0f), width, height)
+        val nearR = camera.project(Vector3D(camera.x + 420f, safeNearY, 0f), width, height)
 
         if (horizL != null && horizR != null && nearL != null && nearR != null) {
             val terrainPath = tmpPath.apply {
@@ -328,8 +333,8 @@ class Renderer3D {
 
         // 1b. Deterministic Ground Patches anchored in world space
         val cellSize = 18
-        val startCellX = ((camera.x - 54f) / cellSize).toInt()
-        val endCellX = ((camera.x + 54f) / cellSize).toInt()
+        val startCellX = ((camera.x - 110f) / cellSize).toInt()
+        val endCellX = ((camera.x + 110f) / cellSize).toInt()
         val startCellY = (startY / cellSize).toInt()
         val endCellY = (endY / cellSize).toInt()
 
@@ -492,8 +497,8 @@ class Renderer3D {
     private fun drawStructures(scope: DrawScope, camera: Camera3D, structures: List<TerrainStructure>, width: Float, height: Float) {
         val minVisY = camera.y - 24f
         val maxVisY = camera.y + 180f
-        val minVisX = camera.x - 165f
-        val maxVisX = camera.x + 165f
+        val minVisX = camera.x - 240f
+        val maxVisX = camera.x + 240f
 
         for (struct in structures) {
             if (struct.type == StructureType.BARRACKS_FORT || struct.type == StructureType.HEADQUARTERS_FORT) continue

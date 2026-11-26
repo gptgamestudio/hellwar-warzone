@@ -92,14 +92,14 @@ class Camera3D(
 
         if (!depth.isFinite() || !height.isFinite() || depth <= 1.0f) return null // Behind camera plane
 
-        // High FOV scale ensuring player helicopter spans 20-28% screen width
-        val fov = 520.0f
+        // Responsive FOV proportional to screen height so landscape & portrait maintain horizon & helicopter scale
+        val fov = (screenHeight * 0.265f).coerceIn(120.0f, 560.0f)
         val scale = fov / depth
         if (!scale.isFinite()) return null
 
         val projX = (screenWidth / 2f) + (relX * scale)
-        // Position player helicopter prominently at 63% screen height (lower-middle area above center-bottom D-pad)
-        val projY = (screenHeight * 0.63f) - (height * scale)
+        // Position player helicopter cleanly in lower-center combat zone (clear of upper HUD and lower-left joystick)
+        val projY = (screenHeight * 0.64f) - (height * scale)
         if (!projX.isFinite() || !projY.isFinite()) return null
 
         return ProjectedPoint(
