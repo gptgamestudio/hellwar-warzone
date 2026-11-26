@@ -2,12 +2,12 @@
   "version": "v1.0.4",
   "versionName": "1.0.4",
   "apkFileName": "helicopter-war.apk",
-  "apkSizeBytes": 36923540,
-  "apkSizeFormatted": "35.21 MB",
-  "releaseDate": "2026-11-23",
+  "apkSizeBytes": 29827954,
+  "apkSizeFormatted": "28.45 MB",
+  "releaseDate": "2026-11-26",
   "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.4/helicopter-war.apk",
   "releaseUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.4",
   "packageName": "com.hellwar.game",
   "minAndroid": "Android 7.0 (API 24+)",
-  "status": "pending_ci_release"
+  "status": "published"
 }

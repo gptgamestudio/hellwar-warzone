@@ -27,9 +27,9 @@
 | Field | Details |
 |---|---|
 | **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)](https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.4/helicopter-war.apk)** |
-| **Latest Version** | `v1.0.4` (`versionCode 5`) |
-| **APK File** | `helicopter-war.apk` (`35.21 MB`) |
-| **Release Date** | `2026-11-23` |
+| **Latest Version** | `v1.0.4` |
+| **APK File** | `helicopter-war.apk` (28.45 MB) |
+| **Release Date** | `2026-11-26` |
 | **Official Website (GitHub Pages)** | [gptgamestudio.github.io/hellwar-warzone](https://gptgamestudio.github.io/hellwar-warzone/) |
 | **Official Website (Firebase)** | [hellwar-warzone.web.app](https://hellwar-warzone.web.app/) |
 | **All Releases** | [View v1.0.4 Release Notes](https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.4) |
