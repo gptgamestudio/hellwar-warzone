@@ -78,8 +78,21 @@ android {
     unitTests {
       isIncludeAndroidResources = true
       all {
-        listOf("robolectric.offline", "robolectric.dependency.dir").forEach { prop ->
+        listOf(
+          "robolectric.offline",
+          "robolectric.dependency.dir",
+          "robolectric.dependency.repo.url",
+          "robolectric.dependency.repo.id"
+        ).forEach { prop ->
           System.getProperty(prop)?.let { value -> it.systemProperty(prop, value) }
+        }
+        if (System.getProperty("robolectric.offline") != "true" &&
+          System.getProperty("robolectric.dependency.repo.url") == null
+        ) {
+          it.systemProperty(
+            "robolectric.dependency.repo.url",
+            "https://maven-central.storage-download.googleapis.com/maven2"
+          )
         }
       }
     }

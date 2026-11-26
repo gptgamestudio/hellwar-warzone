@@ -210,7 +210,9 @@ class LandscapeHudAndJoystickTest {
         engine.threatAlert = null
         engine.update(0.05f)
 
-        val stateWithThreat = androidx.compose.runtime.mutableStateOf(engine.hudState.value)
+        val stateWithThreat = androidx.compose.runtime.mutableStateOf(
+            engine.hudState.value.copy(activeThreat = null)
+        )
 
         composeRule.setContent {
             MyApplicationTheme {

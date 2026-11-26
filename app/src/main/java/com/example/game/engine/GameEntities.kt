@@ -449,7 +449,7 @@ data class EnvironmentHazard(
     val damage: Float = 25f,
     var warningTimer: Float = 1.0f,
     var activeTimer: Float = 1.2f,
-    var cycleTimer: Float = 4.5f,
+    var cycleTimer: Float = 0f,
     var state: HazardState = HazardState.DORMANT
 )
 
