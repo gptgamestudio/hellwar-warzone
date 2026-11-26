@@ -1,0 +1,108 @@
+rules_version = '2';
+
+// STAGE 3 STRICT SERVER-AUTHORITATIVE RULES (Post-Migration Cutover Only)
+// Deploy only after verifying:
+// 1. All Cloud Functions (hangar, ssv, campaign, migration) are deployed and healthy
+// 2. Legacy v1.0.3 traffic has dropped below cutover threshold and client_policy minVersionCode >= 5 is active
+// 3. Backups and dry-run migration audit have completed cleanly
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny all access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Owner read-only for user campaign dossier and subcollections; all writes happen via trusted Cloud Functions
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list, write: if false;
+
+      match /destroyed_barracks/{barracksId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(barracksId);
+        allow list: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /hq_victories/{empire} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(empire);
+        allow list: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /hangar/{docId} {
+        allow get: if isOwner(userId) && isValidId(userId) && docId == 'state';
+        allow list, write: if false;
+      }
+
+      match /migration_backups/{backupId} {
+        allow read, write: if false;
+      }
+
+      match /endless_waves/{waveId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(waveId);
+        allow list: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /endless/{docId} {
+        allow get: if isOwner(userId) && isValidId(userId) && docId == 'stats';
+        allow list, write: if false;
+      }
+    }
+
+    match /rewards_ledger/{nonceId} {
+      allow get: if isSignedIn() &&
+                    isValidId(nonceId) &&
+                    resource.data.userId == request.auth.uid;
+      allow list, write: if false;
+    }
+
+    match /ssv_processed_tx/{txId} {
+      allow read, write: if false;
+    }
+
+    match /sortie_sessions/{sessionId} {
+      allow get: if isSignedIn() &&
+                    isValidId(sessionId) &&
+                    resource.data.userId == request.auth.uid;
+      allow list, write: if false;
+    }
+
+    match /endless_sessions/{sessionId} {
+      allow get: if isSignedIn() &&
+                    isValidId(sessionId) &&
+                    resource.data.userId == request.auth.uid;
+      allow list, write: if false;
+    }
+
+    match /migration_quarantine/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list, write: if false;
+    }
+
+    match /config/{docId} {
+      allow get: if docId == 'client_policy';
+      allow list, write: if false;
+    }
+
+    // Public Top 5 leaderboard: strictly server-updated by Cloud Functions
+    match /leaderboard/{entryId} {
+      allow get: if isValidId(entryId);
+      allow list: if true;
+      allow write: if false;
+    }
+  }
+}

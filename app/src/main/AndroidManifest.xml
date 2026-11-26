@@ -20,7 +20,7 @@
         android:theme="@style/Theme.MyApplication">
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-9786472984542330~8764530303" />
+            android:value="${ADMOB_APP_ID}" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

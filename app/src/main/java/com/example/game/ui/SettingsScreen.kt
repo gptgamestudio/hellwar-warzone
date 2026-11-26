@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,6 +60,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.game.ads.AdConsentManager
+import com.example.game.ads.AdMobManager
+import com.example.game.ads.findActivity
 import com.example.game.network.TacticalSettingsManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -83,6 +87,8 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     val settingsManager = remember(context) { TacticalSettingsManager.getInstance(context) }
     val settings by settingsManager.settings.collectAsState()
+    val canRequestAds by AdConsentManager.canRequestAds.collectAsState()
+    val isPrivacyOptionsRequired by AdConsentManager.isPrivacyOptionsRequired.collectAsState()
     var uidCopied by remember(pilotUid) { mutableStateOf(false) }
 
     LaunchedEffect(uidCopied) {
@@ -271,6 +277,56 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace
                         )
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = if (canRequestAds) {
+                            "AD CONSENT STATUS: PERMITTED"
+                        } else {
+                            "AD CONSENT STATUS: PENDING / RESTRICTED"
+                        },
+                        fontSize = 10.sp,
+                        color = if (canRequestAds) HealthGreen else AmberWarning,
+                        fontFamily = FontFamily.Monospace
+                    )
+
+                    if (isPrivacyOptionsRequired) {
+                        val privacyUpdatedMsg = stringResource(R.string.settings_privacy_ad_consent_updated)
+                        OutlinedButton(
+                            onClick = {
+                                val activity = context.findActivity()
+                                AdConsentManager.showPrivacyOptionsForm(activity) { allowed ->
+                                    if (allowed) {
+                                        AdMobManager.initialize(context)
+                                    }
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(privacyUpdatedMsg)
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberWarning),
+                            border = BorderStroke(1.dp, AmberWarning.copy(alpha = 0.8f)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("privacy_options_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.PrivacyTip,
+                                contentDescription = "Privacy and Ad Consent Options",
+                                tint = AmberWarning
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.settings_privacy_ad_consent),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))

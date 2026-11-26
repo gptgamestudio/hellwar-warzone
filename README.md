@@ -26,13 +26,13 @@
 <!-- RELEASE_INFO_START -->
 | Field | Details |
 |---|---|
-| **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)](https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.3/helicopter-war.apk)** |
-| **Latest Version** | `v1.0.3` (`versionCode 4`) |
+| **Direct APK Download** | **[Download `helicopter-war.apk` (Direct APK)](https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.4/helicopter-war.apk)** |
+| **Latest Version** | `v1.0.4` (`versionCode 5`) |
 | **APK File** | `helicopter-war.apk` (`35.21 MB`) |
-| **Release Date** | `2026-11-21` |
+| **Release Date** | `2026-11-23` |
 | **Official Website (GitHub Pages)** | [gptgamestudio.github.io/hellwar-warzone](https://gptgamestudio.github.io/hellwar-warzone/) |
 | **Official Website (Firebase)** | [hellwar-warzone.web.app](https://hellwar-warzone.web.app/) |
-| **All Releases** | [View v1.0.3 Release Notes](https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.3) |
+| **All Releases** | [View v1.0.4 Release Notes](https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.4) |
 <!-- RELEASE_INFO_END -->
 
 ### How Direct APK Releases Auto-Update
@@ -43,11 +43,11 @@ Whenever you push changes to `main` (e.g., via AI Studio **Push to GitHub**), pu
 
 ---
 
-## Release Highlights (`v1.0.3`)
-- **AdMob Reliability & Combat Pause Sync:** Exponential retry backoff for Interstitial and Rewarded supply ads, automatic ad reload on network reconnect and banner resume, and clean audio mute + simulation freeze while fullscreen ads are presented.
-- **Persistent Hangar Economy & Settings:** Per-UID Hangar purchase/upgrade persistence (`HangarPersistenceManager`) fixes credit balance desyncs, eliminates per-frame 3D preview allocations, and wires real SFX, Haptics, Auto-Fire, and Camera Shake toggles (`TacticalSettingsManager`).
-- **Live Cloud Dossiers & UI Layout Polish:** Replaced static Command Orders and fake leaderboard entries with live Firestore theater progress and Zero-Trust UID Pilot Combat Record, fixed nested `WindowInsets` double-padding, and added adaptive tablet centering.
-- **Auto-Update CI/CD & Hosting:** Unit tests gate release packaging cleanly, `my-upload-key.jks` stays git-ignored, and `deploy-github-pages.yml` / `deploy-firebase-hosting.yml` deploy fresh `main` `hosting/` metadata after verified APK builds.
+## Release Highlights (`v1.0.4`)
+- **Cloud-Authoritative Hangar & Non-Destructive Migration:** Server-side Cloud Functions (`functions/`) manage helicopter unlocks, upgrades, camo skins, and `creditsSpentCloud` inside the named enterprise Firestore DB, while safely migrating legacy Hangar state with backups and conflict quarantine.
+- **AdMob ECDSA SSV & UMP Consent:** `RewardedAd` attaches `ServerSideVerificationOptions` verified on `admobSsvWebhook` with replay protection and server-enforced 10/24h continue quota; all ads strictly gate on UMP `canRequestAds()`.
+- **Upgraded 3D Fleet Visuals, Combat Differentiation & Shield Mitigation:** Distinct 3D gunship silhouettes & active skin paint in Hangar and combat, class-specific autocannon fire rates / missile capacity / upgrade scaling, armor/shield damage mitigation, and live in-game Top 5 Global Leaderboard.
+- **Privacy & Safe Logging:** Zero-PII `SafeLog` masks UIDs/emails/tokens and gates all Logcat output strictly behind `BuildConfig.DEBUG`.
 
 ---
 

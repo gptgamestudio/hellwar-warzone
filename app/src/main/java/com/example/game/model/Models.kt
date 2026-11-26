@@ -193,6 +193,9 @@ data class HelicopterUpgrades(
     fun calculateEffectiveMissileDamage(base: Float): Float =
         base * (1.0f + (weaponLevel - 1) * 0.10f)
 
+    fun calculateEffectiveRocketDamage(base: Float): Float =
+        base * (1.0f + (weaponLevel - 1) * 0.12f)
+
     fun calculateEffectiveRocketAmmo(base: Int): Int =
         base + (weaponLevel - 1) * 4
 

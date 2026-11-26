@@ -9,7 +9,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import com.example.game.model.EmpireType
+import com.example.game.model.HelicopterClass
 import com.example.ui.theme.MilitaryGold
 import com.example.ui.theme.AmberWarning
 import kotlin.math.cos
@@ -19,6 +21,7 @@ class Renderer3D {
 
     private val tmpPath = Path()
     private var cachedSkyHeight: Float = -1f
+    private var cachedSkyEmpire: EmpireType? = null
     private var cachedSkyBrush: Brush? = null
 
     private val aaBarrelOffsets = floatArrayOf(-6f, -2f, 2f, 6f)
@@ -120,12 +123,40 @@ class Renderer3D {
     }
 
     private fun drawAtmosphere(scope: DrawScope, width: Float, height: Float, empire: EmpireType) {
-        val skyBrush = if (cachedSkyBrush != null && cachedSkyHeight == height) {
+        val (skyTop, skyMid, skyHorizon, ridgeFarColor, ridgeNearColor) = when (empire) {
+            EmpireType.DRAGON -> listOf(
+                Color(0xFF2B120C),
+                Color(0xFF5C2414),
+                Color(0xFFA84A24),
+                Color(0xFF3E1C16),
+                Color(0xFF28110D)
+            )
+            EmpireType.ALIEN -> listOf(
+                Color(0xFF130B2E),
+                Color(0xFF281956),
+                Color(0xFF3B4D7A),
+                Color(0xFF2B225A),
+                Color(0xFF1A143B)
+            )
+            EmpireType.ORC -> listOf(
+                Color(0xFF2B261C),
+                Color(0xFF5A4832),
+                Color(0xFF8C724A),
+                Color(0xFF473A2B),
+                Color(0xFF2E261C)
+            )
+            EmpireType.HUMAN -> listOf(
+                Color(0xFFFFFFFF),
+                Color(0xFFF6FAF6),
+                Color(0xFFE6F0E5),
+                Color(0xFF9BB696),
+                Color(0xFF72946C)
+            )
+        }
+
+        val skyBrush = if (cachedSkyBrush != null && cachedSkyHeight == height && cachedSkyEmpire == empire) {
             cachedSkyBrush!!
         } else {
-            val skyTop = Color(0xFFFFFFFF)      // Crisp bright white upper background
-            val skyMid = Color(0xFFF6FAF6)      // Soft cloud-white daylight
-            val skyHorizon = Color(0xFFE6F0E5)  // Fresh pale sage mist at horizon
             Brush.verticalGradient(
                 colors = listOf(skyTop, skyMid, skyHorizon),
                 startY = 0f,
@@ -133,16 +164,16 @@ class Renderer3D {
             ).also {
                 cachedSkyBrush = it
                 cachedSkyHeight = height
+                cachedSkyEmpire = empire
             }
         }
 
-        // Full white/soft-green sky backdrop
         scope.drawRect(
             brush = skyBrush,
             size = Size(width, height)
         )
 
-        // Distant panoramic green mountain ridges on horizon
+        // Distant panoramic horizon ridges themed per Empire
         val ridgeFar = tmpPath.apply {
             reset()
             moveTo(0f, height * 0.38f)
@@ -156,7 +187,7 @@ class Renderer3D {
             lineTo(0f, height * 0.45f)
             close()
         }
-        scope.drawPath(ridgeFar, Color(0xFF9BB696).copy(alpha = 0.75f), style = Fill)
+        scope.drawPath(ridgeFar, ridgeFarColor.copy(alpha = 0.80f), style = Fill)
 
         val ridgeNear = tmpPath.apply {
             reset()
@@ -170,7 +201,7 @@ class Renderer3D {
             lineTo(0f, height * 0.45f)
             close()
         }
-        scope.drawPath(ridgeNear, Color(0xFF72946C).copy(alpha = 0.90f), style = Fill)
+        scope.drawPath(ridgeNear, ridgeNearColor.copy(alpha = 0.92f), style = Fill)
     }
 
     private fun drawGroundTerrain(scope: DrawScope, camera: Camera3D, width: Float, height: Float, empire: EmpireType) {
@@ -179,12 +210,59 @@ class Renderer3D {
         val safeNearY = camera.y - 22f
         val safeFarY = camera.y + 240f
 
-        // Natural Environment Base Terrain: Refreshing natural green meadow & warm brown earth patches
-        val baseTerrainColor = Color(0xFF639453)
-        val soilPatchOuter = Color(0xFF8C6B4B)
-        val soilPatchInner = Color(0xFF7A5B3D)
+        val baseTerrainColor: Color
+        val soilPatchOuter: Color
+        val soilPatchInner: Color
+        val bankColor: Color
+        val riverMainColor: Color
+        val riverHighlightColor: Color
+        val roadBaseColor: Color
+        val roadCenterColor: Color
 
-        // 1. Vast open-world green grassland polygon in 3D perspective (clipped safely in front of near camera plane)
+        when (empire) {
+            EmpireType.DRAGON -> {
+                baseTerrainColor = Color(0xFF42312B)      // Scorched volcanic ashland
+                soilPatchOuter = Color(0xFF5D3A2E)        // Baked cinder crust
+                soilPatchInner = Color(0xFF7A3419)        // Glowing ember soil
+                bankColor = Color(0xFF2B1F1B)             // Obsidian lava banks
+                riverMainColor = Color(0xFFE65100)        // Molten magma flow
+                riverHighlightColor = Color(0xFFFFD54F)   // Superheated lava core
+                roadBaseColor = Color(0xFF3A2D28)         // Basalt warpath
+                roadCenterColor = Color(0xFF6D4C41)
+            }
+            EmpireType.ALIEN -> {
+                baseTerrainColor = Color(0xFF284852)      // Bio-luminescent alien flora
+                soilPatchOuter = Color(0xFF392D5C)        // Xenomorphic crystal moss
+                soilPatchInner = Color(0xFF4E3C7A)
+                bankColor = Color(0xFF1F3640)             // Dark alloy shoreline
+                riverMainColor = Color(0xFF0097A7)        // Ionized plasma channel
+                riverHighlightColor = Color(0xFF80DEEA)   // Bio-luminescent pulse
+                roadBaseColor = Color(0xFF37474F)         // Metallic alien causeway
+                roadCenterColor = Color(0xFF00E5FF)
+            }
+            EmpireType.ORC -> {
+                baseTerrainColor = Color(0xFF6C6242)      // Barren sulfur wasteland
+                soilPatchOuter = Color(0xFF554731)        // Diesel-soaked scrap dirt
+                soilPatchInner = Color(0xFF3F3322)
+                bankColor = Color(0xFF5C4B37)             // Muddy refinery trench
+                riverMainColor = Color(0xFF4F5D2F)        // Toxic acid/sludge canal
+                riverHighlightColor = Color(0xFF9CCC65)   // Chemical sheen
+                roadBaseColor = Color(0xFF4E4438)         // Tracked convoy road
+                roadCenterColor = Color(0xFF8D6E63)
+            }
+            EmpireType.HUMAN -> {
+                baseTerrainColor = Color(0xFF639453)      // Coastal green meadow
+                soilPatchOuter = Color(0xFF8C6B4B)        // Warm earth patches
+                soilPatchInner = Color(0xFF7A5B3D)
+                bankColor = Color(0xFFA98965)             // Sandy coastal shoreline
+                riverMainColor = Color(0xFF4C8AA8)        // Ocean naval channel
+                riverHighlightColor = Color(0xFF74AFCB)
+                roadBaseColor = Color(0xFF525B63)         // Asphalt military highway / tarmac
+                roadCenterColor = Color(0xFFE0B44C)       // Runway/highway lane striping
+            }
+        }
+
+        // 1. Open-world ground plane in 3D perspective
         val horizL = camera.project(Vector3D(camera.x - 220f, safeFarY, 0f), width, height)
         val horizR = camera.project(Vector3D(camera.x + 220f, safeFarY, 0f), width, height)
         val nearL = camera.project(Vector3D(camera.x - 220f, safeNearY, 0f), width, height)
@@ -202,7 +280,7 @@ class Renderer3D {
             scope.drawPath(terrainPath, baseTerrainColor, style = Fill)
         }
 
-        // 1b. Natural Brown Earth Patches anchored deterministically in world space
+        // 1b. Deterministic Ground Patches anchored in world space
         val cellSize = 18
         val startCellX = ((camera.x - 54f) / cellSize).toInt()
         val endCellX = ((camera.x + 54f) / cellSize).toInt()
@@ -250,7 +328,7 @@ class Renderer3D {
             }
         }
 
-        // 2. Realistic 3D River with warm sandy-brown banks and clear sky-blue water
+        // 2. Themed Empire Waterway (Magma River / Ion Channel / Sludge Canal / Naval Channel)
         val riverStep = 10f
         var ry = startY
         while (ry <= endY - riverStep) {
@@ -275,7 +353,7 @@ class Renderer3D {
                     lineTo(bL2.screenPos.x, bL2.screenPos.y)
                     close()
                 }
-                scope.drawPath(bankQuad, Color(0xFFA98965), style = Fill)
+                scope.drawPath(bankQuad, bankColor, style = Fill)
             }
 
             val wL1 = camera.project(Vector3D(rx1 - waterHalfW, ry, 0.015f), width, height)
@@ -292,17 +370,17 @@ class Renderer3D {
                     lineTo(wL2.screenPos.x, wL2.screenPos.y)
                     close()
                 }
-                scope.drawPath(waterQuad, Color(0xFF4C8AA8), style = Fill)
+                scope.drawPath(waterQuad, riverMainColor, style = Fill)
 
                 val m1 = (wL1.screenPos + wR1.screenPos) / 2f
                 val m2 = (wL2.screenPos + wR2.screenPos) / 2f
-                scope.drawLine(Color(0xFF74AFCB).copy(alpha = 0.7f), m1, m2, (wL1.screenPos - wR1.screenPos).getDistance() * 0.35f, StrokeCap.Round)
+                scope.drawLine(riverHighlightColor.copy(alpha = 0.7f), m1, m2, (wL1.screenPos - wR1.screenPos).getDistance() * 0.35f, StrokeCap.Round)
             }
 
             ry += riverStep
         }
 
-        // 3. Natural Warm Brown Packed-Dirt Road
+        // 3. Themed Supply Road / Convoy Highway / Airbase Tarmac
         val roadStep = 12f
         var dy = startY
         while (dy <= endY - roadStep) {
@@ -325,11 +403,11 @@ class Renderer3D {
                     lineTo(rL2.screenPos.x, rL2.screenPos.y)
                     close()
                 }
-                scope.drawPath(roadQuad, Color(0xFF997755), style = Fill)
+                scope.drawPath(roadQuad, roadBaseColor, style = Fill)
 
                 val m1 = (rL1.screenPos + rR1.screenPos) / 2f
                 val m2 = (rL2.screenPos + rR2.screenPos) / 2f
-                scope.drawLine(Color(0xFF7D5F41), m1, m2, 3.5f, StrokeCap.Round)
+                scope.drawLine(roadCenterColor, m1, m2, 3.2f, StrokeCap.Round)
             }
 
             dy += roadStep
@@ -805,100 +883,139 @@ class Renderer3D {
             return camera.project(worldPt, width, height)?.screenPos ?: Offset(cx, cy)
         }
 
-        // Natural Tactical Military Palette (Crisp olive-slate hull with subtle skin accent trim)
-        val armorBody = Color(0xFF3E4D3D)       // Natural matte tactical olive
-        val armorTopLit = Color(0xFF566854)     // Sunlit upper facet
-        val armorShadow = Color(0xFF283328)     // Underbelly shadow
-        val panelSeam = Color(0xFF1A221A)       // Structural panel lines
+        // Paint fuselage from active HelicopterSkin + class shading
+        val armorBody = player.skin.primaryColor
+        val accentTrim = player.skin.accentColor
+        val armorTopLit = lerp(armorBody, Color.White, 0.24f)
+        val armorShadow = lerp(armorBody, Color.Black, 0.36f)
+        val panelSeam = lerp(armorBody, Color.Black, 0.65f)
 
-        // 1. Long Tapered Tail Boom & Empennage
-        val tailEnd = trans(0f, -6.0f, 0.5f)
-        val tailFinTop = trans(0f, -6.4f, 2.6f)
-        val tailFinBase = trans(0f, -5.2f, 0.4f)
-        val tailBody = trans(0f, -1.8f, 0.3f)
+        val heloClass = player.heloClass
+        val bodyScaleX = when (heloClass) {
+            HelicopterClass.SCOUT -> 0.78f
+            HelicopterClass.HEAVY_GUNSHIP -> 1.24f
+            HelicopterClass.STEALTH -> 1.04f
+            HelicopterClass.ULTIMATE_WAR -> 1.15f
+        }
+        val bodyScaleY = when (heloClass) {
+            HelicopterClass.SCOUT -> 0.90f
+            HelicopterClass.HEAVY_GUNSHIP -> 1.10f
+            HelicopterClass.STEALTH -> 1.02f
+            HelicopterClass.ULTIMATE_WAR -> 1.12f
+        }
+        val wingSpan = when (heloClass) {
+            HelicopterClass.SCOUT -> 2.8f
+            HelicopterClass.HEAVY_GUNSHIP -> 4.9f
+            HelicopterClass.STEALTH -> 3.6f
+            HelicopterClass.ULTIMATE_WAR -> 4.5f
+        }
 
-        // Tail boom structure
+        // 1. Tail Boom & Empennage (Class-differentiated)
+        val tailEnd = trans(0f, -5.8f * bodyScaleY, 0.5f)
+        val tailFinTop = trans(0f, -6.3f * bodyScaleY, 2.5f)
+        val tailFinBase = trans(0f, -5.0f * bodyScaleY, 0.4f)
+        val tailBody = trans(0f, -1.7f * bodyScaleY, 0.3f)
+
+        val tailBoomWidth = if (heloClass == HelicopterClass.HEAVY_GUNSHIP) 7f else 5f
         val tailBoomPath = tmpPath.apply {
             reset()
-            moveTo(tailBody.x - 5f * (s / 20f), tailBody.y)
+            moveTo(tailBody.x - tailBoomWidth * (s / 20f), tailBody.y)
             lineTo(tailEnd.x, tailEnd.y)
-            lineTo(tailBody.x + 5f * (s / 20f), tailBody.y)
+            lineTo(tailBody.x + tailBoomWidth * (s / 20f), tailBody.y)
             close()
         }
         scope.drawPath(tailBoomPath, armorShadow, style = Fill)
         scope.drawPath(tailBoomPath, panelSeam, style = Stroke(width = 1.5f))
 
-        // Swept Vertical Tail Fin
-        val finPath = tmpPath.apply {
-            reset()
-            moveTo(tailFinBase.x, tailFinBase.y)
-            lineTo(tailFinTop.x, tailFinTop.y)
-            lineTo(tailEnd.x, tailEnd.y)
-            close()
+        // Vertical Fin / Twin Stealth V-Tail
+        if (heloClass == HelicopterClass.STEALTH) {
+            val vL = trans(-1.0f, -5.8f, 2.3f)
+            val vR = trans(1.0f, -5.8f, 2.3f)
+            scope.drawLine(armorBody, tailEnd, vL, 4.5f * (s / 20f), StrokeCap.Round)
+            scope.drawLine(armorBody, tailEnd, vR, 4.5f * (s / 20f), StrokeCap.Round)
+            scope.drawLine(accentTrim, tailFinBase, vL, 1.8f, StrokeCap.Round)
+            scope.drawLine(accentTrim, tailFinBase, vR, 1.8f, StrokeCap.Round)
+        } else {
+            val finPath = tmpPath.apply {
+                reset()
+                moveTo(tailFinBase.x, tailFinBase.y)
+                lineTo(tailFinTop.x, tailFinTop.y)
+                lineTo(tailEnd.x, tailEnd.y)
+                close()
+            }
+            scope.drawPath(finPath, armorBody, style = Fill)
+            scope.drawPath(finPath, panelSeam, style = Stroke(width = 1.5f))
         }
-        scope.drawPath(finPath, armorBody, style = Fill)
-        scope.drawPath(finPath, panelSeam, style = Stroke(width = 1.5f))
 
-        // Horizontal Stabilizer Wings on Tail Boom
-        val stabL = trans(-1.8f, -4.8f, 0.4f)
-        val stabR = trans(1.8f, -4.8f, 0.4f)
+        // Horizontal Stabilizer Wings
+        val stabSpan = if (heloClass == HelicopterClass.SCOUT) 1.3f else 2.0f
+        val stabL = trans(-stabSpan, -4.8f * bodyScaleY, 0.4f)
+        val stabR = trans(stabSpan, -4.8f * bodyScaleY, 0.4f)
         scope.drawLine(armorTopLit, stabL, stabR, 5f * (s / 20f), StrokeCap.Round)
-        scope.drawLine(panelSeam, stabL, stabR, 2f * (s / 20f), StrokeCap.Round)
+        scope.drawLine(accentTrim.copy(alpha = 0.75f), stabL, stabR, 1.8f * (s / 20f), StrokeCap.Round)
 
-        // Spinning Tail Rotor (Mounted on left side of vertical fin)
-        val tailRotorHub = trans(0.35f, -6.1f, 1.8f)
+        // Tail Rotor / Ducted Fenestron (Stealth)
+        val tailRotorHub = trans(0.35f, -5.9f * bodyScaleY, 1.7f)
         val trAngle = player.tailRotorAngle
-        val trRadius = 22f * (s / 20f)
-        // Rotor motion blur disc
-        scope.drawCircle(Color(0x33B0BEC5), trRadius, tailRotorHub)
-        // 2-Blade Tail Rotor
-        val tr1 = Offset(tailRotorHub.x + cos(trAngle) * trRadius, tailRotorHub.y + sin(trAngle) * trRadius)
-        val tr2 = Offset(tailRotorHub.x - cos(trAngle) * trRadius, tailRotorHub.y - sin(trAngle) * trRadius)
-        scope.drawLine(Color(0xFFE2E8F0), tr1, tr2, 2.5f, StrokeCap.Round)
-        scope.drawCircle(Color(0xFF1E261E), 3f * (s / 20f), tailRotorHub)
+        val trRadius = 21f * (s / 20f)
+        if (heloClass == HelicopterClass.STEALTH) {
+            scope.drawCircle(armorShadow, trRadius * 0.9f, tailRotorHub, style = Stroke(4.5f))
+            scope.drawCircle(accentTrim.copy(alpha = 0.45f), trRadius * 0.65f, tailRotorHub)
+        } else {
+            scope.drawCircle(Color(0x33B0BEC5), trRadius, tailRotorHub)
+            val tr1 = Offset(tailRotorHub.x + cos(trAngle) * trRadius, tailRotorHub.y + sin(trAngle) * trRadius)
+            val tr2 = Offset(tailRotorHub.x - cos(trAngle) * trRadius, tailRotorHub.y - sin(trAngle) * trRadius)
+            scope.drawLine(Color(0xFFE2E8F0), tr1, tr2, 2.5f, StrokeCap.Round)
+            scope.drawCircle(panelSeam, 3f * (s / 20f), tailRotorHub)
+        }
 
-        // 2. Heavy Weapon Wings & Ordnance Pylons (Spanning 20-28% of screen width)
-        val wingSpan = 4.2f
+        // 2. Wings & Ordnance Pylons
         val wingRoot = trans(0f, 0.2f, 0.1f)
-        val leftWingTip = trans(-wingSpan, 0.2f, -0.1f)
-        val rightWingTip = trans(wingSpan, 0.2f, -0.1f)
+        val leftWingTip = trans(-wingSpan, if (heloClass == HelicopterClass.ULTIMATE_WAR) 0.9f else 0.1f, -0.1f)
+        val rightWingTip = trans(wingSpan, if (heloClass == HelicopterClass.ULTIMATE_WAR) 0.9f else 0.1f, -0.1f)
 
-        // Stub wings
-        scope.drawLine(armorBody, wingRoot, leftWingTip, 8f * (s / 20f), StrokeCap.Round)
-        scope.drawLine(armorBody, wingRoot, rightWingTip, 8f * (s / 20f), StrokeCap.Round)
-        scope.drawLine(armorTopLit, wingRoot, leftWingTip, 3f * (s / 20f), StrokeCap.Round)
-        scope.drawLine(armorTopLit, wingRoot, rightWingTip, 3f * (s / 20f), StrokeCap.Round)
+        val wingThickness = when (heloClass) {
+            HelicopterClass.SCOUT -> 5.5f
+            HelicopterClass.HEAVY_GUNSHIP -> 10.5f
+            else -> 8f
+        }
+        scope.drawLine(armorBody, wingRoot, leftWingTip, wingThickness * (s / 20f), StrokeCap.Round)
+        scope.drawLine(armorBody, wingRoot, rightWingTip, wingThickness * (s / 20f), StrokeCap.Round)
+        scope.drawLine(accentTrim, wingRoot, leftWingTip, 2.4f * (s / 20f), StrokeCap.Round)
+        scope.drawLine(accentTrim, wingRoot, rightWingTip, 2.4f * (s / 20f), StrokeCap.Round)
 
-        // Weapon Pods: Dual 19-Tube Hydra 70 Rocket Pods
-        val podW = 10f * (s / 20f)
-        val podH = 22f * (s / 20f)
-        val podPosL = trans(-wingSpan * 0.7f, 0.3f, -0.2f)
-        val podPosR = trans(wingSpan * 0.7f, 0.3f, -0.2f)
+        // Rocket Pods (not protruding on Stealth internal-bay frame)
+        if (heloClass != HelicopterClass.STEALTH) {
+            val podScale = if (heloClass == HelicopterClass.HEAVY_GUNSHIP) 1.35f else 0.95f
+            val podW = 10f * podScale * (s / 20f)
+            val podH = 22f * podScale * (s / 20f)
+            val podPosL = trans(-wingSpan * 0.65f, 0.3f, -0.2f)
+            val podPosR = trans(wingSpan * 0.65f, 0.3f, -0.2f)
+            val podBodyColor = lerp(armorShadow, Color(0xFF1F262B), 0.5f)
+            scope.drawRoundRect(podBodyColor, Offset(podPosL.x - podW / 2, podPosL.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f))
+            scope.drawRoundRect(podBodyColor, Offset(podPosR.x - podW / 2, podPosR.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f))
+            scope.drawRoundRect(accentTrim.copy(alpha = 0.7f), Offset(podPosL.x - podW / 2, podPosL.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f), style = Stroke(1.2f))
+            scope.drawRoundRect(accentTrim.copy(alpha = 0.7f), Offset(podPosR.x - podW / 2, podPosR.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f), style = Stroke(1.2f))
+            scope.drawCircle(Color(0xFF111711), 3.5f * (s / 20f), Offset(podPosL.x, podPosL.y + podH / 2))
+            scope.drawCircle(Color(0xFF111711), 3.5f * (s / 20f), Offset(podPosR.x, podPosR.y + podH / 2))
+        }
 
-        // Rocket Pod Cylinders (Matte dark olive)
-        scope.drawRoundRect(Color(0xFF283428), Offset(podPosL.x - podW / 2, podPosL.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f))
-        scope.drawRoundRect(Color(0xFF283428), Offset(podPosR.x - podW / 2, podPosR.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f))
-        scope.drawRoundRect(panelSeam, Offset(podPosL.x - podW / 2, podPosL.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f), style = Stroke(1f))
-        scope.drawRoundRect(panelSeam, Offset(podPosR.x - podW / 2, podPosR.y - podH / 2), Size(podW, podH), androidx.compose.ui.geometry.CornerRadius(3f), style = Stroke(1f))
-        // Rocket tube honeycomb front
-        scope.drawCircle(Color(0xFF111711), 3.5f * (s / 20f), Offset(podPosL.x, podPosL.y + podH / 2))
-        scope.drawCircle(Color(0xFF111711), 3.5f * (s / 20f), Offset(podPosR.x, podPosR.y + podH / 2))
+        // Wingtip Missiles / Plasma Conduits
+        val misPosL = trans(-wingSpan, if (heloClass == HelicopterClass.ULTIMATE_WAR) 0.9f else 0.4f, -0.3f)
+        val misPosR = trans(wingSpan, if (heloClass == HelicopterClass.ULTIMATE_WAR) 0.9f else 0.4f, -0.3f)
+        val wingTipColor = if (heloClass == HelicopterClass.ULTIMATE_WAR) accentTrim else Color(0xFF424D42)
+        scope.drawLine(wingTipColor, Offset(misPosL.x, misPosL.y - 12f * (s / 20f)), Offset(misPosL.x, misPosL.y + 12f * (s / 20f)), 3.8f, StrokeCap.Round)
+        scope.drawLine(wingTipColor, Offset(misPosR.x, misPosR.y - 12f * (s / 20f)), Offset(misPosR.x, misPosR.y + 12f * (s / 20f)), 3.8f, StrokeCap.Round)
 
-        // Outer Hellfire Anti-Tank Missiles
-        val misPosL = trans(-wingSpan, 0.4f, -0.3f)
-        val misPosR = trans(wingSpan, 0.4f, -0.3f)
-        scope.drawLine(Color(0xFF424D42), Offset(misPosL.x, misPosL.y - 12f * (s / 20f)), Offset(misPosL.x, misPosL.y + 12f * (s / 20f)), 3.5f, StrokeCap.Round)
-        scope.drawLine(Color(0xFF424D42), Offset(misPosR.x, misPosR.y - 12f * (s / 20f)), Offset(misPosR.x, misPosR.y + 12f * (s / 20f)), 3.5f, StrokeCap.Round)
-
-        // 3. Main Armored Fuselage & Sponsons
-        val nosePt = trans(0f, 4.8f, -0.2f)
-        val noseSideL = trans(-1.5f, 3.2f, 0f)
-        val noseSideR = trans(1.5f, 3.2f, 0f)
-        val sponsonL = trans(-2.4f, 0.4f, 0.2f)
-        val sponsonR = trans(2.4f, 0.4f, 0.2f)
-        val bodyRearL = trans(-1.8f, -1.8f, 0.3f)
-        val bodyRearR = trans(1.8f, -1.8f, 0.3f)
-        val bodyTail = trans(0f, -2.6f, 0.3f)
+        // 3. Main Fuselage (Distinct Silhouette per Class)
+        val nosePt = trans(0f, 4.8f * bodyScaleY, -0.2f)
+        val noseSideL = trans(-1.45f * bodyScaleX, 3.0f * bodyScaleY, 0f)
+        val noseSideR = trans(1.45f * bodyScaleX, 3.0f * bodyScaleY, 0f)
+        val sponsonL = trans(-2.35f * bodyScaleX, 0.4f * bodyScaleY, 0.2f)
+        val sponsonR = trans(2.35f * bodyScaleX, 0.4f * bodyScaleY, 0.2f)
+        val bodyRearL = trans(-1.75f * bodyScaleX, -1.8f * bodyScaleY, 0.3f)
+        val bodyRearR = trans(1.75f * bodyScaleX, -1.8f * bodyScaleY, 0.3f)
+        val bodyTail = trans(0f, -2.6f * bodyScaleY, 0.3f)
 
         val fusePath = tmpPath.apply {
             reset()
@@ -913,23 +1030,29 @@ class Renderer3D {
             close()
         }
         scope.drawPath(fusePath, armorBody, style = Fill)
-        scope.drawPath(fusePath, panelSeam, style = Stroke(width = 2f))
+        scope.drawPath(fusePath, if (heloClass == HelicopterClass.STEALTH || heloClass == HelicopterClass.ULTIMATE_WAR) accentTrim else panelSeam, style = Stroke(width = 2.2f))
 
-        // Dorsal sunlight ridge highlight
-        scope.drawLine(armorTopLit, nosePt, bodyTail, 3.5f * (s / 20f), StrokeCap.Round)
+        // Dorsal highlight & trim racing stripe
+        scope.drawLine(armorTopLit, nosePt, bodyTail, 4.0f * (s / 20f), StrokeCap.Round)
+        scope.drawLine(accentTrim.copy(alpha = 0.85f), noseSideL, sponsonL, 2.0f * (s / 20f), StrokeCap.Round)
+        scope.drawLine(accentTrim.copy(alpha = 0.85f), noseSideR, sponsonR, 2.0f * (s / 20f), StrokeCap.Round)
 
-        // Dual Turboshaft Engine Exhaust Fairings
-        val engL = trans(-1.4f, -0.8f, 0.8f)
-        val engR = trans(1.4f, -0.8f, 0.8f)
-        scope.drawOval(Color(0xFF1E261E), Offset(engL.x - 5f * (s / 20f), engL.y - 7f * (s / 20f)), Size(10f * (s / 20f), 14f * (s / 20f)))
-        scope.drawOval(Color(0xFF1E261E), Offset(engR.x - 5f * (s / 20f), engR.y - 7f * (s / 20f)), Size(10f * (s / 20f), 14f * (s / 20f)))
+        // Engine Exhaust Fairings / Plasma Nacelles
+        val engL = trans(-1.35f * bodyScaleX, -0.8f * bodyScaleY, 0.8f)
+        val engR = trans(1.35f * bodyScaleX, -0.8f * bodyScaleY, 0.8f)
+        scope.drawOval(armorShadow, Offset(engL.x - 5f * (s / 20f), engL.y - 7f * (s / 20f)), Size(10f * (s / 20f), 14f * (s / 20f)))
+        scope.drawOval(armorShadow, Offset(engR.x - 5f * (s / 20f), engR.y - 7f * (s / 20f)), Size(10f * (s / 20f), 14f * (s / 20f)))
+        if (heloClass == HelicopterClass.ULTIMATE_WAR) {
+            scope.drawCircle(accentTrim.copy(alpha = 0.8f), 3.2f * (s / 20f), engL)
+            scope.drawCircle(accentTrim.copy(alpha = 0.8f), 3.2f * (s / 20f), engR)
+        }
 
-        // 4. Stepped Tandem Attack Cockpit Canopy (Visible Pilot & Gunner stations)
-        val canopyNose = trans(0f, 3.8f, 0.5f)
-        val canopyGunnerL = trans(-0.85f, 2.6f, 0.7f)
-        val canopyGunnerR = trans(0.85f, 2.6f, 0.7f)
-        val canopyPilotL = trans(-0.95f, 1.0f, 0.9f)
-        val canopyPilotR = trans(0.95f, 1.0f, 0.9f)
+        // 4. Cockpit Canopy
+        val canopyNose = trans(0f, 3.8f * bodyScaleY, 0.5f)
+        val canopyGunnerL = trans(-0.85f * bodyScaleX, 2.5f * bodyScaleY, 0.7f)
+        val canopyGunnerR = trans(0.85f * bodyScaleX, 2.5f * bodyScaleY, 0.7f)
+        val canopyPilotL = trans(-0.95f * bodyScaleX, 0.9f * bodyScaleY, 0.9f)
+        val canopyPilotR = trans(0.95f * bodyScaleX, 0.9f * bodyScaleY, 0.9f)
         val canopyAft = trans(0f, 0.2f, 0.8f)
 
         val canopyPath = tmpPath.apply {
@@ -942,38 +1065,38 @@ class Renderer3D {
             lineTo(canopyGunnerL.x, canopyGunnerL.y)
             close()
         }
-        // Dark polarized ballistic glass
-        scope.drawPath(canopyPath, Color(0xFF141D26), style = Fill)
-        // Canopy structural framework
-        scope.drawPath(canopyPath, Color(0xFF222B22), style = Stroke(width = 2.5f))
-        // Subtle daylight glint on cockpit glass
+        val canopyGlass = if (heloClass == HelicopterClass.ULTIMATE_WAR) Color(0xFF0A2E3D) else Color(0xFF141D26)
+        scope.drawPath(canopyPath, canopyGlass, style = Fill)
+        scope.drawPath(canopyPath, accentTrim.copy(alpha = 0.65f), style = Stroke(width = 2.0f))
         scope.drawLine(Color.White.copy(alpha = 0.45f), canopyNose, canopyPilotR, 1.5f)
-        // Tandem bulkhead separator
-        scope.drawLine(Color(0xFF222B22), canopyGunnerL, canopyGunnerR, 2f)
+        if (heloClass == HelicopterClass.HEAVY_GUNSHIP || heloClass == HelicopterClass.ULTIMATE_WAR) {
+            scope.drawLine(panelSeam, canopyGunnerL, canopyGunnerR, 2f)
+        }
 
-        // 5. Chin-Mounted 30mm M230 Chain Gun Turret
-        val turretGimbal = trans(0f, 4.4f, -0.6f)
-        val barrelEnd = trans(0f, 5.8f, -0.7f)
-        scope.drawCircle(Color(0xFF1A1F1A), 6f * (s / 20f), turretGimbal)
+        // 5. Chin-Mounted Chain / Plasma Turret
+        val turretGimbal = trans(0f, 4.4f * bodyScaleY, -0.6f)
+        val barrelEnd = trans(0f, 5.8f * bodyScaleY, -0.7f)
+        scope.drawCircle(panelSeam, 6f * (s / 20f), turretGimbal)
         scope.drawLine(Color(0xFF111411), turretGimbal, barrelEnd, 4.5f * (s / 20f), StrokeCap.Square)
-        // Slotted Muzzle brake
-        scope.drawCircle(Color(0xFF2A342A), 3f * (s / 20f), barrelEnd)
+        scope.drawCircle(if (heloClass == HelicopterClass.ULTIMATE_WAR) accentTrim else Color(0xFF2A342A), 3f * (s / 20f), barrelEnd)
 
-        // Muzzle Flash when firing
         if (player.activeMuzzleFlash) {
-            scope.drawCircle(Color(0xFFFFB300), 16f * (s / 20f), barrelEnd)
+            scope.drawCircle(if (heloClass == HelicopterClass.ULTIMATE_WAR) accentTrim else Color(0xFFFFB300), 16f * (s / 20f), barrelEnd)
             scope.drawCircle(Color.White, 7f * (s / 20f), barrelEnd)
         }
 
-        // 6. Main Rotor Mast, Swashplate Hub & 4-Blade Spinning Rotor (Spans ~24-28% screen width)
+        // 6. Main Rotor Assembly (Class-differentiated blade count & coaxial rotor on APEX)
         val mastHub = trans(0f, 0.4f, 1.6f)
-        val rotorR = 86f * (s / 20f)
+        val rotorR = when (heloClass) {
+            HelicopterClass.SCOUT -> 72f * (s / 20f)
+            HelicopterClass.HEAVY_GUNSHIP -> 96f * (s / 20f)
+            HelicopterClass.STEALTH -> 84f * (s / 20f)
+            HelicopterClass.ULTIMATE_WAR -> 92f * (s / 20f)
+        }
 
-        // Rotor Mast Hub
-        scope.drawCircle(Color(0xFF1A221A), 7f * (s / 20f), mastHub)
-        scope.drawCircle(Color(0xFF4A554A), 4f * (s / 20f), mastHub)
+        scope.drawCircle(panelSeam, 7f * (s / 20f), mastHub)
+        scope.drawCircle(accentTrim.copy(alpha = 0.8f), 4f * (s / 20f), mastHub)
 
-        // Rotor motion blur disc (Semi-transparent daylight disc)
         scope.drawCircle(
             brush = Brush.radialGradient(
                 listOf(Color(0x44B0BEC5), Color(0x18B0BEC5), Color.Transparent),
@@ -984,22 +1107,35 @@ class Renderer3D {
             center = mastHub
         )
 
-        // 4 Composite Main Rotor Blades with Yellow Safety Tip Stripes
+        val bladeCount = when (heloClass) {
+            HelicopterClass.SCOUT -> 3
+            HelicopterClass.STEALTH -> 5
+            else -> 4
+        }
         val angle = player.mainRotorAngle
-        for (i in 0 until 4) {
-            val bladeAngle = angle + (i * kotlin.math.PI.toFloat() / 2f)
+        for (i in 0 until bladeCount) {
+            val bladeAngle = angle + (i * (kotlin.math.PI.toFloat() * 2f) / bladeCount)
             val bladeEnd = Offset(
                 mastHub.x + cos(bladeAngle) * rotorR * cosR,
                 mastHub.y + sin(bladeAngle) * rotorR * 0.72f
             )
-            // Carbon-composite blade body (Matte black/charcoal)
             scope.drawLine(Color(0xFF212529), mastHub, bladeEnd, 4.0f, StrokeCap.Round)
-            // High-visibility yellow blade safety tip (Military standard warning marking)
             val tipPos = Offset(
                 mastHub.x + cos(bladeAngle) * (rotorR * 0.88f) * cosR,
                 mastHub.y + sin(bladeAngle) * (rotorR * 0.88f) * 0.72f
             )
-            scope.drawLine(Color(0xFFE5A93C), tipPos, bladeEnd, 4.2f, StrokeCap.Round)
+            scope.drawLine(accentTrim, tipPos, bladeEnd, 4.2f, StrokeCap.Round)
+        }
+        if (heloClass == HelicopterClass.ULTIMATE_WAR) {
+            val upperHub = trans(0f, 0.4f, 2.0f)
+            for (i in 0 until 4) {
+                val contraAngle = -angle * 1.15f + (i * kotlin.math.PI.toFloat() / 2f)
+                val contraEnd = Offset(
+                    upperHub.x + cos(contraAngle) * rotorR * 0.78f * cosR,
+                    upperHub.y + sin(contraAngle) * rotorR * 0.56f
+                )
+                scope.drawLine(Color(0xFF37474F), upperHub, contraEnd, 3.0f, StrokeCap.Round)
+            }
         }
 
         // 7. Combat Status Auras: Countermeasure Flare Pulse, Overdrive Ready Glow, and Hit Flash

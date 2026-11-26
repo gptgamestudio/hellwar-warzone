@@ -27,8 +27,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -74,8 +76,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.game.engine.BossCombatEntity
+import com.example.game.engine.EndlessSyncStatus
 import com.example.game.engine.GameEngine
 import com.example.game.engine.GameHudState
+import com.example.game.engine.GameMode
 import com.example.game.engine.HazardState
 import com.example.game.model.EmpireType
 import com.example.game.network.AdContinueQuota
@@ -150,37 +154,46 @@ fun HudOverlay(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Dynamic Mission Objective Strip (Barracks -> HQ Danger Zone Boss -> 1,000-Hit Main HQ)
+            // Dynamic Mission Objective Strip (Endless Wave Counter vs Campaign Barracks -> Boss -> HQ)
             val objectiveLabel: String
             val objectiveText: String
             val objectiveProgress: Float
             val objectiveColor: Color
-            when {
-                hudState.isHqBossDefeated -> {
-                    objectiveLabel = "SIEGE HQ"
-                    objectiveText = "${hudState.hqHitsRemaining}/${hudState.hqMaxHits}"
-                    objectiveProgress = (hudState.hqHitsRemaining.toFloat() / hudState.hqMaxHits.toFloat()).coerceIn(0f, 1f)
-                    objectiveColor = ThreatRed
-                }
-                hudState.isHeadquartersUnlocked -> {
-                    objectiveLabel = if (hudState.bossEntity != null) "BOSS" else "GO TO HQ"
-                    objectiveText = if (hudState.bossEntity != null) {
-                        "${hudState.bossEntity.bossHitsRemaining}/${hudState.bossEntity.maxBossHits}"
-                    } else {
-                        "DANGER ZONE"
+            if (hudState.gameMode == GameMode.ENDLESS_SURVIVAL) {
+                val totalWave = hudState.waveEnemiesTotal.coerceAtLeast(1)
+                val defeated = (totalWave - hudState.waveEnemiesRemaining).coerceIn(0, totalWave)
+                objectiveLabel = "WAVE ${hudState.currentWave} • ${hudState.activeEmpire.name}"
+                objectiveText = "${hudState.waveEnemiesRemaining}/$totalWave"
+                objectiveProgress = (defeated.toFloat() / totalWave.toFloat()).coerceIn(0f, 1f)
+                objectiveColor = hudState.activeEmpire.primaryColor
+            } else {
+                when {
+                    hudState.isHqBossDefeated -> {
+                        objectiveLabel = "SIEGE HQ"
+                        objectiveText = "${hudState.hqHitsRemaining}/${hudState.hqMaxHits}"
+                        objectiveProgress = (hudState.hqHitsRemaining.toFloat() / hudState.hqMaxHits.toFloat()).coerceIn(0f, 1f)
+                        objectiveColor = ThreatRed
                     }
-                    objectiveProgress = if (hudState.bossEntity != null) {
-                        (hudState.bossEntity.bossHitsRemaining.toFloat() / hudState.bossEntity.maxBossHits.toFloat()).coerceIn(0f, 1f)
-                    } else {
-                        1f
+                    hudState.isHeadquartersUnlocked -> {
+                        objectiveLabel = if (hudState.bossEntity != null) "BOSS" else "GO TO HQ"
+                        objectiveText = if (hudState.bossEntity != null) {
+                            "${hudState.bossEntity.bossHitsRemaining}/${hudState.bossEntity.maxBossHits}"
+                        } else {
+                            "DANGER ZONE"
+                        }
+                        objectiveProgress = if (hudState.bossEntity != null) {
+                            (hudState.bossEntity.bossHitsRemaining.toFloat() / hudState.bossEntity.maxBossHits.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            1f
+                        }
+                        objectiveColor = Color(0xFF00E676)
                     }
-                    objectiveColor = Color(0xFF00E676)
-                }
-                else -> {
-                    objectiveLabel = "BARRACKS"
-                    objectiveText = "${hudState.barracksDestroyedCount}/${hudState.totalBarracks}"
-                    objectiveProgress = (hudState.barracksDestroyedCount.toFloat() / hudState.totalBarracks.toFloat()).coerceIn(0f, 1f)
-                    objectiveColor = Color(0xFFFF9100)
+                    else -> {
+                        objectiveLabel = "BARRACKS"
+                        objectiveText = "${hudState.barracksDestroyedCount}/${hudState.totalBarracks}"
+                        objectiveProgress = (hudState.barracksDestroyedCount.toFloat() / hudState.totalBarracks.toFloat()).coerceIn(0f, 1f)
+                        objectiveColor = Color(0xFFFF9100)
+                    }
                 }
             }
 
@@ -189,7 +202,8 @@ fun HudOverlay(
                     .fillMaxWidth()
                     .background(Color(0xD916221C), RoundedCornerShape(8.dp))
                     .border(1.dp, Color(0xFF334A3C), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .testTag(if (hudState.gameMode == GameMode.ENDLESS_SURVIVAL) "endless_wave_hud" else "campaign_objective_hud"),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
@@ -217,6 +231,19 @@ fun HudOverlay(
                     fontWeight = FontWeight.ExtraBold,
                     fontFamily = FontFamily.Monospace
                 )
+                if (hudState.gameMode == GameMode.ENDLESS_SURVIVAL &&
+                    hudState.endlessSyncStatus == EndlessSyncStatus.PENDING_OFFLINE
+                ) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "PENDING SYNC",
+                        color = AmberWarning,
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.testTag("endless_sync_status_badge")
+                    )
+                }
             }
 
             // Threat warning banner
@@ -323,6 +350,8 @@ fun HudOverlay(
         // Pause Modal Dialog
         if (showPauseDialog) {
             TacticalPauseDialog(
+                gameMode = hudState.gameMode,
+                currentWave = hudState.currentWave,
                 onResume = {
                     showPauseDialog = false
                     onPauseStateChange(false)
@@ -340,7 +369,7 @@ fun HudOverlay(
             )
         }
 
-        // Game Over (5-Heart Exhausted -> Watch Ad Continue? YES/NO) or Victory (Auto-Deploy Next Stage)
+        // Game Over (5-Heart Exhausted -> Watch Ad Continue? YES/NO) or Victory (Campaign only)
         if (hudState.isGameOver) {
             DefeatContinueDialog(
                 score = hudState.score,
@@ -348,12 +377,18 @@ fun HudOverlay(
                 credits = hudState.creditsEarned,
                 empire = hudState.activeEmpire,
                 stageNumber = hudState.stageNumber,
+                gameMode = hudState.gameMode,
+                currentWave = hudState.currentWave,
+                wavesCompleted = hudState.wavesCompleted,
+                endlessBestWave = hudState.endlessBestWave,
+                endlessBestScore = hudState.endlessBestScore,
+                endlessSyncStatus = hudState.endlessSyncStatus,
                 adContinueQuota = adContinueQuota,
                 onWatchAdContinue = onWatchAdContinue,
                 onRestart = onRestartSortie,
                 onReturnToHangar = onReturnToMenu
             )
-        } else if (hudState.isVictory) {
+        } else if (hudState.isVictory && hudState.gameMode == GameMode.CAMPAIGN) {
             MissionDebriefingDialog(
                 isVictory = true,
                 score = hudState.score,
@@ -603,17 +638,26 @@ private fun TopStatusRow(
 
         Spacer(modifier = Modifier.width(6.dp))
 
-        // Stage, Score & Kills
+        // Stage/Wave, Score & Kills
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                text = "STG ${hudState.stageNumber} // ${hudState.score}",
+                text = if (hudState.gameMode == GameMode.ENDLESS_SURVIVAL) {
+                    "WAVE ${hudState.currentWave} // ${hudState.score}"
+                } else {
+                    "STG ${hudState.stageNumber} // ${hudState.score}"
+                },
                 color = AmberWarning,
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.testTag("hud_wave_score_text")
             )
             Text(
-                text = "KILLS: ${hudState.kills}",
+                text = if (hudState.gameMode == GameMode.ENDLESS_SURVIVAL) {
+                    "KILLS: ${hudState.kills} • BEST W${hudState.endlessBestWave}"
+                } else {
+                    "KILLS: ${hudState.kills}"
+                },
                 color = Color(0xFFCFD8DC),
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
@@ -1085,7 +1129,13 @@ private fun DirectionButton(
 }
 
 @Composable
-private fun TacticalPauseDialog(onResume: () -> Unit, onRestart: () -> Unit, onQuit: () -> Unit) {
+private fun TacticalPauseDialog(
+    gameMode: GameMode = GameMode.CAMPAIGN,
+    currentWave: Int = 1,
+    onResume: () -> Unit,
+    onRestart: () -> Unit,
+    onQuit: () -> Unit
+) {
     Dialog(onDismissRequest = onResume) {
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -1093,26 +1143,50 @@ private fun TacticalPauseDialog(onResume: () -> Unit, onRestart: () -> Unit, onQ
             border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberCyan),
             modifier = Modifier.fillMaxWidth().padding(16.dp)
         ) {
-            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = "SORTIE PAUSED", fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = CyberCyan)
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "ENDLESS WAVE $currentWave PAUSED" else "SORTIE PAUSED",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    color = CyberCyan
+                )
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = "WAR-NET BATTLE LINK ON STANDBY", fontSize = 11.sp, color = Color(0xFF90A4AE), fontFamily = FontFamily.Monospace)
+                Text(
+                    text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "CHECKPOINT & RECORDS SAVED LOCALLY" else "WAR-NET BATTLE LINK ON STANDBY",
+                    fontSize = 11.sp,
+                    color = Color(0xFF90A4AE),
+                    fontFamily = FontFamily.Monospace
+                )
                 Spacer(modifier = Modifier.height(20.dp))
 
-                Button(onClick = onResume, modifier = Modifier.fillMaxWidth().height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)) {
+                Button(onClick = onResume, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("RESUME BATTLE", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(10.dp))
-                Button(onClick = onRestart, modifier = Modifier.fillMaxWidth().height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836))) {
+                Button(onClick = onRestart, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836))) {
                     Icon(Icons.Default.Refresh, contentDescription = null, tint = AmberWarning)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("RESTART SORTIE", color = AmberWarning, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "RESTART ENDLESS" else "RESTART SORTIE",
+                        color = AmberWarning,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
-                Button(onClick = onQuit, modifier = Modifier.fillMaxWidth().height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F))) {
-                    Text("ABORT TO HANGAR", color = Color.White, fontWeight = FontWeight.Bold)
+                Button(onClick = onQuit, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F))) {
+                    Text(
+                        text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "SAVE & RETURN TO MENU" else "ABORT TO HANGAR",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -1126,6 +1200,12 @@ private fun DefeatContinueDialog(
     credits: Int,
     empire: EmpireType,
     stageNumber: Int,
+    gameMode: GameMode = GameMode.CAMPAIGN,
+    currentWave: Int = 1,
+    wavesCompleted: Int = 0,
+    endlessBestWave: Int = 0,
+    endlessBestScore: Int = 0,
+    endlessSyncStatus: EndlessSyncStatus = EndlessSyncStatus.IDLE,
     adContinueQuota: AdContinueQuota,
     onWatchAdContinue: ((onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit)?,
     onRestart: () -> Unit,
@@ -1140,7 +1220,12 @@ private fun DefeatContinueDialog(
             border = androidx.compose.foundation.BorderStroke(2.dp, ThreatRed),
             modifier = Modifier.fillMaxWidth().padding(12.dp)
         ) {
-            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     text = "0/5 HEARTS — CONTINUE?",
                     fontSize = 18.sp,
@@ -1150,12 +1235,27 @@ private fun DefeatContinueDialog(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "STAGE $stageNumber // ${empire.title}",
+                    text = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                        "WAVE $currentWave ($wavesCompleted CLEARED) // ${empire.title}"
+                    } else {
+                        "STAGE $stageNumber // ${empire.title}"
+                    },
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = empire.primaryColor,
                     fontFamily = FontFamily.Monospace
                 )
+
+                if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "BEST WAVE: $endlessBestWave • BEST SCORE: $endlessBestScore",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyberCyan,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -1172,9 +1272,26 @@ private fun DefeatContinueDialog(
                         Text("$kills", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("CREDITS", fontSize = 9.sp, color = Color(0xFF90A4AE))
+                        Text(
+                            text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "VERIFIED CR" else "CREDITS",
+                            fontSize = 9.sp,
+                            color = Color(0xFF90A4AE)
+                        )
                         Text("+$credits", fontSize = 15.sp, fontWeight = FontWeight.Black, color = MilitaryGold)
                     }
+                }
+
+                if (gameMode == GameMode.ENDLESS_SURVIVAL && endlessSyncStatus == EndlessSyncStatus.PENDING_OFFLINE) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "CLOUD SYNC PENDING (OFFLINE — CREDITS REQUIRE SERVER VALIDATION)",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = AmberWarning,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag("endless_pending_sync_notice")
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1249,7 +1366,11 @@ private fun DefeatContinueDialog(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, tint = AmberWarning)
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("RESTART STAGE", color = AmberWarning, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "RESTART ENDLESS" else "RESTART STAGE",
+                        color = AmberWarning,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -1292,7 +1413,12 @@ private fun MissionDebriefingDialog(
             border = androidx.compose.foundation.BorderStroke(2.dp, if (isVictory) HealthGreen else ThreatRed),
             modifier = Modifier.fillMaxWidth().padding(12.dp)
         ) {
-            Column(modifier = Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(22.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
                     text = if (nextStageEmpire == null) "ALL 4 EMPIRES CONQUERED!" else "STAGE $stageNumber CLEARED!",
                     fontSize = 18.sp,

@@ -2,6 +2,7 @@ package com.example.base
 
 import com.example.game.network.DestroyedBarracksRecord
 import com.example.game.network.HeadquartersVictoryRecord
+import com.example.game.network.LeaderboardRecord
 import com.example.game.network.UserCampaignProfile
 import com.google.android.gms.tasks.Task
 import com.google.android.gms.tasks.Tasks
@@ -256,6 +257,48 @@ object LocalFirebaseRuleEngine {
         return count >= 50L
     }
 
+    private fun actualHqClearedCount(
+        backing: Map<String, MutableMap<String, Any?>>,
+        userId: String
+    ): Long {
+        return validEmpires.count { empire ->
+            backing.containsKey("users/$userId/hq_victories/$empire")
+        }.toLong()
+    }
+
+    private fun isValidLeaderboardEntry(data: Map<String, Any?>): Boolean {
+        val expectedKeys = setOf(
+            "callsign", "highScore", "totalBarracksDestroyed", "hqClearedCount", "updatedAt"
+        )
+        if (data.keys != expectedKeys) return false
+        val callsign = data["callsign"] as? String ?: return false
+        if (callsign.length !in 2..32) return false
+        val highScore = asStrictLong(data["highScore"]) ?: return false
+        val totalBarracks = asStrictLong(data["totalBarracksDestroyed"]) ?: return false
+        val hqCleared = asStrictLong(data["hqClearedCount"]) ?: return false
+        if (highScore !in 0L..100_000_000L) return false
+        if (totalBarracks !in 0L..200L) return false
+        if (hqCleared !in 0L..4L) return false
+        if (!isValidTimestamp(data["updatedAt"])) return false
+        return true
+    }
+
+    private fun matchesAuthoritativeProfile(
+        backing: Map<String, MutableMap<String, Any?>>,
+        data: Map<String, Any?>,
+        userId: String
+    ): Boolean {
+        val profile = backing["users/$userId"] ?: return false
+        val expectedTotalBarracks = (asStrictLong(profile["humanDestroyedCount"]) ?: 0L) +
+            (asStrictLong(profile["orcDestroyedCount"]) ?: 0L) +
+            (asStrictLong(profile["dragonDestroyedCount"]) ?: 0L) +
+            (asStrictLong(profile["alienDestroyedCount"]) ?: 0L)
+        return data["callsign"] == profile["callsign"] &&
+            asStrictLong(data["highScore"]) == asStrictLong(profile["highScore"]) &&
+            asStrictLong(data["totalBarracksDestroyed"]) == expectedTotalBarracks &&
+            asStrictLong(data["hqClearedCount"]) == actualHqClearedCount(backing, userId)
+    }
+
     private fun validateCreate(
         backing: Map<String, MutableMap<String, Any?>>,
         path: String,
@@ -319,11 +362,22 @@ object LocalFirebaseRuleEngine {
                     throw permissionDenied("HQ victory rejected for $path (requires 50/50 barracks)")
                 }
             }
+            parts.size == 2 && parts[0] == "leaderboard" -> {
+                val entryId = parts[1]
+                if (!isOwner(entryId) ||
+                    !isValidId(entryId) ||
+                    !isValidLeaderboardEntry(incoming) ||
+                    !matchesAuthoritativeProfile(backing, incoming, entryId)
+                ) {
+                    throw permissionDenied("Unauthorized or invalid leaderboard create for $path")
+                }
+            }
             else -> throw permissionDenied("Default deny for create on $path")
         }
     }
 
     private fun validateUpdate(
+        backing: Map<String, MutableMap<String, Any?>>,
         path: String,
         existing: Map<String, Any?>,
         incoming: Map<String, Any?>,
@@ -372,6 +426,33 @@ object LocalFirebaseRuleEngine {
             }
             return
         }
+        if (parts.size == 2 && parts[0] == "leaderboard") {
+            val entryId = parts[1]
+            val allowedKeys = setOf(
+                "callsign", "highScore", "totalBarracksDestroyed", "hqClearedCount", "updatedAt"
+            )
+            if (!isOwner(entryId) ||
+                !isValidId(entryId) ||
+                !isValidLeaderboardEntry(incoming) ||
+                !changedKeys.all { it in allowedKeys }
+            ) {
+                throw permissionDenied("Unauthorized or invalid leaderboard update for $path")
+            }
+            val inScore = asStrictLong(incoming["highScore"])!!
+            val exScore = asStrictLong(existing["highScore"])!!
+            val inBarracks = asStrictLong(incoming["totalBarracksDestroyed"])!!
+            val exBarracks = asStrictLong(existing["totalBarracksDestroyed"])!!
+            val inHq = asStrictLong(incoming["hqClearedCount"])!!
+            val exHq = asStrictLong(existing["hqClearedCount"])!!
+            if (inScore < exScore ||
+                inBarracks < exBarracks ||
+                inHq < exHq ||
+                !matchesAuthoritativeProfile(backing, incoming, entryId)
+            ) {
+                throw permissionDenied("Leaderboard update rejected by integrity checks for $path")
+            }
+            return
+        }
         throw permissionDenied("Updates are denied on $path")
     }
 
@@ -389,6 +470,11 @@ object LocalFirebaseRuleEngine {
                     throw permissionDenied("Read denied on $path")
                 }
             }
+            parts.size == 2 && parts[0] == "leaderboard" -> {
+                if (!isValidId(parts[1])) {
+                    throw permissionDenied("Invalid leaderboard document ID $path")
+                }
+            }
             else -> throw permissionDenied("Default deny read on $path")
         }
     }
@@ -402,6 +488,7 @@ object LocalFirebaseRuleEngine {
                     throw permissionDenied("List denied on $colPath")
                 }
             }
+            parts.size == 1 && parts[0] == "leaderboard" -> Unit
             else -> throw permissionDenied("List denied on $colPath")
         }
     }
@@ -426,14 +513,31 @@ object LocalFirebaseRuleEngine {
         }
     }
 
-    fun listCollectionTask(firestore: FirebaseFirestore, colPath: String): Task<QuerySnapshot> {
+    fun listCollectionTask(
+        firestore: FirebaseFirestore,
+        colPath: String,
+        orderByField: String? = null,
+        descending: Boolean = false,
+        limitCount: Long? = null
+    ): Task<QuerySnapshot> {
         return synchronized(dbLock) {
             try {
                 checkListPermission(colPath)
                 val prefix = "$colPath/"
-                val snaps = documents.entries
+                var entries = documents.entries
                     .filter { (k, _) -> k.startsWith(prefix) && !k.removePrefix(prefix).contains('/') }
-                    .map { (k, v) -> buildDocumentSnapshot(firestore, k, LinkedHashMap(v)) }
+                    .toList()
+                if (orderByField != null) {
+                    entries = entries.sortedWith { a, b ->
+                        val av = asStrictLong(a.value[orderByField]) ?: 0L
+                        val bv = asStrictLong(b.value[orderByField]) ?: 0L
+                        if (descending) bv.compareTo(av) else av.compareTo(bv)
+                    }
+                }
+                if (limitCount != null && limitCount >= 0L) {
+                    entries = entries.take(limitCount.toInt())
+                }
+                val snaps = entries.map { (k, v) -> buildDocumentSnapshot(firestore, k, LinkedHashMap(v)) }
                 Tasks.forResult(buildQuerySnapshot(snaps))
             } catch (e: Exception) {
                 Tasks.forException(e)
@@ -454,7 +558,7 @@ object LocalFirebaseRuleEngine {
             val changed = (existing.keys + incoming.keys).filter {
                 !existing.containsKey(it) || !incoming.containsKey(it) || existing[it] != incoming[it]
             }.toSet()
-            validateUpdate(path, existing, incoming, changed)
+            validateUpdate(backing, path, existing, incoming, changed)
         }
         backing[path] = incoming
     }
@@ -479,7 +583,7 @@ object LocalFirebaseRuleEngine {
         val materializedUpdates = materializeMap(updates)
         val merged = LinkedHashMap(existing)
         merged.putAll(materializedUpdates)
-        validateUpdate(path, existing, merged, materializedUpdates.keys)
+        validateUpdate(backing, path, existing, merged, materializedUpdates.keys)
         backing[path] = merged
     }
 
@@ -574,6 +678,14 @@ object LocalFirebaseRuleEngine {
                 creditsAwarded = (data["creditsAwarded"] as? Number)?.toLong() ?: 0L,
                 scoreAwarded = (data["scoreAwarded"] as? Number)?.toLong() ?: 0L,
                 victoryAt = data["victoryAt"] as? Timestamp
+            ) as T
+            LeaderboardRecord::class.java -> LeaderboardRecord(
+                id = docId,
+                callsign = data["callsign"] as? String ?: "VIPER-7",
+                highScore = (data["highScore"] as? Number)?.toLong() ?: 0L,
+                totalBarracksDestroyed = (data["totalBarracksDestroyed"] as? Number)?.toLong() ?: 0L,
+                hqClearedCount = (data["hqClearedCount"] as? Number)?.toLong() ?: 0L,
+                updatedAt = data["updatedAt"] as? Timestamp
             ) as T
             else -> null
         }
@@ -727,16 +839,77 @@ open class ShadowLocalQuery {
 
     internal lateinit var firestore: FirebaseFirestore
     internal lateinit var colPath: String
+    internal var orderByField: String? = null
+    internal var descending: Boolean = false
+    internal var limitCount: Long? = null
 
-    fun bind(fs: FirebaseFirestore, path: String) {
+    fun bind(
+        fs: FirebaseFirestore,
+        path: String,
+        orderField: String? = null,
+        desc: Boolean = false,
+        limit: Long? = null
+    ) {
         firestore = fs
         colPath = path
+        orderByField = orderField
+        descending = desc
+        limitCount = limit
+    }
+
+    @Implementation
+    fun orderBy(field: String, direction: Query.Direction): Query {
+        if (LocalFirebaseRuleEngine.useLocalShadows) {
+            val q = Shadow.newInstanceOf(Query::class.java)
+            Shadow.extract<ShadowLocalQuery>(q).bind(
+                firestore,
+                colPath,
+                field,
+                direction == Query.Direction.DESCENDING,
+                limitCount
+            )
+            return q
+        }
+        return Shadow.directlyOn(
+            realQuery,
+            Query::class.java,
+            "orderBy",
+            ClassParameter.from(String::class.java, field),
+            ClassParameter.from(Query.Direction::class.java, direction)
+        )
+    }
+
+    @Implementation
+    fun limit(limit: Long): Query {
+        if (LocalFirebaseRuleEngine.useLocalShadows) {
+            val q = Shadow.newInstanceOf(Query::class.java)
+            Shadow.extract<ShadowLocalQuery>(q).bind(
+                firestore,
+                colPath,
+                orderByField,
+                descending,
+                limit
+            )
+            return q
+        }
+        return Shadow.directlyOn(
+            realQuery,
+            Query::class.java,
+            "limit",
+            ClassParameter.from(Long::class.javaPrimitiveType, limit)
+        )
     }
 
     @Implementation
     fun get(): Task<QuerySnapshot> {
         if (LocalFirebaseRuleEngine.useLocalShadows) {
-            return LocalFirebaseRuleEngine.listCollectionTask(firestore, colPath)
+            return LocalFirebaseRuleEngine.listCollectionTask(
+                firestore,
+                colPath,
+                orderByField,
+                descending,
+                limitCount
+            )
         }
         return Shadow.directlyOn(realQuery, Query::class.java, "get")
     }
@@ -744,7 +917,13 @@ open class ShadowLocalQuery {
     @Implementation
     fun get(source: Source): Task<QuerySnapshot> {
         if (LocalFirebaseRuleEngine.useLocalShadows) {
-            return LocalFirebaseRuleEngine.listCollectionTask(firestore, colPath)
+            return LocalFirebaseRuleEngine.listCollectionTask(
+                firestore,
+                colPath,
+                orderByField,
+                descending,
+                limitCount
+            )
         }
         return Shadow.directlyOn(
             realQuery,
@@ -1002,7 +1181,17 @@ class ShadowLocalTransaction {
 
     @Implementation
     fun set(documentRef: DocumentReference, data: Any, options: SetOptions): Transaction {
-        return set(documentRef, data)
+        if (LocalFirebaseRuleEngine.useLocalShadows) {
+            return set(documentRef, data)
+        }
+        return Shadow.directlyOn(
+            realTx,
+            Transaction::class.java,
+            "set",
+            ClassParameter.from(DocumentReference::class.java, documentRef),
+            ClassParameter.from(Any::class.java, data),
+            ClassParameter.from(SetOptions::class.java, options)
+        )
     }
 
     @Implementation

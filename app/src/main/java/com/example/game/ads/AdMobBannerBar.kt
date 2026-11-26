@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -65,16 +66,17 @@ fun AdMobBannerBar(
     adUnitId: String = AdMobManager.BANNER_AD_UNIT_ID
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val canRequestAds by AdConsentManager.canRequestAds.collectAsState()
     var adViewRef by remember { mutableStateOf<AdView?>(null) }
     var needsReload by remember { mutableStateOf(false) }
     var lastRetryAtMs by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(needsReload, adViewRef) {
+    LaunchedEffect(needsReload, adViewRef, canRequestAds) {
         val view = adViewRef ?: return@LaunchedEffect
-        if (needsReload) {
+        if (needsReload && canRequestAds) {
             delay(15_000L)
             val now = android.os.SystemClock.elapsedRealtime()
-            if (needsReload && now - lastRetryAtMs >= 14_000L) {
+            if (needsReload && canRequestAds && now - lastRetryAtMs >= 14_000L) {
                 lastRetryAtMs = now
                 needsReload = false
                 try {
@@ -86,14 +88,14 @@ fun AdMobBannerBar(
         }
     }
 
-    DisposableEffect(lifecycleOwner, adViewRef) {
+    DisposableEffect(lifecycleOwner, adViewRef, canRequestAds) {
         val view = adViewRef
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
                     view?.resume()
                     val now = android.os.SystemClock.elapsedRealtime()
-                    if (view != null && needsReload && now - lastRetryAtMs >= 15_000L) {
+                    if (view != null && canRequestAds && needsReload && now - lastRetryAtMs >= 15_000L) {
                         lastRetryAtMs = now
                         needsReload = false
                         try {
@@ -124,32 +126,34 @@ fun AdMobBannerBar(
             .testTag("admob_banner_bar"),
         contentAlignment = Alignment.Center
     ) {
-        AndroidView(
-            modifier = Modifier.wrapContentSize(),
-            factory = { ctx ->
-                AdMobManager.initialize(ctx)
-                AdView(ctx).apply {
-                    // Smallest official standard AdMob banner (320x50)
-                    setAdSize(AdSize.BANNER)
-                    this.adUnitId = adUnitId
-                    adListener = object : AdListener() {
-                        override fun onAdLoaded() {
-                            needsReload = false
-                        }
+        if (canRequestAds) {
+            AndroidView(
+                modifier = Modifier.wrapContentSize(),
+                factory = { ctx ->
+                    AdMobManager.initialize(ctx)
+                    AdView(ctx).apply {
+                        // Smallest official standard AdMob banner (320x50)
+                        setAdSize(AdSize.BANNER)
+                        this.adUnitId = adUnitId
+                        adListener = object : AdListener() {
+                            override fun onAdLoaded() {
+                                needsReload = false
+                            }
 
-                        override fun onAdFailedToLoad(error: LoadAdError) {
+                            override fun onAdFailedToLoad(error: LoadAdError) {
+                                needsReload = true
+                            }
+                        }
+                        try {
+                            loadAd(AdMobManager.buildAdRequest())
+                        } catch (_: Throwable) {
                             needsReload = true
                         }
+                        adViewRef = this
                     }
-                    try {
-                        loadAd(AdMobManager.buildAdRequest())
-                    } catch (_: Throwable) {
-                        needsReload = true
-                    }
-                    adViewRef = this
                 }
-            }
-        )
+            )
+        }
     }
 }
 
@@ -171,6 +175,7 @@ fun MovableBottomBannerDock(
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val density = LocalDensity.current
+    val canRequestAds by AdConsentManager.canRequestAds.collectAsState()
     var adViewRef by remember { mutableStateOf<AdView?>(null) }
     var needsReload by remember { mutableStateOf(false) }
     var lastRetryAtMs by remember { mutableLongStateOf(0L) }
@@ -178,23 +183,23 @@ fun MovableBottomBannerDock(
 
     val clampedLift = extraZoneLiftDp.coerceIn(0f, 56f)
     val animatedBannerHeight by animateDpAsState(
-        targetValue = if (isBannerVisible) 52.dp else 0.dp,
+        targetValue = if (isBannerVisible && canRequestAds) 52.dp else 0.dp,
         animationSpec = tween(durationMillis = 200),
         label = "banner_dock_height"
     )
     val animatedLiftHeight by animateDpAsState(
-        targetValue = if (isBannerVisible) clampedLift.dp else 0.dp,
+        targetValue = if (isBannerVisible && canRequestAds) clampedLift.dp else 0.dp,
         animationSpec = tween(durationMillis = 120),
         label = "game_zone_lift"
     )
 
-    // Retry banner load in place when visible if a previous ad request failed
-    LaunchedEffect(needsReload, isBannerVisible, adViewRef) {
+    // Retry banner load in place when visible & consented if a previous ad request failed
+    LaunchedEffect(needsReload, isBannerVisible, adViewRef, canRequestAds) {
         val view = adViewRef ?: return@LaunchedEffect
-        if (needsReload && isBannerVisible) {
+        if (needsReload && isBannerVisible && canRequestAds) {
             delay(12_000L)
             val now = android.os.SystemClock.elapsedRealtime()
-            if (needsReload && isBannerVisible && now - lastRetryAtMs >= 10_000L) {
+            if (needsReload && isBannerVisible && canRequestAds && now - lastRetryAtMs >= 10_000L) {
                 lastRetryAtMs = now
                 needsReload = false
                 try {
@@ -207,9 +212,9 @@ fun MovableBottomBannerDock(
     }
 
     // Keep AdView visibility and pause/resume strictly synced so hidden mode never records obscured impressions
-    LaunchedEffect(isBannerVisible, adViewRef) {
+    LaunchedEffect(isBannerVisible, adViewRef, canRequestAds) {
         val view = adViewRef ?: return@LaunchedEffect
-        if (isBannerVisible) {
+        if (isBannerVisible && canRequestAds) {
             view.visibility = View.VISIBLE
             view.resume()
             val now = android.os.SystemClock.elapsedRealtime()
@@ -228,12 +233,12 @@ fun MovableBottomBannerDock(
         }
     }
 
-    DisposableEffect(lifecycleOwner, adViewRef, isBannerVisible) {
+    DisposableEffect(lifecycleOwner, adViewRef, isBannerVisible, canRequestAds) {
         val view = adViewRef
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> {
-                    if (isBannerVisible && view != null) {
+                    if (isBannerVisible && canRequestAds && view != null) {
                         view.resume()
                         val now = android.os.SystemClock.elapsedRealtime()
                         if (needsReload && now - lastRetryAtMs >= 10_000L) {
@@ -376,32 +381,34 @@ fun MovableBottomBannerDock(
                 .testTag("gameplay_admob_banner_slot"),
             contentAlignment = Alignment.Center
         ) {
-            AndroidView(
-                modifier = Modifier.wrapContentSize(),
-                factory = { ctx ->
-                    AdMobManager.initialize(ctx)
-                    AdView(ctx).apply {
-                        setAdSize(AdSize.BANNER)
-                        this.adUnitId = adUnitId
-                        visibility = if (isBannerVisible) View.VISIBLE else View.GONE
-                        adListener = object : AdListener() {
-                            override fun onAdLoaded() {
-                                needsReload = false
-                            }
+            if (canRequestAds) {
+                AndroidView(
+                    modifier = Modifier.wrapContentSize(),
+                    factory = { ctx ->
+                        AdMobManager.initialize(ctx)
+                        AdView(ctx).apply {
+                            setAdSize(AdSize.BANNER)
+                            this.adUnitId = adUnitId
+                            visibility = if (isBannerVisible) View.VISIBLE else View.GONE
+                            adListener = object : AdListener() {
+                                override fun onAdLoaded() {
+                                    needsReload = false
+                                }
 
-                            override fun onAdFailedToLoad(error: LoadAdError) {
+                                override fun onAdFailedToLoad(error: LoadAdError) {
+                                    needsReload = true
+                                }
+                            }
+                            try {
+                                loadAd(AdMobManager.buildAdRequest())
+                            } catch (_: Throwable) {
                                 needsReload = true
                             }
+                            adViewRef = this
                         }
-                        try {
-                            loadAd(AdMobManager.buildAdRequest())
-                        } catch (_: Throwable) {
-                            needsReload = true
-                        }
-                        adViewRef = this
                     }
-                }
-            )
+                )
+            }
         }
     }
 }

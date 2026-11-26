@@ -13,6 +13,25 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
+enum class GameMode {
+    CAMPAIGN,
+    ENDLESS_SURVIVAL
+}
+
+enum class EndlessSyncStatus {
+    IDLE,
+    SYNCED,
+    PENDING_OFFLINE
+}
+
+data class EndlessWaveCompletionEvent(
+    val waveNumber: Int,
+    val waveKills: Int,
+    val empire: EmpireType,
+    val nextEmpire: EmpireType,
+    val survivalScore: Int
+)
+
 data class GameHudState(
     val health: Float = 100f,
     val maxHealth: Float = 100f,
@@ -67,7 +86,17 @@ data class GameHudState(
     val isDangerZoneTriggered: Boolean = false,
     val hqHitsRemaining: Int = 1000,
     val hqMaxHits: Int = 1000,
-    val headquartersPos: Vector3D? = null
+    val headquartersPos: Vector3D? = null,
+
+    // Endless Survival Mode State
+    val gameMode: GameMode = GameMode.CAMPAIGN,
+    val currentWave: Int = 1,
+    val wavesCompleted: Int = 0,
+    val waveEnemiesRemaining: Int = 0,
+    val waveEnemiesTotal: Int = 0,
+    val endlessBestWave: Int = 0,
+    val endlessBestScore: Int = 0,
+    val endlessSyncStatus: EndlessSyncStatus = EndlessSyncStatus.IDLE
 )
 
 class GameEngine(
@@ -78,7 +107,9 @@ class GameEngine(
     val initialUpgrades: com.example.game.model.HelicopterUpgrades = com.example.game.model.HelicopterUpgrades(),
     val campaignService: WarNetCampaignService? = null,
     initialScreenShakeEnabled: Boolean = true,
-    private val initialAutoFire: Boolean = true
+    private val initialAutoFire: Boolean = true,
+    val gameMode: GameMode = GameMode.CAMPAIGN,
+    private val onEndlessWaveCompleted: ((EndlessWaveCompletionEvent) -> Unit)? = null
 ) {
     val player = PlayerHelo()
     val camera = Camera3D()
@@ -138,9 +169,48 @@ class GameEngine(
     private var rocketRechargeTimer: Float = 0f
     private var missileRechargeTimer: Float = 0f
 
-    /** Difficulty escalates continuously from Medium (0f) to Hard (1f) across the 50 barracks. */
+    // Endless Survival Wave State
+    var currentWave: Int = 1
+        private set
+    var wavesCompleted: Int = 0
+        private set
+    var waveTotalEnemies: Int = 4
+        private set
+    var waveEnemiesSpawned: Int = 0
+        private set
+    var waveEnemiesDefeated: Int = 0
+        private set
+    private var waveTransitionTimer: Float = 0f
+    private val completedWaveNumbers = mutableSetOf<Int>()
+    private val creditedWaveNumbers = mutableSetOf<Int>()
+    var endlessBestWave: Int = 0
+        private set
+    var endlessBestScore: Int = 0
+        private set
+    var endlessSyncStatus: EndlessSyncStatus = EndlessSyncStatus.IDLE
+        private set
+
+    /** Difficulty escalates continuously across barracks (Campaign) or waves (Endless). */
     val difficultyFactor: Float
-        get() = (barracksDestroyedCount / 50f).coerceIn(0f, 1f)
+        get() = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            ((currentWave - 1) / 15f).coerceIn(0f, 1f)
+        } else {
+            (barracksDestroyedCount / 50f).coerceIn(0f, 1f)
+        }
+
+    val currentWaveHpMultiplier: Float
+        get() = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            endlessHpMultiplierForWave(currentWave)
+        } else {
+            1.0f + (difficultyFactor * 0.65f)
+        }
+
+    val currentWaveDamageMultiplier: Float
+        get() = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            endlessDamageMultiplierForWave(currentWave)
+        } else {
+            1.0f
+        }
 
     private val _hudState = MutableStateFlow(GameHudState())
     val hudState: StateFlow<GameHudState> = _hudState.asStateFlow()
@@ -155,6 +225,46 @@ class GameEngine(
         const val MAX_STRUCTURES = 140
         const val HQ_DANGER_ZONE_RADIUS = 110f
         private const val HUD_SYNC_INTERVAL = 0.04f
+
+        val ENDLESS_THEATER_CYCLE: List<EmpireType> = listOf(
+            EmpireType.DRAGON,
+            EmpireType.ALIEN,
+            EmpireType.ORC,
+            EmpireType.HUMAN
+        )
+        const val ENDLESS_WAVES_PER_THEATER = 5
+
+        fun endlessEmpireForWave(wave: Int): EmpireType {
+            val safeWave = wave.coerceAtLeast(1)
+            val idx = ((safeWave - 1) / ENDLESS_WAVES_PER_THEATER) % ENDLESS_THEATER_CYCLE.size
+            return ENDLESS_THEATER_CYCLE[idx]
+        }
+
+        fun endlessEnemyCountForWave(wave: Int): Int {
+            val safeWave = wave.coerceAtLeast(1)
+            return (4 + (safeWave - 1) * 2).coerceAtMost(36)
+        }
+
+        fun endlessHpMultiplierForWave(wave: Int): Float {
+            val safeWave = wave.coerceAtLeast(1)
+            return 1.0f + (safeWave - 1) * 0.18f
+        }
+
+        fun endlessDamageMultiplierForWave(wave: Int): Float {
+            val safeWave = wave.coerceAtLeast(1)
+            return 1.0f + (safeWave - 1) * 0.12f
+        }
+
+        fun endlessWaveRewardCredits(wave: Int): Int {
+            val safeWave = wave.coerceAtLeast(1)
+            return 150 + ((safeWave - 1).coerceIn(0, 25) * 35)
+        }
+
+        fun endlessWaveRewardScore(wave: Int, waveKills: Int): Int {
+            val safeWave = wave.coerceAtLeast(1)
+            val safeKills = waveKills.coerceIn(0, 40)
+            return 500 + safeWave * 250 + safeKills * 200
+        }
     }
 
     private fun addBullet(bullet: TracerBullet) {
@@ -236,11 +346,33 @@ class GameEngine(
         bossSpawned = false
         isGameOver = false
         isVictory = false
-        threatAlert = ThreatAlert(
-            "STAGE ${getStageNumber(selectedEmpire)}: DESTROY 50 BARRACKS TO UNLOCK HQ",
-            selectedEmpire.primaryColor,
-            4.0f
-        )
+
+        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            selectedEmpire = endlessEmpireForWave(1)
+            currentWave = 1
+            wavesCompleted = 0
+            waveTotalEnemies = endlessEnemyCountForWave(1)
+            waveEnemiesSpawned = 0
+            waveEnemiesDefeated = 0
+            waveTransitionTimer = 0f
+            enemySpawnTimer = 0.4f
+            completedWaveNumbers.clear()
+            creditedWaveNumbers.clear()
+            allBarracks.clear()
+            enemyHeadquarters = null
+            barracksDestroyedCount = 0
+            threatAlert = ThreatAlert(
+                "ENDLESS SURVIVAL — WAVE 1 // ${selectedEmpire.title}",
+                selectedEmpire.primaryColor,
+                4.0f
+            )
+        } else {
+            threatAlert = ThreatAlert(
+                "STAGE ${getStageNumber(selectedEmpire)}: DESTROY 50 BARRACKS TO UNLOCK HQ",
+                selectedEmpire.primaryColor,
+                4.0f
+            )
+        }
 
         // Generate seamless initial environment
         generateInitialEnvironment()
@@ -339,6 +471,112 @@ class GameEngine(
         updateHud()
     }
 
+    fun exportEndlessCheckpoint(
+        sessionId: String? = null,
+        settledWaves: Set<Int> = emptySet(),
+        pendingClaimWaves: Map<Int, Int> = emptyMap()
+    ): com.example.game.network.EndlessCheckpoint {
+        return com.example.game.network.EndlessCheckpoint(
+            currentWave = currentWave.coerceAtLeast(1),
+            wavesCompleted = wavesCompleted.coerceAtLeast(0),
+            activeEmpire = selectedEmpire,
+            playerX = player.pos.x,
+            playerY = player.pos.y,
+            hearts = player.hearts.coerceIn(1, player.maxHearts),
+            hitsRemainingInHeart = player.hitsRemainingInHeart.coerceIn(1, player.hitsPerHeart),
+            score = score,
+            kills = kills,
+            confirmedCreditsEarned = creditsEarned,
+            waveEnemiesDefeated = waveEnemiesDefeated.coerceIn(0, waveTotalEnemies),
+            waveTotalEnemies = waveTotalEnemies.coerceAtLeast(1),
+            overdriveCharge = player.overdriveCharge,
+            endlessSessionId = sessionId,
+            settledWaves = settledWaves,
+            pendingClaimWaves = pendingClaimWaves
+        )
+    }
+
+    fun restoreFromEndlessCheckpoint(checkpoint: com.example.game.network.EndlessCheckpoint) {
+        if (gameMode != GameMode.ENDLESS_SURVIVAL) return
+        currentWave = checkpoint.currentWave.coerceAtLeast(1)
+        wavesCompleted = checkpoint.wavesCompleted.coerceAtLeast(0)
+        selectedEmpire = endlessEmpireForWave(currentWave)
+        waveTotalEnemies = endlessEnemyCountForWave(currentWave)
+        waveEnemiesDefeated = checkpoint.waveEnemiesDefeated.coerceIn(0, waveTotalEnemies - 1)
+        waveEnemiesSpawned = waveEnemiesDefeated
+        waveTransitionTimer = 0f
+        enemySpawnTimer = 0.4f
+        completedWaveNumbers.clear()
+        for (w in 1 until currentWave) {
+            completedWaveNumbers.add(w)
+        }
+        creditedWaveNumbers.clear()
+        creditedWaveNumbers.addAll(checkpoint.settledWaves)
+
+        player.pos = Vector3D(
+            checkpoint.playerX.coerceIn(minX, maxX),
+            checkpoint.playerY.coerceAtLeast(minY),
+            9.5f
+        )
+        player.velocity = Vector3D(0f, 0f, 0f)
+        player.hearts = checkpoint.hearts.coerceIn(1, player.maxHearts)
+        player.hitsRemainingInHeart = checkpoint.hitsRemainingInHeart.coerceIn(1, player.hitsPerHeart)
+        player.health = player.maxHealth * (player.hitsRemainingInHeart.toFloat() / player.hitsPerHeart.toFloat())
+        player.overdriveCharge = checkpoint.overdriveCharge.coerceIn(0f, 100f)
+        player.invulnerableTimer = 2.0f
+
+        score = checkpoint.score.coerceAtLeast(0)
+        kills = checkpoint.kills.coerceAtLeast(0)
+        creditsEarned = checkpoint.confirmedCreditsEarned.coerceAtLeast(0)
+        isGameOver = false
+        isVictory = false
+
+        enemies.clear()
+        bullets.clear()
+        rockets.clear()
+        missiles.clear()
+        hazards.clear()
+        structures.clear()
+        allBarracks.clear()
+        enemyHeadquarters = null
+        activeBoss = null
+        bossSpawned = false
+
+        furthestGeneratedY = (player.pos.y - 30f).coerceAtLeast(-20f)
+        while (furthestGeneratedY < player.pos.y + 120f) {
+            generateEnvironmentChunk(furthestGeneratedY)
+            furthestGeneratedY += 30f
+        }
+
+        val initialBurst = minOf(3, (waveTotalEnemies - waveEnemiesSpawned).coerceAtLeast(0))
+        repeat(initialBurst) {
+            spawnEndlessWaveEnemy()
+        }
+
+        camera.x = player.pos.x
+        camera.y = player.pos.y - 12.5f
+        threatAlert = ThreatAlert(
+            "RESUMED WAVE $currentWave // ${selectedEmpire.title} ($waveEnemiesDefeated/$waveTotalEnemies)",
+            Color(0xFF00E676),
+            3.5f
+        )
+        updateHud()
+    }
+
+    fun applyEndlessWaveCredits(waveNumber: Int, awardedCredits: Int) {
+        if (awardedCredits > 0 && creditedWaveNumbers.add(waveNumber)) {
+            creditsEarned += awardedCredits
+            updateHud()
+        }
+    }
+
+    fun updateEndlessMetadata(bestWave: Int, bestScore: Int, syncStatus: EndlessSyncStatus) {
+        endlessBestWave = maxOf(endlessBestWave, bestWave)
+        endlessBestScore = maxOf(endlessBestScore, bestScore)
+        endlessSyncStatus = syncStatus
+        updateHud()
+    }
+
     /**
      * Restores all 5 Main Hearts (50 hits) after watching a Rewarded Ad so player continues seamlessly.
      */
@@ -352,9 +590,16 @@ class GameEngine(
     }
 
     private fun spawnInitialSquadron() {
-        spawnEnemy(EnemyCategory.ATTACK_HELICOPTER, -5f, 22f)
-        spawnEnemy(EnemyCategory.GROUND_TANK, 4f, 26f)
-        spawnEnemy(EnemyCategory.AA_TURRET, 0f, 32f)
+        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            val initialBurst = minOf(3, waveTotalEnemies - waveEnemiesSpawned)
+            repeat(initialBurst) {
+                spawnEndlessWaveEnemy()
+            }
+        } else {
+            spawnEnemy(EnemyCategory.ATTACK_HELICOPTER, -5f, 22f)
+            spawnEnemy(EnemyCategory.GROUND_TANK, 4f, 26f)
+            spawnEnemy(EnemyCategory.AA_TURRET, 0f, 32f)
+        }
     }
 
     fun update(delta: Float) {
@@ -365,7 +610,11 @@ class GameEngine(
 
     private fun updateStep(safeDelta: Float) {
         gameTime += safeDelta
-        missionProgress = (barracksDestroyedCount / 50f).coerceIn(0f, 1f)
+        missionProgress = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            (waveEnemiesDefeated.toFloat() / waveTotalEnemies.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+        } else {
+            (barracksDestroyedCount / 50f).coerceIn(0f, 1f)
+        }
 
         // Cooldown / flash timers
         if (player.invulnerableTimer > 0f) player.invulnerableTimer = (player.invulnerableTimer - safeDelta).coerceAtLeast(0f)
@@ -531,9 +780,13 @@ class GameEngine(
         player.pos.x += player.velocity.x * delta
         player.pos.y += player.velocity.y * delta
 
-        // Open-world boundary clamping (never tethered to lagged camera position)
+        // Open-world boundary clamping (unbounded +Y in Endless Survival)
         player.pos.x = player.pos.x.coerceIn(minX, maxX)
-        player.pos.y = player.pos.y.coerceIn(minY, maxY)
+        player.pos.y = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            player.pos.y.coerceAtLeast(minY)
+        } else {
+            player.pos.y.coerceIn(minY, maxY)
+        }
 
         // Banking roll on strafe (left input banks left wing down -> positive rollAngle)
         val targetRoll = -dirX * maxBankAngleRad
@@ -767,16 +1020,35 @@ class GameEngine(
      * and Territory Proximity Alertness.
      */
     private fun updateEnemies(delta: Float) {
-        val diff = difficultyFactor // 0.0 (Medium) -> 1.0 (Hard)
-        val fireRateScale = 1.0f - (diff * 0.40f) // Up to 40% faster attack cadence near 50/50
+        val diff = difficultyFactor // 0.0 -> 1.0
+        val fireRateScale = 1.0f - (diff * 0.40f)
         val speedScale = 1.0f + (diff * 0.35f)
+        val dmgMult = currentWaveDamageMultiplier
 
-        // Progressive spawn with wave scaling (capped for mobile stability)
-        if (enemies.size < 8 && activeBoss == null) {
-            enemySpawnTimer -= delta
-            if (enemySpawnTimer <= 0f) {
-                enemySpawnTimer = (2.4f - (diff * 1.15f)).coerceAtLeast(0.85f)
-                spawnProgressiveEnemy()
+        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            if (waveTransitionTimer > 0f) {
+                waveTransitionTimer = (waveTransitionTimer - delta).coerceAtLeast(0f)
+                if (waveTransitionTimer <= 0f) {
+                    val burst = minOf(3, (waveTotalEnemies - waveEnemiesSpawned).coerceAtLeast(0))
+                    repeat(burst) {
+                        spawnEndlessWaveEnemy()
+                    }
+                }
+            } else if (waveEnemiesSpawned < waveTotalEnemies && enemies.size < 8 && activeBoss == null) {
+                enemySpawnTimer -= delta
+                if (enemySpawnTimer <= 0f) {
+                    enemySpawnTimer = (1.65f - (diff * 0.85f)).coerceAtLeast(0.55f)
+                    spawnEndlessWaveEnemy()
+                }
+            }
+        } else {
+            // Campaign progressive spawn with wave scaling (capped for mobile stability)
+            if (enemies.size < 8 && activeBoss == null) {
+                enemySpawnTimer -= delta
+                if (enemySpawnTimer <= 0f) {
+                    enemySpawnTimer = (2.4f - (diff * 1.15f)).coerceAtLeast(0.85f)
+                    spawnProgressiveEnemy()
+                }
             }
         }
 
@@ -795,7 +1067,7 @@ class GameEngine(
                 enemy.isAlerted = true
             }
 
-            // Predictive lead aim scales with difficulty (Medium -> Hard)
+            // Predictive lead aim scales with difficulty
             val leadSec = 0.25f * diff
             val predictedTarget = Vector3D(
                 player.pos.x + player.velocity.x * leadSec,
@@ -819,10 +1091,10 @@ class GameEngine(
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 1.4f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 6f) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(z = enemy.pos.z - 0.2f), aimToPlayer * (28.0f * speedScale), damage = 12f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = enemy.pos.z - 0.2f), aimToPlayer * (28.0f * speedScale), damage = 12f * dmgMult, isPlayer = false))
                         if (diff > 0.35f || Math.random() < 0.4) {
-                            addBullet(TracerBullet(Vector3D(enemy.pos.x - 0.9f, enemy.pos.y, enemy.pos.z), aimToPlayer * 26.0f, damage = 14f, isPlayer = false))
-                            addBullet(TracerBullet(Vector3D(enemy.pos.x + 0.9f, enemy.pos.y, enemy.pos.z), aimToPlayer * 26.0f, damage = 14f, isPlayer = false))
+                            addBullet(TracerBullet(Vector3D(enemy.pos.x - 0.9f, enemy.pos.y, enemy.pos.z), aimToPlayer * 26.0f, damage = 14f * dmgMult, isPlayer = false))
+                            addBullet(TracerBullet(Vector3D(enemy.pos.x + 0.9f, enemy.pos.y, enemy.pos.z), aimToPlayer * 26.0f, damage = 14f * dmgMult, isPlayer = false))
                         }
                     }
                 }
@@ -835,13 +1107,13 @@ class GameEngine(
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 0.28f * fireRateScale && distToPlayer < 52f && enemy.pos.y > player.pos.y) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(), Vector3D(aimToPlayer.x * 12f, -42.0f, 0f), damage = 15f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(), Vector3D(aimToPlayer.x * 12f, -42.0f, 0f), damage = 15f * dmgMult, isPlayer = false))
                     }
                 }
 
                 EnemyCategory.GROUND_TANK -> {
                     val patrolSpeedY = if (dy < -22f) -3.4f * alertBoost else if (dy > -12f) 1.6f else 0f
-                    enemy.pos.y = (enemy.pos.y + patrolSpeedY * delta).coerceIn(minY, maxY)
+                    enemy.pos.y = clampEnemyY(enemy.pos.y + patrolSpeedY * delta)
                     val trackX = if (enemy.isAlerted) (player.pos.x - enemy.pos.x).coerceIn(-3f, 3f) * 0.45f else 0f
                     enemy.pos.x = (enemy.pos.x + (sin(enemy.strafePhase * 0.95f) * 2.5f + trackX) * delta).coerceIn(minX + 2f, maxX - 2f)
                     enemy.turretAngle = atan2(dx, dy)
@@ -849,7 +1121,7 @@ class GameEngine(
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 2.1f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 8f) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aimToPlayer * (33.0f * speedScale), damage = 24f, isPlayer = false, isTankShell = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aimToPlayer * (33.0f * speedScale), damage = 24f * dmgMult, isPlayer = false, isTankShell = true))
                         createExplosion(enemy.pos.copy(z = 0.8f), Color(0xFFFF9100), count = 6, speed = 4f)
                     }
                 }
@@ -859,13 +1131,13 @@ class GameEngine(
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 1.9f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 6f) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(z = 1.0f), aimToPlayer * 31.0f, damage = 20f, isPlayer = false, isFlakBurst = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 1.0f), aimToPlayer * 31.0f, damage = 20f * dmgMult, isPlayer = false, isFlakBurst = true))
                     }
                 }
 
                 EnemyCategory.MISSILE_LAUNCHER -> {
                     val samMoveY = if (dy < -28f) -2.5f * alertBoost else 0f
-                    enemy.pos.y = (enemy.pos.y + samMoveY * delta).coerceIn(minY, maxY)
+                    enemy.pos.y = clampEnemyY(enemy.pos.y + samMoveY * delta)
                     enemy.pos.x = (enemy.pos.x + cos(enemy.strafePhase * 0.7f) * 1.8f * delta).coerceIn(minX + 2f, maxX - 2f)
                     enemy.turretAngle = atan2(dx, dy)
 
@@ -877,7 +1149,7 @@ class GameEngine(
                             pos = enemy.pos.copy(z = 1.2f),
                             velocity = Vector3D(aimToPlayer.x * 6f, -15.0f, 4.0f),
                             targetId = "PLAYER",
-                            damage = 34f,
+                            damage = 34f * dmgMult,
                             isEnemy = true
                         )
                         addMissile(missile)
@@ -888,25 +1160,25 @@ class GameEngine(
                 EnemyCategory.INFANTRY_SOLDIER -> {
                     val flankMove = if (enemy.isAlerted) (player.pos.x - enemy.pos.x).coerceIn(-4f, 4f) * 0.4f else 0f
                     enemy.pos.x = (enemy.pos.x + (cos(enemy.strafePhase * 1.9f) * 2.5f + flankMove) * delta).coerceIn(minX + 1f, maxX - 1f)
-                    enemy.pos.y = (enemy.pos.y + sin(enemy.strafePhase * 1.2f) * 1.2f * delta).coerceIn(minY, maxY)
+                    enemy.pos.y = clampEnemyY(enemy.pos.y + sin(enemy.strafePhase * 1.2f) * 1.2f * delta)
                     enemy.turretAngle = atan2(dx, dy)
 
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 1.55f * fireRateScale && distToPlayer < 42f && enemy.pos.y > player.pos.y - 10f) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(z = 0.5f), aimToPlayer * 25.0f, damage = 8f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.5f), aimToPlayer * 25.0f, damage = 8f * dmgMult, isPlayer = false))
                     }
                 }
 
                 EnemyCategory.ROCKET_SOLDIER -> {
                     enemy.pos.x = (enemy.pos.x + sin(enemy.strafePhase * 1.6f) * 2.2f * delta).coerceIn(minX + 1f, maxX - 1f)
-                    enemy.pos.y = (enemy.pos.y + cos(enemy.strafePhase * 1.0f) * 1.0f * delta).coerceIn(minY, maxY)
+                    enemy.pos.y = clampEnemyY(enemy.pos.y + cos(enemy.strafePhase * 1.0f) * 1.0f * delta)
                     enemy.turretAngle = atan2(dx, dy)
 
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 2.65f * fireRateScale && distToPlayer < 45f && enemy.pos.y > player.pos.y - 12f) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aimToPlayer * 22.0f, damage = 22f, isPlayer = false, isFlakBurst = true))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 0.8f), aimToPlayer * 22.0f, damage = 22f * dmgMult, isPlayer = false, isFlakBurst = true))
                     }
                 }
 
@@ -915,16 +1187,50 @@ class GameEngine(
                     enemy.attackTimer += delta
                     if (enemy.attackTimer >= 2.1f * fireRateScale && distToPlayer < 48f && enemy.pos.y > player.pos.y - 8f) {
                         enemy.attackTimer = 0f
-                        addBullet(TracerBullet(enemy.pos.copy(z = 4.0f), aimToPlayer * 34.0f, damage = 16f, isPlayer = false))
+                        addBullet(TracerBullet(enemy.pos.copy(z = 4.0f), aimToPlayer * 34.0f, damage = 16f * dmgMult, isPlayer = false))
                     }
                 }
             }
 
             if (enemy.pos.y < camera.y - 16.0f && enemy.category == EnemyCategory.FIGHTER_AIRCRAFT) {
                 it.remove()
+                if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                    waveEnemiesSpawned = (waveEnemiesSpawned - 1).coerceAtLeast(waveEnemiesDefeated)
+                }
             } else if (enemy.pos.y < camera.y - 24.0f) {
                 it.remove()
+                if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                    waveEnemiesSpawned = (waveEnemiesSpawned - 1).coerceAtLeast(waveEnemiesDefeated)
+                }
             }
+        }
+    }
+
+    private fun clampEnemyY(y: Float): Float {
+        return if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            y.coerceAtLeast(minY)
+        } else {
+            y.coerceIn(minY, maxY)
+        }
+    }
+
+    private fun spawnEndlessWaveEnemy() {
+        if (waveEnemiesSpawned >= waveTotalEnemies || enemies.size >= MAX_ACTIVE_ENEMIES) return
+        val spawnX = (player.pos.x + ((Math.random().toFloat() - 0.5f) * 38f)).coerceIn(minX + 4f, maxX - 4f)
+        val spawnY = player.pos.y + 30f + (Math.random().toFloat() * 12f)
+        val categories = when (selectedEmpire) {
+            EmpireType.DRAGON -> listOf(EnemyCategory.ATTACK_HELICOPTER, EnemyCategory.AA_TURRET, EnemyCategory.ROCKET_SOLDIER, EnemyCategory.GROUND_TANK)
+            EmpireType.ALIEN -> listOf(EnemyCategory.FIGHTER_AIRCRAFT, EnemyCategory.AA_TURRET, EnemyCategory.MISSILE_LAUNCHER, EnemyCategory.INFANTRY_SOLDIER)
+            EmpireType.ORC -> listOf(EnemyCategory.GROUND_TANK, EnemyCategory.ROCKET_SOLDIER, EnemyCategory.INFANTRY_SOLDIER, EnemyCategory.ATTACK_HELICOPTER)
+            EmpireType.HUMAN -> listOf(EnemyCategory.FIGHTER_AIRCRAFT, EnemyCategory.GROUND_TANK, EnemyCategory.MISSILE_LAUNCHER, EnemyCategory.WATCHTOWER_SNIPER)
+        }
+        val category = if (currentWave <= 2) {
+            categories.take(3).random()
+        } else {
+            EnemyCategory.values().random()
+        }
+        if (spawnEnemy(category, spawnX, spawnY, alerted = true)) {
+            waveEnemiesSpawned++
         }
     }
 
@@ -937,9 +1243,9 @@ class GameEngine(
         spawnEnemy(category, spawnX, spawnY, alerted = true)
     }
 
-    private fun spawnEnemy(category: EnemyCategory, x: Float, y: Float, alerted: Boolean = false) {
-        if (enemies.size >= MAX_ACTIVE_ENEMIES) return
-        val hpMultiplier = 1.0f + (difficultyFactor * 0.65f)
+    private fun spawnEnemy(category: EnemyCategory, x: Float, y: Float, alerted: Boolean = false): Boolean {
+        if (enemies.size >= MAX_ACTIVE_ENEMIES) return false
+        val hpMultiplier = currentWaveHpMultiplier
         val isGround = category != EnemyCategory.ATTACK_HELICOPTER && category != EnemyCategory.FIGHTER_AIRCRAFT
         val z = if (isGround) 0.1f else 9.5f
         val velY = when (category) {
@@ -968,6 +1274,7 @@ class GameEngine(
                 isAlerted = alerted
             )
         )
+        return true
     }
 
     /**
@@ -1099,7 +1406,7 @@ class GameEngine(
                 boss.chargeOffset = Vector3D(0f, -diveY, -diveY * 0.25f)
                 val currentPos = boss.pos + boss.chargeOffset
                 if ((currentPos - player.pos).length() < 3.8f) {
-                    applyPlayerHit(1)
+                    applyPlayerIncomingDamage(rawDamage = 32f, hitWeight = 1)
                     camera.screenShake = 3.5f
                     createExplosion(player.pos, Color(0xFFFF3D00), count = 4, speed = 5f)
                 }
@@ -1115,7 +1422,7 @@ class GameEngine(
                 boss.chargeOffset = Vector3D(0f, -surgeY, 0f)
                 val currentPos = boss.pos + boss.chargeOffset
                 if ((currentPos - player.pos).length() < 4.2f) {
-                    applyPlayerHit(1)
+                    applyPlayerIncomingDamage(rawDamage = 36f, hitWeight = 1)
                     camera.screenShake = 4.0f
                 }
                 if (boss.modeTimer >= 1.3f) {
@@ -1695,7 +2002,7 @@ class GameEngine(
             } else {
                 // Enemy missile vs Player
                 if ((m.pos - player.pos).length() < 2.2f) {
-                    applyPlayerHit(1)
+                    applyPlayerIncomingDamage(rawDamage = m.damage, hitWeight = 1)
                     impacted = true
                     camera.screenShake = 3.5f
                 }
@@ -1716,7 +2023,7 @@ class GameEngine(
 
             val hitDist = if (b.isFlakBurst) 3.0f else 1.8f
             if ((b.pos - player.pos).length() < hitDist) {
-                applyPlayerHit(1)
+                applyPlayerIncomingDamage(rawDamage = b.damage, hitWeight = 1)
                 camera.screenShake = 2.0f
                 createExplosion(b.pos, Color(0xFF00E5FF), count = 6, speed = 5f)
                 ebIt.remove()
@@ -1730,6 +2037,10 @@ class GameEngine(
             if (enemy.health <= 0f) {
                 kills++
                 score += enemy.scoreValue
+                if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                    waveEnemiesDefeated++
+                    endlessBestScore = maxOf(endlessBestScore, score)
+                }
                 player.overdriveCharge = (player.overdriveCharge + 8f).coerceAtMost(100f)
                 createExplosion(enemy.pos, enemy.empire.primaryColor, count = 22, speed = 10f)
                 audioSystem?.playExplosion()
@@ -1737,6 +2048,113 @@ class GameEngine(
                 eIt.remove()
             }
         }
+
+        if (gameMode == GameMode.ENDLESS_SURVIVAL &&
+            waveTransitionTimer <= 0f &&
+            waveEnemiesDefeated >= waveTotalEnemies &&
+            enemies.isEmpty()
+        ) {
+            completeCurrentEndlessWave()
+        }
+    }
+
+    private fun completeCurrentEndlessWave() {
+        if (gameMode != GameMode.ENDLESS_SURVIVAL || isGameOver) return
+        val completedWave = currentWave
+        if (!completedWaveNumbers.add(completedWave)) return
+
+        val waveKills = waveTotalEnemies
+        val currentEmp = selectedEmpire
+        val nextWave = completedWave + 1
+        val nextEmp = endlessEmpireForWave(nextWave)
+
+        wavesCompleted++
+        score += endlessWaveRewardScore(completedWave, waveKills)
+        endlessBestWave = maxOf(endlessBestWave, nextWave)
+        endlessBestScore = maxOf(endlessBestScore, score)
+
+        onEndlessWaveCompleted?.invoke(
+            EndlessWaveCompletionEvent(
+                waveNumber = completedWave,
+                waveKills = waveKills,
+                empire = currentEmp,
+                nextEmpire = nextEmp,
+                survivalScore = score
+            )
+        )
+
+        currentWave = nextWave
+        waveTotalEnemies = endlessEnemyCountForWave(nextWave)
+        waveEnemiesSpawned = 0
+        waveEnemiesDefeated = 0
+        waveTransitionTimer = 1.6f
+        enemySpawnTimer = 0.4f
+
+        if (nextEmp != currentEmp) {
+            transitionEndlessEmpire(nextEmp, nextWave)
+        } else {
+            threatAlert = ThreatAlert(
+                "WAVE $completedWave CLEARED! INCOMING WAVE $nextWave (${waveTotalEnemies} HOSTILES)",
+                Color(0xFF00E676),
+                3.2f
+            )
+            updateHud()
+        }
+    }
+
+    private fun transitionEndlessEmpire(newEmpire: EmpireType, waveNumberForBanner: Int) {
+        selectedEmpire = newEmpire
+        hazards.clear()
+        structures.clear()
+        allBarracks.clear()
+        enemyHeadquarters = null
+        activeBoss = null
+        bossSpawned = false
+        furthestGeneratedY = (player.pos.y - 20f).coerceAtLeast(-20f)
+        while (furthestGeneratedY < player.pos.y + 120f) {
+            generateEnvironmentChunk(furthestGeneratedY)
+            furthestGeneratedY += 30f
+        }
+        threatAlert = ThreatAlert(
+            "WAVE $waveNumberForBanner // ENTERING ${newEmpire.title} THEATER!",
+            newEmpire.primaryColor,
+            4.5f
+        )
+        updateHud()
+    }
+
+    /**
+     * Routes incoming combat damage through Energy Shield absorption and Titanium Armor
+     * mitigation before penetrating into the 5-Heart x 10-Hit survival system.
+     */
+    fun applyPlayerIncomingDamage(rawDamage: Float, hitWeight: Int = 1) {
+        if (isGameOver || isVictory || player.invulnerableTimer > 0f) return
+        var remaining = rawDamage.coerceAtLeast(1f)
+
+        if (player.shield > 0f) {
+            val absorbed = kotlin.math.min(player.shield, remaining)
+            player.shield = (player.shield - absorbed).coerceAtLeast(0f)
+            remaining -= absorbed
+            if (remaining <= 0.01f) {
+                player.invulnerableTimer = 0.08f
+                createExplosion(player.pos, Color(0xFF00E5FF), count = 5, speed = 4f)
+                return
+            }
+        }
+
+        if (remaining > 0f && player.armor > 0f) {
+            val armorMitigated = kotlin.math.min(player.armor, remaining * 0.65f)
+            player.armor = (player.armor - armorMitigated).coerceAtLeast(0f)
+            remaining -= armorMitigated
+            if (armorMitigated > 0f && remaining <= 2.0f) {
+                player.hitFlashTimer = 0.12f
+                player.invulnerableTimer = 0.08f
+                createExplosion(player.pos, Color(0xFFFFB300), count = 4, speed = 4f)
+                return
+            }
+        }
+
+        applyPlayerHit(hitWeight)
     }
 
     /**
@@ -1763,10 +2181,11 @@ class GameEngine(
             createExplosion(player.pos, Color(0xFFFF9100), count = 18, speed = 9f)
             audioSystem?.playExplosion()
         }
+        updateHud()
     }
 
     fun damageBarracks(barracks: EnemyBarracks, damage: Float): Boolean {
-        if (barracks.isDestroyed) return false
+        if (gameMode == GameMode.ENDLESS_SURVIVAL || barracks.isDestroyed) return false
         val wasDestroyed = barracks.takeDamage(damage)
         createExplosion(barracks.pos, Color(0xFFFF9100), count = 5, speed = 6f)
         if (wasDestroyed) {
@@ -1821,6 +2240,7 @@ class GameEngine(
     }
 
     fun destroyHeadquarters() {
+        if (gameMode == GameMode.ENDLESS_SURVIVAL) return
         val hq = enemyHeadquarters ?: return
         if (hq.isDestroyed || (!hq.isUnlocked && !hq.isBossDefeated)) return
         if (campaignService != null &&
@@ -1932,25 +2352,37 @@ class GameEngine(
             isAutoFiring = player.isAutoFiring,
             activeThreat = threatAlert,
             isGameOver = isGameOver,
-            isVictory = isVictory,
+            isVictory = if (gameMode == GameMode.ENDLESS_SURVIVAL) false else isVictory,
             activeEmpire = selectedEmpire,
             stageNumber = getStageNumber(selectedEmpire),
             helicopterClass = player.heloClass,
             bossEntity = activeBoss,
             creditsEarned = creditsEarned,
             barracksDestroyedCount = barracksDestroyedCount,
-            totalBarracks = 50,
+            totalBarracks = if (gameMode == GameMode.ENDLESS_SURVIVAL) 0 else 50,
             isHeadquartersUnlocked = hq?.isUnlocked ?: false,
             isHqBossDefeated = hq?.isBossDefeated ?: false,
             isDangerZoneTriggered = hq?.isDangerZoneTriggered ?: false,
             hqHitsRemaining = hq?.hitsRemaining ?: 1000,
             hqMaxHits = hq?.maxHits ?: 1000,
-            headquartersPos = hq?.pos
+            headquartersPos = hq?.pos,
+            gameMode = gameMode,
+            currentWave = currentWave,
+            wavesCompleted = wavesCompleted,
+            waveEnemiesRemaining = (waveTotalEnemies - waveEnemiesDefeated).coerceAtLeast(0),
+            waveEnemiesTotal = waveTotalEnemies,
+            endlessBestWave = maxOf(endlessBestWave, currentWave),
+            endlessBestScore = maxOf(endlessBestScore, score),
+            endlessSyncStatus = endlessSyncStatus
         )
     }
 
     fun transitionToEmpire(newEmpire: EmpireType) {
         selectedEmpire = newEmpire
+        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            transitionEndlessEmpire(newEmpire, currentWave)
+            return
+        }
         threatAlert = ThreatAlert("WAR THEATER: ${newEmpire.title} OPEN-WORLD SORTIE", newEmpire.primaryColor, 5.0f)
         hazards.clear()
         structures.clear()
@@ -2066,7 +2498,13 @@ class GameEngine(
     }
 
     private fun generateInitialEnvironment() {
-        initOpenWorldObjectives()
+        if (gameMode == GameMode.CAMPAIGN) {
+            initOpenWorldObjectives()
+        } else {
+            allBarracks.clear()
+            enemyHeadquarters = null
+            barracksDestroyedCount = 0
+        }
         furthestGeneratedY = -20f
         while (furthestGeneratedY < 120f) {
             generateEnvironmentChunk(furthestGeneratedY)
@@ -2130,7 +2568,7 @@ class GameEngine(
             if (h.state == HazardState.ACTIVE) {
                 val dist = (Vector3D(h.pos.x, h.pos.y, player.pos.z) - player.pos).length()
                 if (dist < h.radius) {
-                    applyPlayerHit(1)
+                    applyPlayerIncomingDamage(rawDamage = h.damage, hitWeight = 1)
                     camera.screenShake = 1.8f
                     createExplosion(player.pos, selectedEmpire.primaryColor, count = 3, speed = 4f)
                 }

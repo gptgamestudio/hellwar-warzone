@@ -5,8 +5,11 @@ import com.example.game.engine.GameEngine
 import com.example.game.model.EmpireType
 import com.example.game.network.BarracksDestructionResult
 import com.example.game.network.FirestoreCampaignRepository
+import com.example.game.network.LeaderboardRecord
 import com.example.game.network.WarNetCampaignService
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.Query
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
@@ -204,6 +207,56 @@ class WarNetCampaignRuleTest : FirestoreEmulatorTestBase() {
             verifierService.syncFromCloud("VIPER-7").getOrThrow()
         }
         assertTrue(verifiedState.dragonProgress.isHeadquartersDestroyed)
+    }
+
+    @Test
+    fun publicLeaderboard_syncsFromBarracksDestruction_readableUnauthenticatedTop5_blocksInflation() = runBlocking {
+        val email = "ace_${UUID.randomUUID()}@test.com"
+        val uid = signInTestUser(email)
+
+        val service = WarNetCampaignService.createForTest(firestore, auth, databaseId)
+        withTimeout(DEFAULT_TIMEOUT_MS) { service.syncFromCloud("HAWK-9").getOrThrow() }
+
+        val engine = GameEngine(selectedEmpire = EmpireType.HUMAN, campaignService = service)
+        withTimeout(DEFAULT_TIMEOUT_MS) {
+            service.recordBarracksDestructionAsync(engine.allBarracks[0]).getOrThrow()
+        }
+
+        // Spoofed score in /leaderboard MUST fail security rules
+        var spoofError: FirebaseFirestoreException? = null
+        try {
+            withTimeout(DEFAULT_TIMEOUT_MS) {
+                firestore.collection("leaderboard").document(uid).set(
+                    mapOf(
+                        "callsign" to "HAWK-9",
+                        "highScore" to 99999999L,
+                        "totalBarracksDestroyed" to 1L,
+                        "hqClearedCount" to 0L,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+            }
+        } catch (e: Exception) {
+            spoofError = e.unwrapFirestoreException()
+        }
+        assertEquals(FirebaseFirestoreException.Code.PERMISSION_DENIED, spoofError?.code)
+
+        // Unauthenticated visitor CAN query Top 5 leaderboard sorted descending
+        auth.signOut()
+        val topSnap = withTimeout(DEFAULT_TIMEOUT_MS) {
+            firestore.collection("leaderboard")
+                .orderBy("highScore", Query.Direction.DESCENDING)
+                .limit(5)
+                .get()
+                .await()
+        }
+        val records = topSnap.toObjects(LeaderboardRecord::class.java)
+        val syncedEntry = records.firstOrNull { it.id == uid }
+        assertTrue("Synced pilot must appear in public Top 5 query", syncedEntry != null)
+        assertEquals("HAWK-9", syncedEntry!!.callsign)
+        assertEquals(1000L, syncedEntry.highScore)
+        assertEquals(1L, syncedEntry.totalBarracksDestroyed)
+        assertEquals(0L, syncedEntry.hqClearedCount)
     }
 
     private companion object {

@@ -60,6 +60,8 @@ import com.example.game.ads.AdMobBannerBar
 import com.example.game.ads.AdMobManager
 import com.example.game.model.EmpireType
 import com.example.game.model.PlayerProfile
+import com.example.game.network.EndlessCheckpoint
+import com.example.game.network.EndlessSurvivalRecord
 import com.example.game.network.SortieCheckpoint
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.ArmorCard
@@ -86,6 +88,9 @@ fun MainMenuScreen(
     highestStageNumber: Int = 1,
     onWatchSupplyAd: () -> Unit = {},
     supplyAdStatus: String? = null,
+    endlessResumeCheckpoint: EndlessCheckpoint? = null,
+    onContinueEndless: () -> Unit = {},
+    endlessRecord: EndlessSurvivalRecord = EndlessSurvivalRecord(),
     modifier: Modifier = Modifier
 ) {
     val isRewardedReady by AdMobManager.isRewardedReady.collectAsState()
@@ -250,11 +255,29 @@ fun MainMenuScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // 3. ENDLESS BATTLE
+            // 3. ENDLESS BATTLE (Optional Continue + Fresh Endless Survival)
+            if (endlessResumeCheckpoint != null) {
+                MenuSecondaryButton(
+                    icon = Icons.Default.PlayArrow,
+                    title = "CONTINUE ENDLESS — WAVE ${endlessResumeCheckpoint.currentWave}",
+                    subtitle = "${endlessResumeCheckpoint.activeEmpire.name} • HEARTS ${endlessResumeCheckpoint.hearts}/5 • SCORE ${endlessResumeCheckpoint.score}",
+                    accentColor = HealthGreen,
+                    onClick = onContinueEndless,
+                    tag = "menu_continue_endless"
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            val endlessSubtitle = if (endlessRecord.highestWave > 0) {
+                "Best Wave ${endlessRecord.highestWave} • Score ${endlessRecord.bestSurvivalScore} • 4-Empire Cycle"
+            } else {
+                "Survive Infinite Waves • 4-Empire 5-Wave Cycle"
+            }
+
             MenuSecondaryButton(
                 icon = Icons.Default.FlashOn,
                 title = "ENDLESS BATTLE",
-                subtitle = "Survive Infinite Combat Waves",
+                subtitle = endlessSubtitle,
                 accentColor = ThreatRed,
                 onClick = onEndlessBattle,
                 tag = "menu_endless_battle"

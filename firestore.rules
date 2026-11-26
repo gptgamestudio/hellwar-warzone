@@ -145,6 +145,56 @@ service cloud.firestore {
              (empire == 'ALIEN' && profile.alienDestroyedCount >= 50);
     }
 
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll([
+               'callsign', 'highScore', 'totalBarracksDestroyed', 'hqClearedCount', 'updatedAt'
+             ]) &&
+             data.keys().hasOnly([
+               'callsign', 'highScore', 'totalBarracksDestroyed', 'hqClearedCount', 'updatedAt'
+             ]) &&
+             data.callsign is string &&
+             data.callsign.size() >= 2 &&
+             data.callsign.size() <= 32 &&
+             data.highScore is int &&
+             data.highScore >= 0 &&
+             data.highScore <= 100000000 &&
+             data.totalBarracksDestroyed is int &&
+             data.totalBarracksDestroyed >= 0 &&
+             data.totalBarracksDestroyed <= 200 &&
+             data.hqClearedCount is int &&
+             data.hqClearedCount >= 0 &&
+             data.hqClearedCount <= 4 &&
+             data.updatedAt is timestamp &&
+             data.updatedAt <= request.time;
+    }
+
+    function actualHqClearedCount(userId) {
+      return (exists(/databases/$(database)/documents/users/$(userId)/hq_victories/HUMAN) ? 1 : 0) +
+             (exists(/databases/$(database)/documents/users/$(userId)/hq_victories/ORC) ? 1 : 0) +
+             (exists(/databases/$(database)/documents/users/$(userId)/hq_victories/DRAGON) ? 1 : 0) +
+             (exists(/databases/$(database)/documents/users/$(userId)/hq_victories/ALIEN) ? 1 : 0);
+    }
+
+    function profileMatchesLeaderboard(data, profile, userId) {
+      let actualBarracksTotal = profile.humanDestroyedCount +
+                                profile.orcDestroyedCount +
+                                profile.dragonDestroyedCount +
+                                profile.alienDestroyedCount;
+      return data.callsign == profile.callsign &&
+             data.highScore == profile.highScore &&
+             data.totalBarracksDestroyed == actualBarracksTotal &&
+             data.hqClearedCount == actualHqClearedCount(userId);
+    }
+
+    function matchesAuthoritativeProfile(data, userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+             profileMatchesLeaderboard(
+               data,
+               get(/databases/$(database)/documents/users/$(userId)).data,
+               userId
+             );
+    }
+
     // --- Collection Rules ---
     match /users/{userId} {
       allow get: if isOwner(userId) && isValidId(userId);
@@ -223,6 +273,94 @@ service cloud.firestore {
         // Append-only ledger: prevents re-claiming HQ victory rewards
         allow update, delete: if false;
       }
+
+      // v1.0.4 Server-authoritative Hangar inventory, upgrades, skins, and creditsSpentCloud (Admin SDK writes only)
+      match /hangar/{docId} {
+        allow get: if isOwner(userId) && isValidId(userId) && docId == 'state';
+        allow list, write: if false;
+      }
+
+      // Pre-migration snapshots written exclusively by Cloud Functions Admin SDK
+      match /migration_backups/{backupId} {
+        allow read, write: if false;
+      }
+
+      // Endless Survival server-settled wave ledger & survival stats (Admin SDK writes only)
+      match /endless_waves/{waveId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(waveId);
+        allow list: if isOwner(userId);
+        allow write: if false;
+      }
+
+      match /endless/{docId} {
+        allow get: if isOwner(userId) && isValidId(userId) && docId == 'stats';
+        allow list, write: if false;
+      }
+    }
+
+    // AdMob SSV nonce ledger: owner may read own settlement status; Cloud Functions webhook/callables write only
+    match /rewards_ledger/{nonceId} {
+      allow get: if isSignedIn() &&
+                    isValidId(nonceId) &&
+                    resource.data.userId == request.auth.uid;
+      allow list, write: if false;
+    }
+
+    // Processed AdMob SSV transaction replay guard (server-only)
+    match /ssv_processed_tx/{txId} {
+      allow read, write: if false;
+    }
+
+    // Server-issued sortie session records
+    match /sortie_sessions/{sessionId} {
+      allow get: if isSignedIn() &&
+                    isValidId(sessionId) &&
+                    resource.data.userId == request.auth.uid;
+      allow list, write: if false;
+    }
+
+    // Server-issued Endless Survival session records (Admin SDK writes only)
+    match /endless_sessions/{sessionId} {
+      allow get: if isSignedIn() &&
+                    isValidId(sessionId) &&
+                    resource.data.userId == request.auth.uid;
+      allow list, write: if false;
+    }
+
+    // Non-destructive legacy migration conflict quarantine (owner read-only notice; server/admin review)
+    match /migration_quarantine/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list, write: if false;
+    }
+
+    // Minimum client version policy for gradual Stage 1 -> Stage 3 cutover
+    match /config/{docId} {
+      allow get: if docId == 'client_policy';
+      allow list, write: if false;
+    }
+
+    // Sanitized public leaderboard projection: zero PII, owner-only verified sync, public Top 5 read
+    match /leaderboard/{entryId} {
+      allow get: if isValidId(entryId);
+      allow list: if true;
+
+      allow create: if isOwner(entryId) &&
+                       isValidId(entryId) &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       matchesAuthoritativeProfile(incoming(), entryId);
+
+      allow update: if isOwner(entryId) &&
+                       isValidId(entryId) &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'callsign', 'highScore', 'totalBarracksDestroyed', 'hqClearedCount', 'updatedAt'
+                       ]) &&
+                       incoming().highScore >= existing().highScore &&
+                       incoming().totalBarracksDestroyed >= existing().totalBarracksDestroyed &&
+                       incoming().hqClearedCount >= existing().hqClearedCount &&
+                       matchesAuthoritativeProfile(incoming(), entryId);
+
+      allow delete: if false;
     }
   }
 }

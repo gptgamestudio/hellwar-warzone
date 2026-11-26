@@ -1,10 +1,12 @@
 package com.example.game.network
 
+import androidx.annotation.Keep
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
 
+@Keep
 @IgnoreExtraProperties
 data class UserCampaignProfile(
     val userId: String = "",
@@ -19,6 +21,7 @@ data class UserCampaignProfile(
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
 
+@Keep
 @IgnoreExtraProperties
 data class DestroyedBarracksRecord(
     @DocumentId val id: String = "",
@@ -32,6 +35,7 @@ data class DestroyedBarracksRecord(
     @ServerTimestamp val destroyedAt: Timestamp? = null
 )
 
+@Keep
 @IgnoreExtraProperties
 data class HeadquartersVictoryRecord(
     @DocumentId val id: String = "",
@@ -41,4 +45,15 @@ data class HeadquartersVictoryRecord(
     val creditsAwarded: Long = 0L,
     val scoreAwarded: Long = 0L,
     @ServerTimestamp val victoryAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class LeaderboardRecord(
+    @DocumentId val id: String = "",
+    val callsign: String = "VIPER-7",
+    val highScore: Long = 0L,
+    val totalBarracksDestroyed: Long = 0L,
+    val hqClearedCount: Long = 0L,
+    @ServerTimestamp val updatedAt: Timestamp? = null
 )

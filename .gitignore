@@ -24,6 +24,10 @@ debug.keystore.base64
 keystore.base64
 *keystore*.base64
 *-debug.log
+firebase-debug.log*
+firestore-debug.log*
 *.apk
 *.aab
 /dist-apk
+functions/node_modules
+functions/lib

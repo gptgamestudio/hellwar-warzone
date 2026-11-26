@@ -34,10 +34,10 @@
     "name": "Helicopter War: Empire Endless Battle",
     "operatingSystem": "Android 7.0+",
     "applicationCategory": "GameApplication",
-    "softwareVersion": "1.0.3",
-    "datePublished": "2026-11-21",
+    "softwareVersion": "1.0.4",
+    "datePublished": "2026-11-23",
     "fileSize": "35.21 MB",
-    "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.3/helicopter-war.apk",
+    "downloadUrl": "https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.4/helicopter-war.apk",
     "image": "https://hellwar-warzone.web.app/assets/site/hero-gunship.jpg",
     "screenshot": [
       "https://hellwar-warzone.web.app/assets/site/screenshot-sortie.jpg",
@@ -361,6 +361,167 @@
       border: 1px solid var(--border);
       border-radius: 10px;
     }
+    .leaderboard-header-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .btn-refresh {
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.88rem;
+      padding: 10px 16px;
+    }
+    .btn-refresh:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .btn-share {
+      cursor: pointer;
+      font-family: inherit;
+      gap: 8px;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .btn-share:hover, .btn-secondary:hover {
+      background: #dcebe0;
+    }
+    .share-feedback {
+      margin: -8px 0 14px;
+      font-size: 0.84rem;
+      color: var(--primary-dark);
+      font-weight: 600;
+      min-height: 1.2em;
+    }
+    .share-fallback {
+      display: none;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: -4px 0 16px;
+      padding: 10px 12px;
+      background: #f8fbf9;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      font-size: 0.84rem;
+    }
+    .share-fallback.open { display: flex; }
+    .share-fallback a, .share-fallback button {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 0.8rem;
+      text-decoration: none;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .share-fallback a:hover, .share-fallback button:hover {
+      background: var(--surface-alt);
+    }
+    .leaderboard-list {
+      display: grid;
+      gap: 10px;
+    }
+    .leaderboard-row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 14px;
+      align-items: center;
+      background: #f8fbf9;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    @media (max-width: 560px) {
+      .leaderboard-row {
+        grid-template-columns: auto 1fr;
+      }
+      .leaderboard-score-box {
+        grid-column: 1 / -1;
+        text-align: left;
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+      }
+    }
+    .rank-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.96rem;
+      border: 1px solid var(--border);
+      background: #e1f4e7;
+      color: var(--primary-dark);
+      flex-shrink: 0;
+    }
+    .rank-badge.rank-1 {
+      background: #fef3c7;
+      color: #92400e;
+      border-color: #f59e0b;
+    }
+    .rank-badge.rank-2 {
+      background: #f1f5f9;
+      color: #334155;
+      border-color: #94a3b8;
+    }
+    .rank-badge.rank-3 {
+      background: #ffedd5;
+      color: #9a3412;
+      border-color: #fb923c;
+    }
+    .pilot-callsign {
+      font-size: 1.02rem;
+      font-weight: 800;
+      color: var(--ink);
+      word-break: break-word;
+    }
+    .pilot-meta {
+      margin-top: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .pilot-chip {
+      background: var(--surface-alt);
+      color: var(--primary-dark);
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+    }
+    .leaderboard-score-box {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .pilot-score-val {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      line-height: 1.2;
+    }
+    .pilot-score-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      font-weight: 700;
+    }
     footer {
       margin-top: 40px;
       padding-top: 20px;
@@ -383,6 +544,7 @@
         <a href="#empires">4 Empires</a>
         <a href="#screenshots">Screenshots</a>
         <a href="#features">Features</a>
+        <a href="#leaderboard">Leaderboard</a>
         <a href="#install">Install APK</a>
         <a href="#faq">FAQ</a>
         <a href="#version-history">Version History</a>
@@ -403,21 +565,39 @@
 
         <div class="actions">
           <!-- RELEASE_BUTTONS_START -->
-          <a id="download-apk-btn" class="btn btn-primary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.3/helicopter-war.apk" download="helicopter-war.apk" rel="noopener">
-            Download helicopter-war.apk (v1.0.3 &middot; 35.21 MB)
+          <a id="download-apk-btn" class="btn btn-primary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/download/v1.0.4/helicopter-war.apk" download="helicopter-war.apk" rel="noopener">
+            Download helicopter-war.apk (v1.0.4 &middot; 35.21 MB)
           </a>
-          <a id="all-releases-btn" class="btn btn-secondary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.3" target="_blank" rel="noopener">
-            Release v1.0.3 Notes
+          <a id="all-releases-btn" class="btn btn-secondary" href="https://github.com/gptgamestudio/hellwar-warzone/releases/tag/v1.0.4" target="_blank" rel="noopener">
+            Release v1.0.4 Notes
           </a>
           <!-- RELEASE_BUTTONS_END -->
+          <button type="button" id="share-game-btn" class="btn btn-secondary btn-share" aria-label="Share Helicopter War download link on social media">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="18" cy="5" r="3"></circle>
+              <circle cx="6" cy="12" r="3"></circle>
+              <circle cx="18" cy="19" r="3"></circle>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+            </svg>
+            <span>Share</span>
+          </button>
+        </div>
+        <p id="share-feedback" class="share-feedback" role="status" aria-live="polite"></p>
+        <div id="share-fallback" class="share-fallback" aria-label="Social media share options">
+          <span>Share download link:</span>
+          <a id="share-x-link" href="#" target="_blank" rel="noopener">X / Twitter</a>
+          <a id="share-fb-link" href="#" target="_blank" rel="noopener">Facebook</a>
+          <a id="share-wa-link" href="#" target="_blank" rel="noopener">WhatsApp</a>
+          <button type="button" id="share-copy-btn">Copy Link</button>
         </div>
 
         <div class="stats-bar">
           <!-- RELEASE_STATS_START -->
-          <div class="stat-item"><span>Latest Version</span><strong id="meta-version">v1.0.3</strong></div>
+          <div class="stat-item"><span>Latest Version</span><strong id="meta-version">v1.0.4</strong></div>
           <div class="stat-item"><span>APK File</span><strong id="meta-filename">helicopter-war.apk</strong></div>
           <div class="stat-item"><span>File Size</span><strong id="meta-size">35.21 MB</strong></div>
-          <div class="stat-item"><span>Release Date</span><strong id="meta-date">2026-11-21</strong></div>
+          <div class="stat-item"><span>Release Date</span><strong id="meta-date">2026-11-23</strong></div>
           <!-- RELEASE_STATS_END -->
         </div>
         <p class="live-note" id="live-release-status">
@@ -514,6 +694,26 @@
         <div class="panel">
           <h3>Android 7.0+ Ready</h3>
           <p class="section-sub" style="margin-bottom:0;">Built cleanly with Jetpack Compose (compileSdk 36.1), adaptive touch layouts, and automated GitHub Release APKs.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="leaderboard" aria-labelledby="leaderboard-heading">
+      <div class="panel">
+        <div class="leaderboard-header-row">
+          <div>
+            <h2 id="leaderboard-heading" class="section-title">Top 5 Global Pilots</h2>
+            <p class="section-sub" style="margin-bottom:0;">
+              Live high scores fetched from Cloud Firestore across competitive campaign sorties.
+            </p>
+          </div>
+          <button type="button" id="leaderboard-refresh-btn" class="btn btn-secondary btn-refresh">
+            Refresh Rankings
+          </button>
+        </div>
+
+        <div id="global-leaderboard-list" class="leaderboard-list" aria-live="polite">
+          <p class="release-status">Loading top 5 global pilots from Cloud Firestore...</p>
         </div>
       </div>
     </section>
@@ -629,8 +829,11 @@
       <p>
         &copy; 2026 GPT Game Studio &middot;
         <a href="https://gptgamestudio.github.io/" target="_blank" rel="noopener">Studio Portal</a> &middot;
-        <a href="privacy.html">Privacy Policy</a> &middot;
+        <a href="privacy.html" aria-label="Read the Helicopter War Privacy and Data Handling Policy">Privacy &amp; Data Handling Policy</a> &middot;
         <a href="https://github.com/gptgamestudio/hellwar-warzone" target="_blank" rel="noopener">GitHub Repository</a>
+      </p>
+      <p style="margin-top:6px;">
+        Learn how Firebase Authentication and Cloud Firestore save data are managed in our <a href="privacy.html">Data Handling Policy</a>.
       </p>
     </footer>
   </main>
@@ -840,6 +1043,229 @@
         .catch(function () {
           renderFallback("Unable to load live release history from GitHub right now.");
         });
+    })();
+
+    (function setupTopLeaderboard() {
+      var listEl = document.getElementById("global-leaderboard-list");
+      var refreshBtn = document.getElementById("leaderboard-refresh-btn");
+      if (!listEl) return;
+
+      var RUN_QUERY_URL = "https://firestore.googleapis.com/v1/projects/hellwar-warzone/databases/ai-studio-android-heliware-c2397082-887f-480e-b9b0-2eec1df83254/documents:runQuery";
+
+      function readIntField(fields, key) {
+        if (!fields || !fields[key]) return 0;
+        var raw = fields[key].integerValue !== undefined ? fields[key].integerValue : fields[key].doubleValue;
+        var num = Number(raw);
+        return Number.isFinite(num) ? Math.max(0, Math.floor(num)) : 0;
+      }
+
+      function readStringField(fields, key, fallback) {
+        if (!fields || !fields[key] || typeof fields[key].stringValue !== "string") return fallback;
+        var trimmed = fields[key].stringValue.trim();
+        return trimmed ? trimmed : fallback;
+      }
+
+      function formatSyncDate(fields) {
+        if (!fields || !fields.updatedAt || typeof fields.updatedAt.timestampValue !== "string") return "";
+        return fields.updatedAt.timestampValue.slice(0, 10);
+      }
+
+      function renderStatus(message) {
+        listEl.replaceChildren();
+        var p = document.createElement("p");
+        p.className = "release-status";
+        p.textContent = message;
+        listEl.appendChild(p);
+      }
+
+      function loadTopLeaderboard() {
+        if (refreshBtn) refreshBtn.disabled = true;
+        renderStatus("Loading top 5 global pilots from Cloud Firestore...");
+
+        fetch(RUN_QUERY_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            structuredQuery: {
+              from: [{ collectionId: "leaderboard" }],
+              orderBy: [{ field: { fieldPath: "highScore" }, direction: "DESCENDING" }],
+              limit: 5
+            }
+          })
+        })
+          .then(function (res) {
+            if (!res.ok) throw new Error("Firestore query failed: HTTP " + res.status);
+            return res.json();
+          })
+          .then(function (rows) {
+            if (!Array.isArray(rows)) {
+              renderStatus("Unexpected response received from Cloud Firestore.");
+              return;
+            }
+
+            var entries = rows
+              .filter(function (row) { return row && row.document && row.document.fields; })
+              .map(function (row) {
+                var fields = row.document.fields;
+                return {
+                  callsign: readStringField(fields, "callsign", "VIPER-7"),
+                  highScore: readIntField(fields, "highScore"),
+                  totalBarracks: readIntField(fields, "totalBarracksDestroyed"),
+                  hqCleared: readIntField(fields, "hqClearedCount"),
+                  updatedDate: formatSyncDate(fields)
+                };
+              })
+              .sort(function (a, b) { return b.highScore - a.highScore; })
+              .slice(0, 5);
+
+            if (entries.length === 0) {
+              renderStatus("No verified pilot scores published yet. Sign in inside Helicopter War and destroy enemy barracks to claim Rank #1!");
+              return;
+            }
+
+            listEl.replaceChildren();
+            entries.forEach(function (entry, idx) {
+              var rank = idx + 1;
+              var rowEl = document.createElement("article");
+              rowEl.className = "leaderboard-row";
+
+              var badge = document.createElement("div");
+              badge.className = "rank-badge " + (rank <= 3 ? "rank-" + rank : "");
+              badge.textContent = "#" + rank;
+              badge.setAttribute("aria-label", "Rank " + rank);
+              rowEl.appendChild(badge);
+
+              var infoEl = document.createElement("div");
+              var callsignEl = document.createElement("div");
+              callsignEl.className = "pilot-callsign";
+              callsignEl.textContent = entry.callsign;
+              infoEl.appendChild(callsignEl);
+
+              var metaEl = document.createElement("div");
+              metaEl.className = "pilot-meta";
+
+              var barracksChip = document.createElement("span");
+              barracksChip.className = "pilot-chip";
+              barracksChip.textContent = entry.totalBarracks + " / 200 Barracks";
+              metaEl.appendChild(barracksChip);
+
+              var hqChip = document.createElement("span");
+              hqChip.className = "pilot-chip";
+              hqChip.textContent = entry.hqCleared + " / 4 HQ Conquered";
+              metaEl.appendChild(hqChip);
+
+              if (entry.updatedDate) {
+                var dateSpan = document.createElement("span");
+                dateSpan.textContent = "Synced " + entry.updatedDate;
+                metaEl.appendChild(dateSpan);
+              }
+
+              infoEl.appendChild(metaEl);
+              rowEl.appendChild(infoEl);
+
+              var scoreBox = document.createElement("div");
+              scoreBox.className = "leaderboard-score-box";
+
+              var scoreVal = document.createElement("div");
+              scoreVal.className = "pilot-score-val";
+              scoreVal.textContent = entry.highScore.toLocaleString("en-US");
+              scoreBox.appendChild(scoreVal);
+
+              var scoreLabel = document.createElement("div");
+              scoreLabel.className = "pilot-score-label";
+              scoreLabel.textContent = "High Score";
+              scoreBox.appendChild(scoreLabel);
+
+              rowEl.appendChild(scoreBox);
+              listEl.appendChild(rowEl);
+            });
+          })
+          .catch(function () {
+            renderStatus("Unable to fetch live leaderboard scores from Cloud Firestore right now. Check connection and click Refresh Rankings.");
+          })
+          .finally(function () {
+            if (refreshBtn) refreshBtn.disabled = false;
+          });
+      }
+
+      if (refreshBtn) {
+        refreshBtn.addEventListener("click", loadTopLeaderboard);
+      }
+      loadTopLeaderboard();
+    })();
+
+    (function setupWebShare() {
+      var shareBtn = document.getElementById("share-game-btn");
+      var downloadBtn = document.getElementById("download-apk-btn");
+      var feedbackEl = document.getElementById("share-feedback");
+      var fallbackEl = document.getElementById("share-fallback");
+      var xLink = document.getElementById("share-x-link");
+      var fbLink = document.getElementById("share-fb-link");
+      var waLink = document.getElementById("share-wa-link");
+      var copyBtn = document.getElementById("share-copy-btn");
+      if (!shareBtn) return;
+
+      function getSharePayload() {
+        var verEl = document.getElementById("meta-version");
+        var ver = (verEl && verEl.textContent) ? verEl.textContent.trim() : "v1.0.4";
+        var downloadUrl = (downloadBtn && downloadBtn.href)
+          ? downloadBtn.href
+          : "https://github.com/gptgamestudio/hellwar-warzone/releases/latest/download/helicopter-war.apk";
+        return {
+          title: "Helicopter War: Empire Endless Battle (" + ver + ")",
+          text: "Command 3D attack helicopters across 4 Enemy Empires! Download Helicopter War APK (" + ver + "):",
+          url: downloadUrl
+        };
+      }
+
+      function populateSocialFallback(payload) {
+        var encodedUrl = encodeURIComponent(payload.url);
+        var encodedText = encodeURIComponent(payload.text + " " + payload.url);
+        if (xLink) xLink.href = "https://twitter.com/intent/tweet?text=" + encodeURIComponent(payload.text) + "&url=" + encodedUrl;
+        if (fbLink) fbLink.href = "https://www.facebook.com/sharer/sharer.php?u=" + encodedUrl;
+        if (waLink) waLink.href = "https://wa.me/?text=" + encodedText;
+      }
+
+      function setFeedback(message) {
+        if (feedbackEl) feedbackEl.textContent = message;
+      }
+
+      function copyShareLink(payload) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          navigator.clipboard.writeText(payload.url).then(function () {
+            setFeedback("Download link copied to clipboard. Share it on your favorite social app!");
+          }).catch(function () {
+            setFeedback("Use the social share buttons below to share the APK link.");
+          });
+        } else {
+          setFeedback("Use the social share buttons below to share the APK link.");
+        }
+      }
+
+      shareBtn.addEventListener("click", function () {
+        var payload = getSharePayload();
+        populateSocialFallback(payload);
+
+        if (typeof navigator.share === "function") {
+          navigator.share(payload).then(function () {
+            setFeedback("Thanks for sharing Helicopter War!");
+            if (fallbackEl) fallbackEl.classList.remove("open");
+          }).catch(function (err) {
+            if (err && err.name === "AbortError") return;
+            if (fallbackEl) fallbackEl.classList.add("open");
+            copyShareLink(payload);
+          });
+        } else {
+          if (fallbackEl) fallbackEl.classList.toggle("open");
+          copyShareLink(payload);
+        }
+      });
+
+      if (copyBtn) {
+        copyBtn.addEventListener("click", function () {
+          copyShareLink(getSharePayload());
+        });
+      }
     })();
   </script>
 </body>

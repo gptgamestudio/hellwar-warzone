@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.util.Log
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -199,17 +198,17 @@ fun onGoogleSignInClicked(
         } catch (e: CancellationException) {
             throw e
         } catch (e: GetCredentialCancellationException) {
-            Log.w("Auth", "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
+            SafeLog.w("Auth", "Google Sign-In flow cancelled or dismissed (${SafeLog.safeThrowableSummary(e)})")
             withContext(Dispatchers.Main) {
                 onAuthCancelled()
             }
         } catch (e: NoCredentialException) {
-            Log.e("Auth", "No Google account available for Sign-In", e)
+            SafeLog.e("Auth", "No Google account available for Sign-In (${SafeLog.safeThrowableSummary(e)})")
             withContext(Dispatchers.Main) {
                 onAuthError("No Google account found on device or OAuth SHA-1 mismatch. Please add/select a Google account and try again.")
             }
         } catch (e: Exception) {
-            Log.e("Auth", "Google Sign-In failed", e)
+            SafeLog.e("Auth", "Google Sign-In failed (${SafeLog.safeThrowableSummary(e)})")
             withContext(Dispatchers.Main) {
                 onAuthError(e.localizedMessage ?: "Google Sign-In failed. Please try again.")
             }
@@ -227,7 +226,7 @@ fun signOutFromGoogle(
             try {
                 credentialManager.clearCredentialState(ClearCredentialStateRequest())
             } catch (e: Exception) {
-                Log.w("Auth", "Failed to clear credential state: ${e.message}")
+                SafeLog.w("Auth", "Failed to clear credential state (${SafeLog.safeThrowableSummary(e)})")
             } finally {
                 Firebase.auth.signOut()
                 withContext(Dispatchers.Main) {

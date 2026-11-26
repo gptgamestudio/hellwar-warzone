@@ -52,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,8 +68,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.game.ads.AdMobBannerBar
 import com.example.game.ads.AdMobManager
-import com.example.game.engine.Camera3D
-import com.example.game.engine.PlayerHelo
 import com.example.game.engine.Renderer3D
 import com.example.game.model.HelicopterClass
 import com.example.game.model.HelicopterSkin
@@ -89,15 +88,32 @@ fun GarageScreen(
     onProfileUpdated: (PlayerProfile) -> Unit,
     onBack: () -> Unit,
     onWatchSupplyAd: (onStatus: (String) -> Unit) -> Unit = {},
+    initialTab: Int = 0,
+    isSyncingCloudHangar: Boolean = false,
+    quarantineNotice: String? = null,
+    onUnlockHelicopterAsync: ((HelicopterClass, onDone: (Boolean, String) -> Unit) -> Unit)? = null,
+    onUpgradeComponentAsync: ((HelicopterClass, UpgradeType, onDone: (Boolean, String) -> Unit) -> Unit)? = null,
+    onEquipLoadoutAsync: ((HelicopterClass, HelicopterSkin, onDone: (Boolean, String) -> Unit) -> Unit)? = null,
+    enablePreviewAnimation: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf(0) } // 0: Fleet Selection, 1: Upgrades & Systems, 2: Paints & Skins
+    var selectedTab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
     var currentHeloClass by remember { mutableStateOf(profile.selectedHelicopterClass) }
     var currentSkin by remember { mutableStateOf(profile.selectedSkin) }
     var transactionMessage by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
+    var localActionInFlight by remember { mutableStateOf(false) }
+    val isBusy = isSyncingCloudHangar || localActionInFlight
 
-    val currentUpgrades = profile.getUpgrades(currentHeloClass)
+    LaunchedEffect(profile.selectedHelicopterClass) {
+        currentHeloClass = profile.selectedHelicopterClass
+    }
+    LaunchedEffect(profile.selectedSkin) {
+        currentSkin = profile.selectedSkin
+    }
+
+    val currentUpgrades = profile.getUpgrades(currentHeloClass).copy()
+    val isCurrentHeloUnlocked = profile.unlockedHelicopters.contains(currentHeloClass.id)
 
     // Interactive 3D Hangar Preview rotation using a single remembered preview engine
     var previewRotorAngle by remember { mutableFloatStateOf(0f) }
@@ -108,7 +124,8 @@ fun GarageScreen(
             initialUpgrades = currentUpgrades
         )
     }
-    LaunchedEffect(previewEngine) {
+    LaunchedEffect(previewEngine, enablePreviewAnimation) {
+        if (!enablePreviewAnimation) return@LaunchedEffect
         var lastNs = 0L
         while (true) {
             withFrameNanos { frameNs ->
@@ -319,6 +336,39 @@ fun GarageScreen(
                 }
             }
 
+            // Migration conflict quarantine notice (non-destructive inventory preservation)
+            quarantineNotice?.let { notice ->
+                Surface(
+                    color = Color(0x33FF9100),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AmberWarning),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp)
+                        .testTag("hangar_quarantine_notice")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = AmberWarning,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = notice,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+
             // Transaction feedback alert banner
             transactionMessage?.let { msg ->
                 Surface(
@@ -388,11 +438,20 @@ fun GarageScreen(
                 0 -> FleetSelectionSection(
                     profile = profile,
                     currentSelected = currentHeloClass,
+                    isBusy = isBusy,
                     onSelectClass = { chosen ->
                         currentHeloClass = chosen
                     },
                     onDeployHelicopter = { chosen ->
-                        if (profile.unlockedHelicopters.contains(chosen.id)) {
+                        if (!profile.unlockedHelicopters.contains(chosen.id)) return@FleetSelectionSection
+                        if (onEquipLoadoutAsync != null) {
+                            localActionInFlight = true
+                            onEquipLoadoutAsync(chosen, currentSkin) { ok, msg ->
+                                localActionInFlight = false
+                                transactionMessage = msg
+                                messageIsError = !ok
+                            }
+                        } else {
                             val updated = profile.deepCopy(selectedHelicopterClass = chosen)
                             onProfileUpdated(updated)
                             transactionMessage = "DEPLOYMENT CONFIRMED: ${chosen.title}"
@@ -401,11 +460,30 @@ fun GarageScreen(
                     },
                     onUnlockHelicopter = { chosen ->
                         if (profile.unlockedHelicopters.contains(chosen.id)) {
-                            val updated = profile.deepCopy(selectedHelicopterClass = chosen)
-                            onProfileUpdated(updated)
-                            transactionMessage = "DEPLOYMENT CONFIRMED: ${chosen.title}"
-                            messageIsError = false
-                        } else if (profile.credits >= chosen.unlockCost) {
+                            if (onEquipLoadoutAsync != null) {
+                                localActionInFlight = true
+                                onEquipLoadoutAsync(chosen, currentSkin) { ok, msg ->
+                                    localActionInFlight = false
+                                    transactionMessage = msg
+                                    messageIsError = !ok
+                                }
+                            } else {
+                                val updated = profile.deepCopy(selectedHelicopterClass = chosen)
+                                onProfileUpdated(updated)
+                                transactionMessage = "DEPLOYMENT CONFIRMED: ${chosen.title}"
+                                messageIsError = false
+                            }
+                        } else if (profile.credits < chosen.unlockCost) {
+                            transactionMessage = "INSUFFICIENT CREDITS: NEED ${chosen.unlockCost} CR"
+                            messageIsError = true
+                        } else if (onUnlockHelicopterAsync != null) {
+                            localActionInFlight = true
+                            onUnlockHelicopterAsync(chosen) { ok, msg ->
+                                localActionInFlight = false
+                                transactionMessage = msg
+                                messageIsError = !ok
+                            }
+                        } else {
                             val updated = profile.deepCopy(
                                 credits = profile.credits - chosen.unlockCost,
                                 selectedHelicopterClass = chosen
@@ -414,9 +492,6 @@ fun GarageScreen(
                             onProfileUpdated(updated)
                             transactionMessage = "PURCHASE VALIDATED: ${chosen.title} UNLOCKED!"
                             messageIsError = false
-                        } else {
-                            transactionMessage = "INSUFFICIENT CREDITS: NEED ${chosen.unlockCost} CR"
-                            messageIsError = true
                         }
                     }
                 )
@@ -425,7 +500,15 @@ fun GarageScreen(
                     heloClass = currentHeloClass,
                     upgrades = currentUpgrades,
                     playerCredits = profile.credits,
+                    isUnlocked = isCurrentHeloUnlocked,
+                    isBusy = isBusy,
+                    onGoToFleet = { selectedTab = 0 },
                     onUpgrade = { category ->
+                        if (!isCurrentHeloUnlocked) {
+                            transactionMessage = "AIRFRAME LOCKED: UNLOCK ${currentHeloClass.title} IN FLEET TAB FIRST"
+                            messageIsError = true
+                            return@UpgradesSection
+                        }
                         val currentLvl = when (category) {
                             UpgradeType.ENGINE -> currentUpgrades.engineLevel
                             UpgradeType.ARMOR -> currentUpgrades.armorLevel
@@ -440,6 +523,13 @@ fun GarageScreen(
                         } else if (profile.credits < cost) {
                             transactionMessage = "TRANSACTION REJECTED: NEED $cost CR"
                             messageIsError = true
+                        } else if (onUpgradeComponentAsync != null) {
+                            localActionInFlight = true
+                            onUpgradeComponentAsync(currentHeloClass, category) { ok, msg ->
+                                localActionInFlight = false
+                                transactionMessage = msg
+                                messageIsError = !ok
+                            }
                         } else {
                             val updated = profile.deepCopy(credits = profile.credits - cost)
                             val updatedUpgrades = updated.getUpgrades(currentHeloClass)
@@ -459,12 +549,25 @@ fun GarageScreen(
 
                 2 -> SkinsSection(
                     currentSkin = currentSkin,
+                    isBusy = isBusy,
                     onSelectSkin = { skin ->
+                        val previousSkin = currentSkin
                         currentSkin = skin
-                        val updated = profile.deepCopy(selectedSkin = skin)
-                        onProfileUpdated(updated)
-                        transactionMessage = "APPLIED CAMO SKIN: ${skin.label.uppercase()}"
-                        messageIsError = false
+                        if (onEquipLoadoutAsync != null) {
+                            localActionInFlight = true
+                            val activeUnlockedClass = if (isCurrentHeloUnlocked) currentHeloClass else profile.selectedHelicopterClass
+                            onEquipLoadoutAsync(activeUnlockedClass, skin) { ok, msg ->
+                                localActionInFlight = false
+                                if (!ok) currentSkin = previousSkin
+                                transactionMessage = msg
+                                messageIsError = !ok
+                            }
+                        } else {
+                            val updated = profile.deepCopy(selectedSkin = skin)
+                            onProfileUpdated(updated)
+                            transactionMessage = "APPLIED CAMO SKIN: ${skin.label.uppercase()}"
+                            messageIsError = false
+                        }
                     }
                 )
             }
@@ -481,6 +584,7 @@ enum class UpgradeType { ENGINE, ARMOR, WEAPON, DEFENSE, RADAR }
 private fun FleetSelectionSection(
     profile: PlayerProfile,
     currentSelected: HelicopterClass,
+    isBusy: Boolean,
     onSelectClass: (HelicopterClass) -> Unit,
     onDeployHelicopter: (HelicopterClass) -> Unit,
     onUnlockHelicopter: (HelicopterClass) -> Unit
@@ -578,18 +682,20 @@ private fun FleetSelectionSection(
                         if (!isUnlocked) {
                             Button(
                                 onClick = { onUnlockHelicopter(helo) },
+                                enabled = !isBusy,
                                 colors = ButtonDefaults.buttonColors(containerColor = AmberWarning),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.height(38.dp).testTag("unlock_btn_${helo.id}")
+                                modifier = Modifier.height(48.dp).testTag("unlock_btn_${helo.id}")
                             ) {
                                 Text("UNLOCK AIRFRAME (${helo.unlockCost} CR)", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         } else if (!isDeployed) {
                             Button(
                                 onClick = { onDeployHelicopter(helo) },
+                                enabled = !isBusy,
                                 colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.height(38.dp).testTag("deploy_btn_${helo.id}")
+                                modifier = Modifier.height(48.dp).testTag("deploy_btn_${helo.id}")
                             ) {
                                 Text("SELECT FOR SORTIE", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
@@ -606,6 +712,9 @@ private fun UpgradesSection(
     heloClass: HelicopterClass,
     upgrades: HelicopterUpgrades,
     playerCredits: Int,
+    isUnlocked: Boolean,
+    isBusy: Boolean,
+    onGoToFleet: () -> Unit,
     onUpgrade: (UpgradeType) -> Unit
 ) {
     Column(
@@ -615,7 +724,7 @@ private fun UpgradesSection(
         Surface(
             shape = RoundedCornerShape(10.dp),
             color = Color(0xFF131D2A),
-            border = androidx.compose.foundation.BorderStroke(1.dp, CyberCyan),
+            border = androidx.compose.foundation.BorderStroke(1.dp, if (isUnlocked) CyberCyan else ThreatRed),
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
@@ -627,7 +736,52 @@ private fun UpgradesSection(
                     Text("ACTIVE AIRFRAME BENCH", fontSize = 10.sp, color = Color(0xFF90A4AE), fontFamily = FontFamily.Monospace)
                     Text(heloClass.title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = heloClass.themeColor, fontFamily = FontFamily.Monospace)
                 }
-                Text("TIER 5 CEILING", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MilitaryGold, fontFamily = FontFamily.Monospace)
+                Text(
+                    text = if (isUnlocked) "TIER 5 CEILING" else "LOCKED",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isUnlocked) MilitaryGold else ThreatRed,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
+        if (!isUnlocked) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0x33FF1744),
+                border = androidx.compose.foundation.BorderStroke(1.dp, ThreatRed),
+                modifier = Modifier.fillMaxWidth().testTag("locked_upgrade_banner")
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                        Text(
+                            text = "AIRFRAME LOCKED — UNLOCK IN FLEET TAB",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
+                            color = ThreatRed,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "Unlock ${heloClass.title} before installing combat upgrades.",
+                            fontSize = 9.sp,
+                            color = Color(0xFFCFD8DC),
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Button(
+                        onClick = onGoToFleet,
+                        colors = ButtonDefaults.buttonColors(containerColor = AmberWarning),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(48.dp).testTag("go_to_fleet_button")
+                    ) {
+                        Text("FLEET", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.Black)
+                    }
+                }
             }
         }
 
@@ -636,6 +790,7 @@ private fun UpgradesSection(
             description = "Increases movement speed & lateral acceleration (+8% / level)",
             level = upgrades.engineLevel,
             cost = upgrades.getUpgradeCost(upgrades.engineLevel),
+            canUpgrade = isUnlocked && !isBusy && playerCredits >= upgrades.getUpgradeCost(upgrades.engineLevel),
             canAfford = playerCredits >= upgrades.getUpgradeCost(upgrades.engineLevel),
             icon = Icons.Default.Speed,
             color = CyberCyan,
@@ -648,6 +803,7 @@ private fun UpgradesSection(
             description = "Increases hull durability & damage resistance (+12% / level)",
             level = upgrades.armorLevel,
             cost = upgrades.getUpgradeCost(upgrades.armorLevel),
+            canUpgrade = isUnlocked && !isBusy && playerCredits >= upgrades.getUpgradeCost(upgrades.armorLevel),
             canAfford = playerCredits >= upgrades.getUpgradeCost(upgrades.armorLevel),
             icon = Icons.Default.Security,
             color = HealthGreen,
@@ -657,9 +813,10 @@ private fun UpgradesSection(
 
         UpgradeRow(
             title = "AVIONICS & WEAPONS PODS",
-            description = "Increases MG bullet damage & MRL rocket ammunition capacity",
+            description = "Increases MG bullet damage, rocket damage & missile/rocket payload",
             level = upgrades.weaponLevel,
             cost = upgrades.getUpgradeCost(upgrades.weaponLevel),
+            canUpgrade = isUnlocked && !isBusy && playerCredits >= upgrades.getUpgradeCost(upgrades.weaponLevel),
             canAfford = playerCredits >= upgrades.getUpgradeCost(upgrades.weaponLevel),
             icon = Icons.Default.Build,
             color = MilitaryGold,
@@ -672,6 +829,7 @@ private fun UpgradesSection(
             description = "Boosts protective energy shield capacity & recharge rate (+15% / level)",
             level = upgrades.defenseLevel,
             cost = upgrades.getUpgradeCost(upgrades.defenseLevel),
+            canUpgrade = isUnlocked && !isBusy && playerCredits >= upgrades.getUpgradeCost(upgrades.defenseLevel),
             canAfford = playerCredits >= upgrades.getUpgradeCost(upgrades.defenseLevel),
             icon = Icons.Default.Security,
             color = ShieldBlue,
@@ -684,6 +842,7 @@ private fun UpgradesSection(
             description = "Enhances target lock acquisition speed & detects boss weak points",
             level = upgrades.radarLevel,
             cost = upgrades.getUpgradeCost(upgrades.radarLevel),
+            canUpgrade = isUnlocked && !isBusy && playerCredits >= upgrades.getUpgradeCost(upgrades.radarLevel),
             canAfford = playerCredits >= upgrades.getUpgradeCost(upgrades.radarLevel),
             icon = Icons.Default.Radar,
             color = Color(0xFFD500F9),
@@ -699,6 +858,7 @@ private fun UpgradeRow(
     description: String,
     level: Int,
     cost: Int,
+    canUpgrade: Boolean,
     canAfford: Boolean,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     color: Color,
@@ -758,14 +918,14 @@ private fun UpgradeRow(
                     Text(text = "COST: $cost CR", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (canAfford) MilitaryGold else ThreatRed, fontFamily = FontFamily.Monospace)
                     Button(
                         onClick = onUpgrade,
-                        enabled = canAfford,
+                        enabled = canUpgrade,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (canAfford) AmberWarning else Color(0xFF37474F)
+                            containerColor = if (canUpgrade) AmberWarning else Color(0xFF37474F)
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(34.dp).testTag(testTag)
+                        modifier = Modifier.height(48.dp).testTag(testTag)
                     ) {
-                        Text("UPGRADE", fontSize = 9.sp, color = if (canAfford) Color.Black else Color(0xFF90A4AE), fontWeight = FontWeight.Bold)
+                        Text("UPGRADE", fontSize = 9.sp, color = if (canUpgrade) Color.Black else Color(0xFF90A4AE), fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Text(text = "MAXIMUM UPGRADE ACHIEVED", fontSize = 9.sp, fontWeight = FontWeight.Black, color = HealthGreen, fontFamily = FontFamily.Monospace)
@@ -778,6 +938,7 @@ private fun UpgradeRow(
 @Composable
 private fun SkinsSection(
     currentSkin: HelicopterSkin,
+    isBusy: Boolean,
     onSelectSkin: (HelicopterSkin) -> Unit
 ) {
     Column(
@@ -841,9 +1002,10 @@ private fun SkinsSection(
                     } else {
                         Button(
                             onClick = { onSelectSkin(skin) },
+                            enabled = !isBusy,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836)),
                             shape = RoundedCornerShape(6.dp),
-                            modifier = Modifier.height(32.dp)
+                            modifier = Modifier.height(48.dp)
                         ) {
                             Text("EQUIP", fontSize = 9.sp, color = Color.White)
                         }

@@ -162,10 +162,23 @@ data class PlayerHelo(
         flightSpeed = upgrades.calculateEffectiveSpeed(newClass.baseSpeed)
 
         mgDamage = upgrades.calculateEffectiveMgDamage(newClass.baseMgDamage)
+        mgFireRate = when (newClass) {
+            com.example.game.model.HelicopterClass.SCOUT -> 0.10f
+            com.example.game.model.HelicopterClass.HEAVY_GUNSHIP -> 0.09f
+            com.example.game.model.HelicopterClass.STEALTH -> 0.095f
+            com.example.game.model.HelicopterClass.ULTIMATE_WAR -> 0.08f
+        }
+        val baseRocketDmg = when (newClass) {
+            com.example.game.model.HelicopterClass.SCOUT -> 45f
+            com.example.game.model.HelicopterClass.HEAVY_GUNSHIP -> 68f
+            com.example.game.model.HelicopterClass.STEALTH -> 56f
+            com.example.game.model.HelicopterClass.ULTIMATE_WAR -> 75f
+        }
+        rocketDamage = upgrades.calculateEffectiveRocketDamage(baseRocketDmg)
         missileDamage = upgrades.calculateEffectiveMissileDamage(newClass.baseMissileDamage)
         maxRocketAmmo = upgrades.calculateEffectiveRocketAmmo(newClass.baseRocketCapacity)
         rocketAmmo = maxRocketAmmo
-        maxMissileAmmo = newClass.baseMissileCapacity
+        maxMissileAmmo = newClass.baseMissileCapacity + (upgrades.weaponLevel - 1) / 2
         missileAmmo = maxMissileAmmo
         radarRange = 35f + (upgrades.radarLevel * 10f)
     }

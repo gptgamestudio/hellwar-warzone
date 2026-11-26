@@ -667,22 +667,42 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun `verify AdMob monetization IDs and app-ads-txt record match console`() {
+    fun `verify AdMob debug test IDs and preserved production console constants`() {
+        // In debug unit tests (BuildConfig.DEBUG == true), runtime AdMob IDs must resolve to Google sample test IDs
+        assertTrue(BuildConfig.DEBUG)
         assertEquals(
-            "ca-app-pub-9786472984542330~8764530303",
+            com.example.game.ads.AdMobManager.TEST_ADMOB_APP_ID,
             com.example.game.ads.AdMobManager.ADMOB_APP_ID
         )
         assertEquals(
-            "ca-app-pub-9786472984542330/7032646237",
+            com.example.game.ads.AdMobManager.TEST_BANNER_AD_UNIT_ID,
             com.example.game.ads.AdMobManager.BANNER_AD_UNIT_ID
         )
         assertEquals(
-            "ca-app-pub-9786472984542330/7625553507",
+            com.example.game.ads.AdMobManager.TEST_INTERSTITIAL_AD_UNIT_ID,
             com.example.game.ads.AdMobManager.INTERSTITIAL_AD_UNIT_ID
         )
         assertEquals(
-            "ca-app-pub-9786472984542330/9371034967",
+            com.example.game.ads.AdMobManager.TEST_REWARDED_AD_UNIT_ID,
             com.example.game.ads.AdMobManager.REWARDED_AD_UNIT_ID
+        )
+
+        // Preserved production console constants (wired via BuildConfig in release buildType)
+        assertEquals(
+            "ca-app-pub-9786472984542330~8764530303",
+            com.example.game.ads.AdMobManager.PROD_ADMOB_APP_ID
+        )
+        assertEquals(
+            "ca-app-pub-9786472984542330/7032646237",
+            com.example.game.ads.AdMobManager.PROD_BANNER_AD_UNIT_ID
+        )
+        assertEquals(
+            "ca-app-pub-9786472984542330/7625553507",
+            com.example.game.ads.AdMobManager.PROD_INTERSTITIAL_AD_UNIT_ID
+        )
+        assertEquals(
+            "ca-app-pub-9786472984542330/9371034967",
+            com.example.game.ads.AdMobManager.PROD_REWARDED_AD_UNIT_ID
         )
         assertEquals(
             "google.com, pub-9786472984542330, DIRECT, f08c47fec0942fa0",
@@ -935,5 +955,73 @@ class ExampleUnitTest {
             "Connected server true must unlock next stage",
             mgr.isStageUnlocked(EmpireType.ALIEN, liveTrueState, uid)
         )
+    }
+
+    @Test
+    fun `verify shield and armor mitigation protects hearts under incoming damage`() {
+        val upgrades = com.example.game.model.HelicopterUpgrades(
+            armorLevel = 4,
+            defenseLevel = 5
+        )
+        val armoredEngine = GameEngine(
+            selectedEmpire = EmpireType.DRAGON,
+            initialHeloClass = com.example.game.model.HelicopterClass.HEAVY_GUNSHIP,
+            initialUpgrades = upgrades
+        )
+        armoredEngine.player.invulnerableTimer = 0f
+        val startShield = armoredEngine.player.shield
+        val startHits = armoredEngine.player.hitsRemainingInHeart
+
+        // Incoming 35 damage is absorbed entirely by the 128 energy shield
+        armoredEngine.applyPlayerIncomingDamage(rawDamage = 35f, hitWeight = 1)
+        assertTrue("Shield must absorb incoming damage first", armoredEngine.player.shield < startShield)
+        assertEquals("Hearts must stay untouched while shield absorbs hit", startHits, armoredEngine.player.hitsRemainingInHeart)
+
+        // Drain shield and verify titanium armor absorbs light post-shield impact
+        armoredEngine.player.shield = 0f
+        armoredEngine.player.invulnerableTimer = 0f
+        val startArmor = armoredEngine.player.armor
+        armoredEngine.applyPlayerIncomingDamage(rawDamage = 5f, hitWeight = 1)
+        assertTrue("Armor must degrade when absorbing impact", armoredEngine.player.armor < startArmor)
+        assertEquals("Minor impact absorbed by armor leaves heart hits intact", startHits, armoredEngine.player.hitsRemainingInHeart)
+
+        // Verify heavy unmitigated impact after armor exhaustion deducts heart hit
+        armoredEngine.player.shield = 0f
+        armoredEngine.player.armor = 0f
+        armoredEngine.player.invulnerableTimer = 0f
+        armoredEngine.applyPlayerIncomingDamage(rawDamage = 25f, hitWeight = 1)
+        assertEquals(startHits - 1, armoredEngine.player.hitsRemainingInHeart)
+    }
+
+    @Test
+    fun `verify per class fire rate rocket damage missile capacity and shield recharge scaling`() {
+        val scout = GameEngine(
+            selectedEmpire = EmpireType.HUMAN,
+            initialHeloClass = com.example.game.model.HelicopterClass.SCOUT
+        )
+        val ultimate = GameEngine(
+            selectedEmpire = EmpireType.HUMAN,
+            initialHeloClass = com.example.game.model.HelicopterClass.ULTIMATE_WAR,
+            initialUpgrades = com.example.game.model.HelicopterUpgrades(weaponLevel = 5, defenseLevel = 5)
+        )
+
+        assertTrue("Apex Predator fires autocannons faster than Viper Scout", ultimate.player.mgFireRate < scout.player.mgFireRate)
+        assertTrue("Upgraded Apex rocket damage exceeds base Scout", ultimate.player.rocketDamage > scout.player.rocketDamage)
+        assertEquals(12, ultimate.player.maxMissileAmmo)
+
+        // Verify defenseLevel increases shield recharge rate
+        val lowDef = GameEngine(
+            selectedEmpire = EmpireType.DRAGON,
+            initialUpgrades = com.example.game.model.HelicopterUpgrades(defenseLevel = 1)
+        )
+        val highDef = GameEngine(
+            selectedEmpire = EmpireType.DRAGON,
+            initialUpgrades = com.example.game.model.HelicopterUpgrades(defenseLevel = 5)
+        )
+        lowDef.player.shield = 0f
+        highDef.player.shield = 0f
+        lowDef.update(1.0f)
+        highDef.update(1.0f)
+        assertTrue("Higher defense upgrade recharges energy shield faster", highDef.player.shield > lowDef.player.shield)
     }
 }

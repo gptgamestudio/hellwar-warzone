@@ -31,6 +31,32 @@ data class SortieCheckpoint(
     val savedAtMs: Long = System.currentTimeMillis()
 )
 
+data class EndlessCheckpoint(
+    val currentWave: Int,
+    val wavesCompleted: Int,
+    val activeEmpire: EmpireType,
+    val playerX: Float,
+    val playerY: Float,
+    val hearts: Int,
+    val hitsRemainingInHeart: Int,
+    val score: Int,
+    val kills: Int,
+    val confirmedCreditsEarned: Int,
+    val waveEnemiesDefeated: Int,
+    val waveTotalEnemies: Int,
+    val overdriveCharge: Float = 0f,
+    val endlessSessionId: String? = null,
+    val settledWaves: Set<Int> = emptySet(),
+    val pendingClaimWaves: Map<Int, Int> = emptyMap(),
+    val savedAtMs: Long = System.currentTimeMillis()
+)
+
+data class EndlessSurvivalRecord(
+    val highestWave: Int = 0,
+    val bestSurvivalScore: Int = 0,
+    val totalWavesCompleted: Int = 0
+)
+
 data class AdContinueQuota(
     val usedToday: Int,
     val maxPer24Hours: Int = CampaignProgressionManager.MAX_DAILY_REWARDED_CONTINUES,
@@ -66,6 +92,10 @@ class CampaignProgressionManager(
         private const val KEY_LOCAL_COMPLETED_STAGES = "local_completed_stages"
         private const val KEY_QUOTA_WINDOW_START_MS = "ad_quota_window_start_ms"
         private const val KEY_QUOTA_USED_COUNT = "ad_quota_used_count"
+        private const val KEY_ENDLESS_CHECKPOINT_JSON = "endless_checkpoint_json"
+        private const val KEY_ENDLESS_HIGHEST_WAVE = "endless_highest_wave"
+        private const val KEY_ENDLESS_BEST_SCORE = "endless_best_score"
+        private const val KEY_ENDLESS_TOTAL_WAVES = "endless_total_waves"
 
         @Volatile
         private var instance: CampaignProgressionManager? = null
@@ -84,6 +114,8 @@ class CampaignProgressionManager(
     private val memoryCompletedStages = mutableSetOf<String>()
     private var memoryQuotaWindowStartMs: Long = 0L
     private var memoryQuotaUsedCount: Int = 0
+    private val memoryEndlessCheckpoints = mutableMapOf<String, String>()
+    private val memoryEndlessRecords = mutableMapOf<String, EndlessSurvivalRecord>()
 
     fun getStageNumber(empire: EmpireType): Int {
         val idx = STAGE_ORDER.indexOf(empire)
@@ -230,6 +262,144 @@ class CampaignProgressionManager(
             if (memoryCheckpointJson?.startsWith("${uid}::") == true) {
                 memoryCheckpointJson = null
             }
+        }
+    }
+
+    @Synchronized
+    fun saveEndlessRecord(
+        uid: String,
+        highestWaveReached: Int,
+        survivalScore: Int,
+        completedWavesCount: Int = 0
+    ): EndlessSurvivalRecord {
+        val current = loadEndlessRecord(uid)
+        val nextHighestWave = maxOf(current.highestWave, highestWaveReached.coerceAtLeast(0))
+        val nextBestScore = maxOf(current.bestSurvivalScore, survivalScore.coerceAtLeast(0))
+        val nextTotalWaves = maxOf(current.totalWavesCompleted, completedWavesCount.coerceAtLeast(0))
+        val updated = EndlessSurvivalRecord(
+            highestWave = nextHighestWave,
+            bestSurvivalScore = nextBestScore,
+            totalWavesCompleted = nextTotalWaves
+        )
+        if (prefs != null) {
+            prefs.edit()
+                .putInt("${KEY_ENDLESS_HIGHEST_WAVE}_$uid", updated.highestWave)
+                .putInt("${KEY_ENDLESS_BEST_SCORE}_$uid", updated.bestSurvivalScore)
+                .putInt("${KEY_ENDLESS_TOTAL_WAVES}_$uid", updated.totalWavesCompleted)
+                .apply()
+        } else {
+            memoryEndlessRecords[uid] = updated
+        }
+        return updated
+    }
+
+    @Synchronized
+    fun loadEndlessRecord(uid: String): EndlessSurvivalRecord {
+        return if (prefs != null) {
+            EndlessSurvivalRecord(
+                highestWave = prefs.getInt("${KEY_ENDLESS_HIGHEST_WAVE}_$uid", 0).coerceAtLeast(0),
+                bestSurvivalScore = prefs.getInt("${KEY_ENDLESS_BEST_SCORE}_$uid", 0).coerceAtLeast(0),
+                totalWavesCompleted = prefs.getInt("${KEY_ENDLESS_TOTAL_WAVES}_$uid", 0).coerceAtLeast(0)
+            )
+        } else {
+            memoryEndlessRecords[uid] ?: EndlessSurvivalRecord()
+        }
+    }
+
+    @Synchronized
+    fun saveEndlessCheckpoint(uid: String, checkpoint: EndlessCheckpoint) {
+        val pendingObj = JSONObject()
+        checkpoint.pendingClaimWaves.forEach { (wave, kills) ->
+            pendingObj.put(wave.toString(), kills)
+        }
+        val json = JSONObject().apply {
+            put("currentWave", checkpoint.currentWave)
+            put("wavesCompleted", checkpoint.wavesCompleted)
+            put("activeEmpire", checkpoint.activeEmpire.name)
+            put("playerX", checkpoint.playerX.toDouble())
+            put("playerY", checkpoint.playerY.toDouble())
+            put("hearts", checkpoint.hearts)
+            put("hitsRemainingInHeart", checkpoint.hitsRemainingInHeart)
+            put("score", checkpoint.score)
+            put("kills", checkpoint.kills)
+            put("confirmedCreditsEarned", checkpoint.confirmedCreditsEarned)
+            put("waveEnemiesDefeated", checkpoint.waveEnemiesDefeated)
+            put("waveTotalEnemies", checkpoint.waveTotalEnemies)
+            put("overdriveCharge", checkpoint.overdriveCharge.toDouble())
+            put("endlessSessionId", checkpoint.endlessSessionId ?: "")
+            put("settledWaves", JSONArray(checkpoint.settledWaves.toList()))
+            put("pendingClaimWaves", pendingObj)
+            put("savedAtMs", checkpoint.savedAtMs)
+        }.toString()
+
+        if (prefs != null) {
+            prefs.edit().putString("${KEY_ENDLESS_CHECKPOINT_JSON}_$uid", json).apply()
+        } else {
+            memoryEndlessCheckpoints[uid] = json
+        }
+    }
+
+    @Synchronized
+    fun loadEndlessCheckpoint(uid: String): EndlessCheckpoint? {
+        val raw = if (prefs != null) {
+            prefs.getString("${KEY_ENDLESS_CHECKPOINT_JSON}_$uid", null)
+        } else {
+            memoryEndlessCheckpoints[uid]
+        } ?: return null
+
+        return try {
+            val obj = JSONObject(raw)
+            val empire = runCatching { EmpireType.valueOf(obj.getString("activeEmpire")) }.getOrNull()
+                ?: EmpireType.DRAGON
+            val settledArr = obj.optJSONArray("settledWaves") ?: JSONArray()
+            val settled = buildSet {
+                for (i in 0 until settledArr.length()) {
+                    val w = settledArr.optInt(i, -1)
+                    if (w > 0) add(w)
+                }
+            }
+            val pendingObj = obj.optJSONObject("pendingClaimWaves")
+            val pending = buildMap {
+                if (pendingObj != null) {
+                    val keys = pendingObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        val w = k.toIntOrNull()
+                        val v = pendingObj.optInt(k, 0)
+                        if (w != null && w > 0 && v > 0) put(w, v)
+                    }
+                }
+            }
+            EndlessCheckpoint(
+                currentWave = obj.optInt("currentWave", 1).coerceAtLeast(1),
+                wavesCompleted = obj.optInt("wavesCompleted", 0).coerceAtLeast(0),
+                activeEmpire = empire,
+                playerX = obj.optDouble("playerX", 0.0).toFloat(),
+                playerY = obj.optDouble("playerY", 0.0).toFloat(),
+                hearts = obj.optInt("hearts", 5).coerceIn(1, 5),
+                hitsRemainingInHeart = obj.optInt("hitsRemainingInHeart", 10).coerceIn(1, 10),
+                score = obj.optInt("score", 0).coerceAtLeast(0),
+                kills = obj.optInt("kills", 0).coerceAtLeast(0),
+                confirmedCreditsEarned = obj.optInt("confirmedCreditsEarned", 0).coerceAtLeast(0),
+                waveEnemiesDefeated = obj.optInt("waveEnemiesDefeated", 0).coerceAtLeast(0),
+                waveTotalEnemies = obj.optInt("waveTotalEnemies", 4).coerceAtLeast(1),
+                overdriveCharge = obj.optDouble("overdriveCharge", 0.0).toFloat(),
+                endlessSessionId = obj.optString("endlessSessionId", "").takeIf { it.isNotBlank() },
+                settledWaves = settled,
+                pendingClaimWaves = pending,
+                savedAtMs = obj.optLong("savedAtMs", 0L)
+            )
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    @Synchronized
+    fun clearEndlessCheckpoint(uid: String) {
+        if (prefs != null) {
+            prefs.edit().remove("${KEY_ENDLESS_CHECKPOINT_JSON}_$uid").apply()
+        } else {
+            memoryEndlessCheckpoints.remove(uid)
         }
     }
 

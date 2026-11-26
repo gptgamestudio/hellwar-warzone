@@ -8,6 +8,7 @@ import com.google.firebase.auth.auth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -112,6 +113,10 @@ class FirestoreCampaignRepository(
                     DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
                 )
                 if (existing != null) {
+                    val lbSnap = db.collection("leaderboard").document(uid).get().await()
+                    if (!lbSnap.exists()) {
+                        syncPublicLeaderboardEntry(uid)
+                    }
                     return Result.success(existing)
                 }
             }
@@ -132,6 +137,7 @@ class FirestoreCampaignRepository(
                 UserCampaignProfile::class.java,
                 DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
             ) ?: UserCampaignProfile(userId = uid, callsign = safeCallsign)
+            syncPublicLeaderboardEntry(uid)
             Result.success(created)
         } catch (e: CancellationException) {
             throw e
@@ -287,6 +293,10 @@ class FirestoreCampaignRepository(
                 )
             }.await()
 
+            if (result is BarracksDestructionResult.FirstTimeDestroyed) {
+                syncPublicLeaderboardEntry(uid)
+            }
+
             Result.success(result)
         } catch (e: CancellationException) {
             throw e
@@ -310,10 +320,10 @@ class FirestoreCampaignRepository(
         val hqRef = userRef.collection("hq_victories").document(empire)
 
         return try {
-            db.runTransaction { tx ->
+            val recordedNewVictory = db.runTransaction { tx ->
                 val existingHq = tx.get(hqRef)
                 if (existingHq.exists()) {
-                    return@runTransaction
+                    return@runTransaction false
                 }
 
                 val profileSnap = tx.get(userRef)
@@ -338,12 +348,74 @@ class FirestoreCampaignRepository(
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )
+                true
             }.await()
+            if (recordedNewVictory) {
+                syncPublicLeaderboardEntry(uid)
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, hqRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun syncPublicLeaderboardEntry(targetUserId: String? = null): Result<Unit> {
+        val uid = try {
+            targetUserId ?: requireUserId()
+        } catch (e: Exception) {
+            return Result.failure(e)
+        }
+        val userRef = db.collection("users").document(uid)
+        val leaderboardRef = db.collection("leaderboard").document(uid)
+        return try {
+            val profileSnap = userRef.get().await()
+            if (!profileSnap.exists()) {
+                return Result.failure(IllegalStateException("User campaign profile does not exist for leaderboard sync."))
+            }
+            val profile = profileSnap.toObject(
+                UserCampaignProfile::class.java,
+                DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+            ) ?: return Result.failure(IllegalStateException("Unable to deserialize user campaign profile."))
+
+            val hqSnap = userRef.collection("hq_victories").get().await()
+            val hqClearedCount = hqSnap.documents
+                .mapNotNull {
+                    it.getString("empire")?.takeIf { emp -> emp.isNotBlank() }
+                        ?: it.id.takeIf { id -> id.isNotBlank() }
+                }
+                .distinct()
+                .size
+                .coerceIn(0, 4)
+                .toLong()
+
+            val totalBarracks = (
+                profile.humanDestroyedCount +
+                    profile.orcDestroyedCount +
+                    profile.dragonDestroyedCount +
+                    profile.alienDestroyedCount
+                ).coerceIn(0L, 200L)
+
+            val safeCallsign = if (profile.callsign.length in 2..32) {
+                profile.callsign
+            } else {
+                profile.callsign.trim().ifBlank { "VIPER-7" }.take(32).padEnd(2, '7')
+            }
+            val payload = mapOf(
+                "callsign" to safeCallsign,
+                "highScore" to profile.highScore.coerceIn(0L, 100_000_000L),
+                "totalBarracksDestroyed" to totalBarracks,
+                "hqClearedCount" to hqClearedCount,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            leaderboardRef.set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, leaderboardRef.path)
             Result.failure(e)
         }
     }
@@ -382,6 +454,29 @@ class FirestoreCampaignRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, userRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getTopLeaderboardEntries(limit: Long = 5L): Result<List<LeaderboardRecord>> {
+        val safeLimit = limit.coerceIn(1L, 25L)
+        return try {
+            val snap = db.collection("leaderboard")
+                .orderBy("highScore", Query.Direction.DESCENDING)
+                .limit(safeLimit)
+                .get()
+                .await()
+            val records = snap.documents.mapNotNull { doc ->
+                doc.toObject(
+                    LeaderboardRecord::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                )
+            }
+            Result.success(records)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, "leaderboard")
             Result.failure(e)
         }
     }

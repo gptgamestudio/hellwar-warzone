@@ -15,7 +15,7 @@
         },
         "credits": {
           "type": "integer",
-          "description": "Cumulative earned war credits."
+          "description": "Gross cumulative earned war credits (monotonic for v1.0.3 backward compatibility)."
         },
         "highScore": {
           "type": "integer",
@@ -61,117 +61,192 @@
         "updatedAt"
       ]
     },
+    "CloudHangarState": {
+      "title": "CloudHangarState",
+      "description": "Server-authoritative hangar ownership, helicopter upgrades, camo skin, cumulative cloud spend, and 24h ad-continue quota.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "creditsSpentCloud": { "type": "integer" },
+        "selectedHelicopterClass": {
+          "type": "string",
+          "enum": ["SCOUT", "HEAVY_GUNSHIP", "STEALTH", "ULTIMATE_WAR"]
+        },
+        "selectedSkin": {
+          "type": "string",
+          "enum": ["TACTICAL_BLACK", "MILITARY_CAMO", "ARCTIC_WHITE", "BLOOD_DRAGON", "PLASMA_NEON"]
+        },
+        "unlockedHelicopters": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "upgradesByClass": { "type": "object" },
+        "adContinueWindowStartMs": { "type": "integer" },
+        "adContinueUsedToday": { "type": "integer" },
+        "migrationVersion": { "type": "integer" },
+        "quarantineStatus": {
+          "type": "string",
+          "enum": ["NONE", "PENDING_REVIEW", "RESOLVED"]
+        },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "creditsSpentCloud",
+        "selectedHelicopterClass",
+        "selectedSkin",
+        "unlockedHelicopters",
+        "upgradesByClass",
+        "adContinueWindowStartMs",
+        "adContinueUsedToday",
+        "migrationVersion",
+        "quarantineStatus"
+      ]
+    },
+    "RewardLedgerEntry": {
+      "title": "RewardLedgerEntry",
+      "description": "AdMob Server-Side Verification (SSV) nonce and settlement ledger written exclusively by Cloud Functions.",
+      "type": "object",
+      "properties": {
+        "nonceId": { "type": "string" },
+        "userId": { "type": "string" },
+        "rewardType": { "type": "string", "enum": ["SUPPLY_DROP", "AD_CONTINUE"] },
+        "status": { "type": "string", "enum": ["PENDING_SSV", "VERIFIED_SETTLED", "EXPIRED", "REJECTED"] },
+        "creditsAmount": { "type": "integer" },
+        "continueGranted": { "type": "boolean" },
+        "transactionId": { "type": "string" },
+        "createdAtMs": { "type": "integer" },
+        "expiresAtMs": { "type": "integer" }
+      },
+      "required": ["nonceId", "userId", "rewardType", "status"]
+    },
+    "SortieSession": {
+      "title": "SortieSession",
+      "description": "Server-issued combat sortie session metadata.",
+      "type": "object",
+      "properties": {
+        "sessionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "empire": { "type": "string", "enum": ["HUMAN", "ORC", "DRAGON", "ALIEN"] },
+        "startedAtMs": { "type": "integer" },
+        "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED"] }
+      },
+      "required": ["sessionId", "userId", "empire", "startedAtMs", "status"]
+    },
+    "MigrationQuarantine": {
+      "title": "MigrationQuarantine",
+      "description": "Non-destructive migration conflict dossier preserving legacy owned inventory for manual reconciliation.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING_REVIEW", "RESOLVED"] },
+        "grossCredits": { "type": "integer" },
+        "claimedSpent": { "type": "integer" },
+        "recomputedImpliedCost": { "type": "integer" },
+        "preservedUnlockedHelicopters": { "type": "array", "items": { "type": "string" } },
+        "reasonCodes": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "status", "grossCredits", "recomputedImpliedCost"]
+    },
+    "ClientPolicy": {
+      "title": "ClientPolicy",
+      "description": "Minimum supported Android versionCode and rules cutover policy.",
+      "type": "object",
+      "properties": {
+        "minVersionCode": { "type": "integer" },
+        "recommendedVersionName": { "type": "string" },
+        "strictRulesActive": { "type": "boolean" }
+      },
+      "required": ["minVersionCode"]
+    },
     "DestroyedBarracksRecord": {
       "title": "DestroyedBarracksRecord",
       "description": "Immutable record proving first-time destruction of an enemy barracks for anti-duplicate reward enforcement and cross-device sync.",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner Firebase Auth UID."
-        },
-        "barracksId": {
-          "type": "string",
-          "description": "Canonical barracks identifier (BARRACKS_<EMPIRE>_<1..50>)."
-        },
-        "empire": {
-          "type": "string",
-          "enum": ["HUMAN", "ORC", "DRAGON", "ALIEN"],
-          "description": "Empire territory identifier."
-        },
-        "barracksIndex": {
-          "type": "integer",
-          "description": "Barracks index within the empire (1..50)."
-        },
-        "damageDealt": {
-          "type": "number",
-          "description": "Lethal damage applied to destroy the barracks (>= 320)."
-        },
-        "creditsAwarded": {
-          "type": "integer",
-          "description": "Fixed bounty credits awarded upon destruction (200)."
-        },
-        "scoreAwarded": {
-          "type": "integer",
-          "description": "Fixed score awarded upon destruction (1000)."
-        },
-        "destroyedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server-assigned destruction timestamp via FieldValue.serverTimestamp()."
-        }
+        "userId": { "type": "string" },
+        "barracksId": { "type": "string" },
+        "empire": { "type": "string", "enum": ["HUMAN", "ORC", "DRAGON", "ALIEN"] },
+        "barracksIndex": { "type": "integer" },
+        "damageDealt": { "type": "number" },
+        "creditsAwarded": { "type": "integer" },
+        "scoreAwarded": { "type": "integer" },
+        "destroyedAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "userId",
-        "barracksId",
-        "empire",
-        "barracksIndex",
-        "damageDealt",
-        "creditsAwarded",
-        "scoreAwarded",
-        "destroyedAt"
-      ]
+      "required": ["userId", "barracksId", "empire", "barracksIndex", "damageDealt", "creditsAwarded", "scoreAwarded", "destroyedAt"]
     },
     "HeadquartersVictoryRecord": {
       "title": "HeadquartersVictoryRecord",
       "description": "Immutable record confirming defeat of an empire headquarters after all 50 barracks in that empire are destroyed.",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Owner Firebase Auth UID."
-        },
-        "empire": {
-          "type": "string",
-          "enum": ["HUMAN", "ORC", "DRAGON", "ALIEN"],
-          "description": "Defeated empire identifier."
-        },
-        "bossId": {
-          "type": "string",
-          "description": "Defeated boss identifier (BOSS_<EMPIRE>)."
-        },
-        "creditsAwarded": {
-          "type": "integer",
-          "description": "Fixed HQ victory credits reward (2500)."
-        },
-        "scoreAwarded": {
-          "type": "integer",
-          "description": "Fixed HQ victory score reward (15000)."
-        },
-        "victoryAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server-assigned victory timestamp via FieldValue.serverTimestamp()."
-        }
+        "userId": { "type": "string" },
+        "empire": { "type": "string", "enum": ["HUMAN", "ORC", "DRAGON", "ALIEN"] },
+        "bossId": { "type": "string" },
+        "creditsAwarded": { "type": "integer" },
+        "scoreAwarded": { "type": "integer" },
+        "victoryAt": { "type": "string", "format": "date-time" }
       },
-      "required": [
-        "userId",
-        "empire",
-        "bossId",
-        "creditsAwarded",
-        "scoreAwarded",
-        "victoryAt"
-      ]
+      "required": ["userId", "empire", "bossId", "creditsAwarded", "scoreAwarded", "victoryAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public read-only global ranking entry containing sanitized non-PII combat statistics mirrored from users/{userId}.",
+      "type": "object",
+      "properties": {
+        "callsign": { "type": "string" },
+        "highScore": { "type": "integer" },
+        "totalBarracksDestroyed": { "type": "integer" },
+        "hqClearedCount": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["callsign", "highScore", "totalBarracksDestroyed", "hqClearedCount", "updatedAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
-      "schema": {
-        "$ref": "#/entities/UserCampaignProfile"
-      },
+      "schema": { "$ref": "#/entities/UserCampaignProfile" },
       "description": "Per-user pilot profile and empire barracks destruction summary counters."
     },
     "/users/{userId}/destroyed_barracks/{barracksId}": {
-      "schema": {
-        "$ref": "#/entities/DestroyedBarracksRecord"
-      },
+      "schema": { "$ref": "#/entities/DestroyedBarracksRecord" },
       "description": "Append-only ledger of destroyed barracks per user and empire (200 max across 4 empires)."
     },
     "/users/{userId}/hq_victories/{empire}": {
-      "schema": {
-        "$ref": "#/entities/HeadquartersVictoryRecord"
-      },
+      "schema": { "$ref": "#/entities/HeadquartersVictoryRecord" },
       "description": "Append-only ledger of defeated empire headquarters, unlocked strictly at 50/50 barracks."
+    },
+    "/users/{userId}/hangar/{docId}": {
+      "schema": { "$ref": "#/entities/CloudHangarState" },
+      "description": "Server-authoritative hangar state (state doc) written exclusively by Cloud Functions."
+    },
+    "/users/{userId}/migration_backups/{backupId}": {
+      "schema": { "type": "object" },
+      "description": "Server-only pre-migration backup snapshots."
+    },
+    "/rewards_ledger/{nonceId}": {
+      "schema": { "$ref": "#/entities/RewardLedgerEntry" },
+      "description": "AdMob SSV nonce settlement ledger."
+    },
+    "/ssv_processed_tx/{txId}": {
+      "schema": { "type": "object" },
+      "description": "Server-only AdMob SSV transaction replay guard."
+    },
+    "/sortie_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/SortieSession" },
+      "description": "Server-issued combat sortie sessions."
+    },
+    "/migration_quarantine/{userId}": {
+      "schema": { "$ref": "#/entities/MigrationQuarantine" },
+      "description": "Non-destructive migration conflict quarantine dossiers."
+    },
+    "/config/{docId}": {
+      "schema": { "$ref": "#/entities/ClientPolicy" },
+      "description": "Public client_policy read-only minimum version configuration."
+    },
+    "/leaderboard/{entryId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Sanitized public global leaderboard projection keyed by owner Auth UID for Top 5 ranking queries."
     }
   }
 }

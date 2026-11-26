@@ -5,6 +5,11 @@
       "rules": "firestore.rules"
     }
   ],
+  "functions": [
+    {
+      "source": "functions"
+    }
+  ],
   "hosting": {
     "public": "hosting",
     "ignore": [
@@ -22,8 +27,13 @@
       "host": "127.0.0.1",
       "port": 9099
     },
+    "functions": {
+      "host": "127.0.0.1",
+      "port": 5001
+    },
     "ui": {
       "enabled": false
-    }
+    },
+    "singleProjectMode": true
   }
 }
