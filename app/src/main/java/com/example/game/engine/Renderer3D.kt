@@ -23,6 +23,8 @@ class Renderer3D {
     private var cachedSkyHeight: Float = -1f
     private var cachedSkyEmpire: EmpireType? = null
     private var cachedSkyBrush: Brush? = null
+    private var cachedHazeBrush: Brush? = null
+    private var cachedGroundDepthBrush: Brush? = null
 
     private val aaBarrelOffsets = floatArrayOf(-6f, -2f, 2f, 6f)
     private val samWheelFactors = floatArrayOf(-0.35f, 0f, 0.35f)
@@ -123,85 +125,129 @@ class Renderer3D {
     }
 
     private fun drawAtmosphere(scope: DrawScope, width: Float, height: Float, empire: EmpireType) {
-        val (skyTop, skyMid, skyHorizon, ridgeFarColor, ridgeNearColor) = when (empire) {
-            EmpireType.DRAGON -> listOf(
-                Color(0xFF2B120C),
-                Color(0xFF5C2414),
-                Color(0xFFA84A24),
-                Color(0xFF3E1C16),
-                Color(0xFF28110D)
-            )
-            EmpireType.ALIEN -> listOf(
-                Color(0xFF130B2E),
-                Color(0xFF281956),
-                Color(0xFF3B4D7A),
-                Color(0xFF2B225A),
-                Color(0xFF1A143B)
-            )
-            EmpireType.ORC -> listOf(
-                Color(0xFF2B261C),
-                Color(0xFF5A4832),
-                Color(0xFF8C724A),
-                Color(0xFF473A2B),
-                Color(0xFF2E261C)
-            )
-            EmpireType.HUMAN -> listOf(
-                Color(0xFFFFFFFF),
-                Color(0xFFF6FAF6),
-                Color(0xFFE6F0E5),
-                Color(0xFF9BB696),
-                Color(0xFF72946C)
-            )
-        }
+        val skyTop: Color
+        val skyMid: Color
+        val skyHorizon: Color
+        val ridgeFarColor: Color
+        val ridgeNearColor: Color
+        val hazeColor: Color
+        val accentGlowColor: Color
 
-        val skyBrush = if (cachedSkyBrush != null && cachedSkyHeight == height && cachedSkyEmpire == empire) {
-            cachedSkyBrush!!
-        } else {
-            Brush.verticalGradient(
-                colors = listOf(skyTop, skyMid, skyHorizon),
-                startY = 0f,
-                endY = (height * 0.46f).coerceAtLeast(1f)
-            ).also {
-                cachedSkyBrush = it
-                cachedSkyHeight = height
-                cachedSkyEmpire = empire
+        when (empire) {
+            EmpireType.DRAGON -> {
+                skyTop = Color(0xFF140706)
+                skyMid = Color(0xFF3E150C)
+                skyHorizon = Color(0xFF963214)
+                ridgeFarColor = Color(0xFF331510)
+                ridgeNearColor = Color(0xFF1D0C09)
+                hazeColor = Color(0xFFBD471B)
+                accentGlowColor = Color(0x44FF7043)
+            }
+            EmpireType.ALIEN -> {
+                skyTop = Color(0xFF07051A)
+                skyMid = Color(0xFF191242)
+                skyHorizon = Color(0xFF244A68)
+                ridgeFarColor = Color(0xFF201A4A)
+                ridgeNearColor = Color(0xFF130F30)
+                hazeColor = Color(0xFF2C6B7C)
+                accentGlowColor = Color(0x3D00E5FF)
+            }
+            EmpireType.ORC -> {
+                skyTop = Color(0xFF1B1610)
+                skyMid = Color(0xFF473623)
+                skyHorizon = Color(0xFF8C6335)
+                ridgeFarColor = Color(0xFF382C1E)
+                ridgeNearColor = Color(0xFF241B12)
+                hazeColor = Color(0xFFA67842)
+                accentGlowColor = Color(0x38FFB74D)
+            }
+            EmpireType.HUMAN -> {
+                skyTop = Color(0xFF18314A)
+                skyMid = Color(0xFF345B7D)
+                skyHorizon = Color(0xFF6C92AC)
+                ridgeFarColor = Color(0xFF456070)
+                ridgeNearColor = Color(0xFF2D454B)
+                hazeColor = Color(0xFF93B0BE)
+                accentGlowColor = Color(0x36FFE6B0)
             }
         }
 
+        if (cachedSkyBrush == null || cachedHazeBrush == null || cachedGroundDepthBrush == null ||
+            cachedSkyHeight != height || cachedSkyEmpire != empire
+        ) {
+            val horizonEndY = (height * 0.47f).coerceAtLeast(1f)
+            cachedSkyBrush = Brush.verticalGradient(
+                colors = listOf(skyTop, skyMid, skyHorizon),
+                startY = 0f,
+                endY = horizonEndY
+            )
+            cachedHazeBrush = Brush.verticalGradient(
+                colors = listOf(Color.Transparent, hazeColor.copy(alpha = 0.42f), Color.Transparent),
+                startY = (height * 0.28f),
+                endY = (height * 0.52f).coerceAtLeast(height * 0.28f + 1f)
+            )
+            cachedGroundDepthBrush = Brush.verticalGradient(
+                colors = listOf(hazeColor.copy(alpha = 0.48f), Color.Transparent, Color(0x28000000)),
+                startY = (height * 0.34f),
+                endY = height.coerceAtLeast(1f)
+            )
+            cachedSkyHeight = height
+            cachedSkyEmpire = empire
+        }
+
         scope.drawRect(
-            brush = skyBrush,
+            brush = cachedSkyBrush!!,
             size = Size(width, height)
         )
+
+        // Subtle atmospheric sun / aurora / volcanic glow near the horizon
+        scope.drawOval(
+            color = accentGlowColor,
+            topLeft = Offset(width * 0.12f, height * 0.16f),
+            size = Size(width * 0.76f, height * 0.26f)
+        )
+
+        // Layered drifting cloud / battle smoke strata across upper sky
+        scope.drawOval(Color.White.copy(alpha = 0.06f), Offset(width * 0.05f, height * 0.09f), Size(width * 0.42f, height * 0.055f))
+        scope.drawOval(Color.White.copy(alpha = 0.05f), Offset(width * 0.48f, height * 0.13f), Size(width * 0.46f, height * 0.06f))
+        scope.drawOval(Color.Black.copy(alpha = 0.14f), Offset(width * 0.22f, height * 0.21f), Size(width * 0.54f, height * 0.05f))
 
         // Distant panoramic horizon ridges themed per Empire
         val ridgeFar = tmpPath.apply {
             reset()
             moveTo(0f, height * 0.38f)
-            lineTo(width * 0.15f, height * 0.35f)
-            lineTo(width * 0.32f, height * 0.37f)
-            lineTo(width * 0.52f, height * 0.33f)
-            lineTo(width * 0.70f, height * 0.36f)
-            lineTo(width * 0.88f, height * 0.34f)
-            lineTo(width, height * 0.37f)
-            lineTo(width, height * 0.45f)
-            lineTo(0f, height * 0.45f)
+            lineTo(width * 0.14f, height * 0.34f)
+            lineTo(width * 0.31f, height * 0.365f)
+            lineTo(width * 0.51f, height * 0.32f)
+            lineTo(width * 0.69f, height * 0.355f)
+            lineTo(width * 0.87f, height * 0.335f)
+            lineTo(width, height * 0.365f)
+            lineTo(width, height * 0.46f)
+            lineTo(0f, height * 0.46f)
             close()
         }
-        scope.drawPath(ridgeFar, ridgeFarColor.copy(alpha = 0.80f), style = Fill)
+        scope.drawPath(ridgeFar, ridgeFarColor.copy(alpha = 0.84f), style = Fill)
 
         val ridgeNear = tmpPath.apply {
             reset()
-            moveTo(0f, height * 0.41f)
-            lineTo(width * 0.22f, height * 0.38f)
-            lineTo(width * 0.45f, height * 0.40f)
-            lineTo(width * 0.65f, height * 0.37f)
-            lineTo(width * 0.82f, height * 0.39f)
-            lineTo(width, height * 0.38f)
-            lineTo(width, height * 0.45f)
-            lineTo(0f, height * 0.45f)
+            moveTo(0f, height * 0.415f)
+            lineTo(width * 0.21f, height * 0.378f)
+            lineTo(width * 0.44f, height * 0.402f)
+            lineTo(width * 0.64f, height * 0.368f)
+            lineTo(width * 0.83f, height * 0.392f)
+            lineTo(width, height * 0.376f)
+            lineTo(width, height * 0.46f)
+            lineTo(0f, height * 0.46f)
             close()
         }
-        scope.drawPath(ridgeNear, ridgeNearColor.copy(alpha = 0.92f), style = Fill)
+        scope.drawPath(ridgeNear, ridgeNearColor.copy(alpha = 0.94f), style = Fill)
+
+        // Soft atmospheric horizon mist blending ridges into battlefield
+        scope.drawRect(
+            brush = cachedHazeBrush!!,
+            topLeft = Offset(0f, height * 0.28f),
+            size = Size(width, height * 0.24f)
+        )
     }
 
     private fun drawGroundTerrain(scope: DrawScope, camera: Camera3D, width: Float, height: Float, empire: EmpireType) {
@@ -221,44 +267,44 @@ class Renderer3D {
 
         when (empire) {
             EmpireType.DRAGON -> {
-                baseTerrainColor = Color(0xFF42312B)      // Scorched volcanic ashland
-                soilPatchOuter = Color(0xFF5D3A2E)        // Baked cinder crust
-                soilPatchInner = Color(0xFF7A3419)        // Glowing ember soil
-                bankColor = Color(0xFF2B1F1B)             // Obsidian lava banks
-                riverMainColor = Color(0xFFE65100)        // Molten magma flow
-                riverHighlightColor = Color(0xFFFFD54F)   // Superheated lava core
-                roadBaseColor = Color(0xFF3A2D28)         // Basalt warpath
-                roadCenterColor = Color(0xFF6D4C41)
+                baseTerrainColor = Color(0xFF2B201C)      // Deep volcanic basalt & ash
+                soilPatchOuter = Color(0xFF47291E)        // Baked cinder crust
+                soilPatchInner = Color(0xFF6E2712)        // Smoldering ember soil
+                bankColor = Color(0xFF1B1311)             // Obsidian lava banks
+                riverMainColor = Color(0xFFD84315)        // Molten magma flow
+                riverHighlightColor = Color(0xFFFFB74D)   // Superheated lava core
+                roadBaseColor = Color(0xFF241C19)         // Basalt warpath
+                roadCenterColor = Color(0xFF8D5B4C)
             }
             EmpireType.ALIEN -> {
-                baseTerrainColor = Color(0xFF284852)      // Bio-luminescent alien flora
-                soilPatchOuter = Color(0xFF392D5C)        // Xenomorphic crystal moss
-                soilPatchInner = Color(0xFF4E3C7A)
-                bankColor = Color(0xFF1F3640)             // Dark alloy shoreline
-                riverMainColor = Color(0xFF0097A7)        // Ionized plasma channel
-                riverHighlightColor = Color(0xFF80DEEA)   // Bio-luminescent pulse
-                roadBaseColor = Color(0xFF37474F)         // Metallic alien causeway
+                baseTerrainColor = Color(0xFF1A313A)      // Dark xenomorphic alloy terrain
+                soilPatchOuter = Color(0xFF282046)        // Crystal moss crust
+                soilPatchInner = Color(0xFF392B63)        // Bio-luminous spore bed
+                bankColor = Color(0xFF122129)             // Dark alloy shoreline
+                riverMainColor = Color(0xFF007C91)        // Ionized plasma channel
+                riverHighlightColor = Color(0xFF4DD0E1)   // Bio-luminescent pulse
+                roadBaseColor = Color(0xFF263238)         // Metallic alien causeway
                 roadCenterColor = Color(0xFF00E5FF)
             }
             EmpireType.ORC -> {
-                baseTerrainColor = Color(0xFF6C6242)      // Barren sulfur wasteland
-                soilPatchOuter = Color(0xFF554731)        // Diesel-soaked scrap dirt
-                soilPatchInner = Color(0xFF3F3322)
-                bankColor = Color(0xFF5C4B37)             // Muddy refinery trench
-                riverMainColor = Color(0xFF4F5D2F)        // Toxic acid/sludge canal
-                riverHighlightColor = Color(0xFF9CCC65)   // Chemical sheen
-                roadBaseColor = Color(0xFF4E4438)         // Tracked convoy road
-                roadCenterColor = Color(0xFF8D6E63)
+                baseTerrainColor = Color(0xFF4F462F)      // Scorched sulfur mudland
+                soilPatchOuter = Color(0xFF3E3221)        // Diesel-soaked scrap dirt
+                soilPatchInner = Color(0xFF2D2317)        // Churning mud trench
+                bankColor = Color(0xFF443626)             // Muddy refinery trench
+                riverMainColor = Color(0xFF3C4A22)        // Toxic acid/sludge canal
+                riverHighlightColor = Color(0xFF8BC34A)   // Chemical sheen
+                roadBaseColor = Color(0xFF3B332A)         // Tracked convoy road
+                roadCenterColor = Color(0xFF8C735B)
             }
             EmpireType.HUMAN -> {
-                baseTerrainColor = Color(0xFF639453)      // Coastal green meadow
-                soilPatchOuter = Color(0xFF8C6B4B)        // Warm earth patches
-                soilPatchInner = Color(0xFF7A5B3D)
-                bankColor = Color(0xFFA98965)             // Sandy coastal shoreline
-                riverMainColor = Color(0xFF4C8AA8)        // Ocean naval channel
-                riverHighlightColor = Color(0xFF74AFCB)
-                roadBaseColor = Color(0xFF525B63)         // Asphalt military highway / tarmac
-                roadCenterColor = Color(0xFFE0B44C)       // Runway/highway lane striping
+                baseTerrainColor = Color(0xFF3E5B3A)      // Tactical coastal olive woodland
+                soilPatchOuter = Color(0xFF5D4B37)        // Natural earth & mud patches
+                soilPatchInner = Color(0xFF4C3C2B)        // Rich forest loam
+                bankColor = Color(0xFF8A7A62)             // Weathered coastal gravel bank
+                riverMainColor = Color(0xFF1C4E6B)        // Deep naval ocean channel
+                riverHighlightColor = Color(0xFF4FA2C4)   // Sunlit sea crest
+                roadBaseColor = Color(0xFF323940)         // Military asphalt / tarmac
+                roadCenterColor = Color(0xFFD9AE48)       // Tactical runway / convoy stripe
             }
         }
 
@@ -405,12 +451,41 @@ class Renderer3D {
                 }
                 scope.drawPath(roadQuad, roadBaseColor, style = Fill)
 
-                val m1 = (rL1.screenPos + rR1.screenPos) / 2f
-                val m2 = (rL2.screenPos + rR2.screenPos) / 2f
-                scope.drawLine(roadCenterColor, m1, m2, 3.2f, StrokeCap.Round)
+                // Dashed military convoy / runway centerline every alternate road segment
+                if (((dy / roadStep).toInt() and 1) == 0) {
+                    val m1 = (rL1.screenPos + rR1.screenPos) / 2f
+                    val m2 = (rL2.screenPos + rR2.screenPos) / 2f
+                    scope.drawLine(roadCenterColor, m1, m2, 2.8f, StrokeCap.Round)
+                }
             }
 
             dy += roadStep
+        }
+
+        // 4. Subtle terrain elevation / tactical sector lines for 3D motion & depth
+        val contourStep = 24f
+        var cyLine = (camera.y / contourStep).toInt() * contourStep - contourStep
+        while (cyLine <= camera.y + 130f) {
+            val lProj = camera.project(Vector3D(camera.x - 160f, cyLine, 0.008f), width, height)
+            val rProj = camera.project(Vector3D(camera.x + 160f, cyLine, 0.008f), width, height)
+            if (lProj != null && rProj != null) {
+                scope.drawLine(
+                    color = Color.Black.copy(alpha = 0.14f),
+                    start = lProj.screenPos,
+                    end = rProj.screenPos,
+                    strokeWidth = 1.4f
+                )
+            }
+            cyLine += contourStep
+        }
+
+        // 5. Perspective horizon haze / near-ground vignette overlay
+        cachedGroundDepthBrush?.let { depthBrush ->
+            scope.drawRect(
+                brush = depthBrush,
+                topLeft = Offset(0f, height * 0.34f),
+                size = Size(width, height * 0.66f)
+            )
         }
     }
 
@@ -467,27 +542,27 @@ class Renderer3D {
                         lineTo(cx - sw * 0.6f, cy - sh * 0.5f)
                         close()
                     }
-                    scope.drawPath(pylonPath, Color(0xFFE2EBE9), style = Fill)
-                    scope.drawPath(pylonPath, Color(0xFF5D948E), style = Stroke(2.5f))
-                    scope.drawCircle(Color(0xFF73B5B2), sw * 0.35f, Offset(cx, cy - sh * 0.5f))
-                    scope.drawCircle(Color.White, sw * 0.15f, Offset(cx, cy - sh * 0.5f))
+                    scope.drawPath(pylonPath, Color(0xFF283A44), style = Fill)
+                    scope.drawPath(pylonPath, Color(0xFF00E5FF), style = Stroke(2.2f))
+                    scope.drawCircle(Color(0xFF4DD0E1), sw * 0.34f, Offset(cx, cy - sh * 0.5f))
+                    scope.drawCircle(Color(0xFFE0F7FA), sw * 0.14f, Offset(cx, cy - sh * 0.5f))
                 }
                 StructureType.MOTHERSHIP_PORTAL -> {
-                    scope.drawOval(Color(0xFFDCE7E5), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw))
-                    scope.drawOval(Color(0xFF5D948E), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw), style = Stroke(3f))
-                    scope.drawOval(Color(0xFF73B5B2).copy(alpha = 0.65f), Offset(cx - sw * 0.6f, cy - sw * 0.3f), Size(sw * 1.2f, sw * 0.6f))
+                    scope.drawOval(Color(0xFF1F2E38), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw))
+                    scope.drawOval(Color(0xFF00B8D4), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw), style = Stroke(3f))
+                    scope.drawOval(Color(0xFF4DD0E1).copy(alpha = 0.55f), Offset(cx - sw * 0.6f, cy - sw * 0.3f), Size(sw * 1.2f, sw * 0.6f))
                 }
                 StructureType.ORC_WATCHTOWER -> {
-                    scope.drawLine(Color(0xFF7D5636), Offset(cx - sw * 0.7f, cy), Offset(cx - sw * 0.4f, tcy), 3.5f)
-                    scope.drawLine(Color(0xFF7D5636), Offset(cx + sw * 0.7f, cy), Offset(cx + sw * 0.4f, tcy), 3.5f)
-                    scope.drawLine(Color(0xFF7D5636), Offset(cx - sw * 0.6f, cy - sh * 0.5f), Offset(cx + sw * 0.6f, cy - sh * 0.5f), 2.5f)
-                    scope.drawRect(Color(0xFF8E6541), Offset(cx - sw * 0.6f, tcy - 4f), Size(sw * 1.2f, 10f))
-                    scope.drawRect(Color(0xFF5E4229), Offset(cx - sw * 0.6f, tcy - 4f), Size(sw * 1.2f, 10f), style = Stroke(1.5f))
+                    scope.drawLine(Color(0xFF6B482B), Offset(cx - sw * 0.7f, cy), Offset(cx - sw * 0.4f, tcy), 3.5f)
+                    scope.drawLine(Color(0xFF6B482B), Offset(cx + sw * 0.7f, cy), Offset(cx + sw * 0.4f, tcy), 3.5f)
+                    scope.drawLine(Color(0xFF6B482B), Offset(cx - sw * 0.6f, cy - sh * 0.5f), Offset(cx + sw * 0.6f, cy - sh * 0.5f), 2.5f)
+                    scope.drawRect(Color(0xFF7D5836), Offset(cx - sw * 0.6f, tcy - 4f), Size(sw * 1.2f, 10f))
+                    scope.drawRect(Color(0xFF4A331E), Offset(cx - sw * 0.6f, tcy - 4f), Size(sw * 1.2f, 10f), style = Stroke(1.5f))
                 }
                 StructureType.SIEGE_FORTRESS -> {
-                    scope.drawRect(Color(0xFFA69583), Offset(cx - sw, tcy), Size(sw * 2, sh))
-                    scope.drawRect(Color(0xFF6B8E4E), Offset(cx - sw, tcy), Size(sw * 2, sh), style = Stroke(2f))
-                    scope.drawRect(Color(0xFF7D5636), Offset(cx - sw * 0.5f, cy - sh * 0.5f), Size(sw, 4f))
+                    scope.drawRect(Color(0xFF6B6054), Offset(cx - sw, tcy), Size(sw * 2, sh))
+                    scope.drawRect(Color(0xFF4E6B38), Offset(cx - sw, tcy), Size(sw * 2, sh), style = Stroke(2f))
+                    scope.drawRect(Color(0xFF5D4028), Offset(cx - sw * 0.5f, cy - sh * 0.5f), Size(sw, 4f))
                 }
                 StructureType.MILITARY_HANGAR -> {
                     val hangarPath = tmpPath.apply {
@@ -498,20 +573,20 @@ class Renderer3D {
                         lineTo(cx + sw, cy)
                         close()
                     }
-                    scope.drawPath(hangarPath, Color(0xFFD0C9BA), style = Fill)
-                    scope.drawPath(hangarPath, Color(0xFF657B63), style = Stroke(2f))
-                    scope.drawRect(Color(0xFF5D6560), Offset(cx - sw * 0.5f, cy - sh * 0.5f), Size(sw, sh * 0.5f))
+                    scope.drawPath(hangarPath, Color(0xFF687069), style = Fill)
+                    scope.drawPath(hangarPath, Color(0xFF425243), style = Stroke(2f))
+                    scope.drawRect(Color(0xFF2E3532), Offset(cx - sw * 0.5f, cy - sh * 0.5f), Size(sw, sh * 0.5f))
                 }
                 StructureType.RADAR_DOME -> {
-                    scope.drawRect(Color(0xFFB5AFA2), Offset(cx - sw * 0.5f, cy - sh * 0.4f), Size(sw, sh * 0.4f))
-                    scope.drawOval(Color(0xFFF5F5F2), Offset(cx - sw * 0.7f, tcy), Size(sw * 1.4f, sw * 1.1f))
-                    scope.drawOval(Color(0xFF5E887E), Offset(cx - sw * 0.7f, tcy), Size(sw * 1.4f, sw * 1.1f), style = Stroke(2f))
+                    scope.drawRect(Color(0xFF606861), Offset(cx - sw * 0.5f, cy - sh * 0.4f), Size(sw, sh * 0.4f))
+                    scope.drawOval(Color(0xFFA7B0AB), Offset(cx - sw * 0.7f, tcy), Size(sw * 1.4f, sw * 1.1f))
+                    scope.drawOval(Color(0xFF3E635B), Offset(cx - sw * 0.7f, tcy), Size(sw * 1.4f, sw * 1.1f), style = Stroke(2f))
                 }
                 StructureType.MISSILE_SILO -> {
-                    scope.drawOval(Color(0xFFB8B0A0), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw))
-                    scope.drawOval(Color(0xFF756A5C), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw), style = Stroke(2.5f))
-                    scope.drawCircle(Color(0xFFE0DAD0), sw * 0.35f, Offset(cx, cy))
-                    scope.drawCircle(Color(0xFFD4743B), sw * 0.15f, Offset(cx, cy))
+                    scope.drawOval(Color(0xFF5D635B), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw))
+                    scope.drawOval(Color(0xFF3B403A), Offset(cx - sw, cy - sw * 0.5f), Size(sw * 2, sw), style = Stroke(2.5f))
+                    scope.drawCircle(Color(0xFF282E2C), sw * 0.35f, Offset(cx, cy))
+                    scope.drawCircle(Color(0xFFD96A2B), sw * 0.16f, Offset(cx, cy))
                 }
                 StructureType.AIRCRAFT_CARRIER_DECK -> {
                     scope.drawRect(Color(0xFF8C877B), Offset(cx - sw, cy - sh), Size(sw * 2, sh))
@@ -575,22 +650,18 @@ class Renderer3D {
             } else {
                 when (barracks.empire) {
                     EmpireType.HUMAN -> {
-                        // Clean Sandstone & Sage-Olive Military Barracks (Eye-pleasing natural architectural finish)
-                        scope.drawRect(Color(0xFFD8D0C1), Offset(cx - bw, tcy), Size(bw * 2, bh))
-                        scope.drawRect(Color(0xFF9E9484), Offset(cx - bw, tcy), Size(bw * 2, bh), style = Stroke(2.2f))
-                        // Natural olive-green roof parapet
-                        scope.drawRect(Color(0xFF5C7558), Offset(cx - bw * 0.94f, tcy + 2f), Size(bw * 1.88f, (bh * 0.16f).coerceAtLeast(5f)))
-                        // Timber-slate entrance bay
-                        scope.drawRect(Color(0xFF656C68), Offset(cx - bw * 0.35f, cy - bh * 0.48f), Size(bw * 0.7f, bh * 0.48f))
-                        // White radar dish with calm mineral-teal hub
-                        scope.drawCircle(Color(0xFFF5F5F0), 5f * (s / 20f), Offset(cx, tcy - 8f))
-                        scope.drawCircle(Color(0xFF4D869C), 2.3f * (s / 20f), Offset(cx, tcy - 8f))
+                        // Reinforced Olive-Steel & Weathered Concrete Military Barracks
+                        scope.drawRect(Color(0xFF7A7E75), Offset(cx - bw, tcy), Size(bw * 2, bh))
+                        scope.drawRect(Color(0xFF454C44), Offset(cx - bw, tcy), Size(bw * 2, bh), style = Stroke(2.2f))
+                        scope.drawRect(Color(0xFF3E563B), Offset(cx - bw * 0.94f, tcy + 2f), Size(bw * 1.88f, (bh * 0.18f).coerceAtLeast(5f)))
+                        scope.drawRect(Color(0xFF28302E), Offset(cx - bw * 0.35f, cy - bh * 0.48f), Size(bw * 0.7f, bh * 0.48f))
+                        scope.drawCircle(Color(0xFFA7B0AB), 5f * (s / 20f), Offset(cx, tcy - 8f))
+                        scope.drawCircle(Color(0xFF38BDF8), 2.3f * (s / 20f), Offset(cx, tcy - 8f))
                     }
                     EmpireType.ORC -> {
-                        // Natural Quarry Stone & Warm Cedar Timber Stronghold
-                        scope.drawRect(Color(0xFFB8A998), Offset(cx - bw, tcy), Size(bw * 2, bh))
-                        scope.drawRect(Color(0xFF8B7B6B), Offset(cx - bw, tcy), Size(bw * 2, bh), style = Stroke(2.2f))
-                        // Spiked natural cedar timber palisades
+                        // Weathered Iron-Stone & Charred Timber Stronghold
+                        scope.drawRect(Color(0xFF6B6053), Offset(cx - bw, tcy), Size(bw * 2, bh))
+                        scope.drawRect(Color(0xFF453B31), Offset(cx - bw, tcy), Size(bw * 2, bh), style = Stroke(2.2f))
                         val spikePath = tmpPath.apply {
                             reset()
                             moveTo(cx - bw, tcy)
@@ -602,22 +673,19 @@ class Renderer3D {
                             lineTo(cx + bw, tcy)
                             close()
                         }
-                        scope.drawPath(spikePath, Color(0xFF8E6541))
-                        scope.drawPath(spikePath, Color(0xFF5E4229), style = Stroke(1.5f))
-                        // Heavy warm walnut wooden gate
-                        scope.drawRoundRect(Color(0xFF644329), Offset(cx - bw * 0.4f, cy - bh * 0.6f), Size(bw * 0.8f, bh * 0.6f), androidx.compose.ui.geometry.CornerRadius(4f))
-                        // Natural Ivory Crest
-                        scope.drawCircle(Color(0xFFF2ECE1), 5f * (s / 20f), Offset(cx, tcy + bh * 0.25f))
-                        scope.drawCircle(Color(0xFF4A3B31), 1.5f * (s / 20f), Offset(cx - 2f, tcy + bh * 0.25f))
-                        scope.drawCircle(Color(0xFF4A3B31), 1.5f * (s / 20f), Offset(cx + 2f, tcy + bh * 0.25f))
-                        // Flanking Moss-Stone Pillars
-                        scope.drawRect(Color(0xFF968778), Offset(cx - bw * 0.85f, cy - bh * 0.5f), Size(bw * 0.35f, bh * 0.5f))
-                        scope.drawRect(Color(0xFF968778), Offset(cx + bw * 0.50f, cy - bh * 0.5f), Size(bw * 0.35f, bh * 0.5f))
-                        scope.drawCircle(Color(0xFF6C934C), 2.5f * (s / 20f), Offset(cx - bw * 0.68f, cy - bh * 0.55f))
-                        scope.drawCircle(Color(0xFF6C934C), 2.5f * (s / 20f), Offset(cx + bw * 0.68f, cy - bh * 0.55f))
+                        scope.drawPath(spikePath, Color(0xFF6E4B2D))
+                        scope.drawPath(spikePath, Color(0xFF3D2716), style = Stroke(1.5f))
+                        scope.drawRoundRect(Color(0xFF4A2E1A), Offset(cx - bw * 0.4f, cy - bh * 0.6f), Size(bw * 0.8f, bh * 0.6f), androidx.compose.ui.geometry.CornerRadius(4f))
+                        scope.drawCircle(Color(0xFFD5CCBD), 5f * (s / 20f), Offset(cx, tcy + bh * 0.25f))
+                        scope.drawCircle(Color(0xFF2E231C), 1.5f * (s / 20f), Offset(cx - 2f, tcy + bh * 0.25f))
+                        scope.drawCircle(Color(0xFF2E231C), 1.5f * (s / 20f), Offset(cx + 2f, tcy + bh * 0.25f))
+                        scope.drawRect(Color(0xFF5A4E43), Offset(cx - bw * 0.85f, cy - bh * 0.5f), Size(bw * 0.35f, bh * 0.5f))
+                        scope.drawRect(Color(0xFF5A4E43), Offset(cx + bw * 0.50f, cy - bh * 0.5f), Size(bw * 0.35f, bh * 0.5f))
+                        scope.drawCircle(Color(0xFF8BC34A), 2.5f * (s / 20f), Offset(cx - bw * 0.68f, cy - bh * 0.55f))
+                        scope.drawCircle(Color(0xFF8BC34A), 2.5f * (s / 20f), Offset(cx + bw * 0.68f, cy - bh * 0.55f))
                     }
                     EmpireType.DRAGON -> {
-                        // Warm Weathered Basalt & Terracotta Bastion
+                        // Obsidian Basalt & Glowing Magma Bastion
                         val spirePath = tmpPath.apply {
                             reset()
                             moveTo(cx - bw * 1.1f, cy)
@@ -627,25 +695,21 @@ class Renderer3D {
                             lineTo(cx + bw * 1.1f, cy)
                             close()
                         }
-                        scope.drawPath(spirePath, Color(0xFF877064))
-                        scope.drawPath(spirePath, Color(0xFF5E4B41), style = Stroke(2.2f))
-                        // Warm Terracotta & Golden Hearth Channels
-                        scope.drawLine(Color(0xFFB86B49), Offset(cx - bw * 0.5f, tcy - 8f), Offset(cx - bw * 0.2f, cy), strokeWidth = 3f)
-                        scope.drawLine(Color(0xFFE0943E), Offset(cx + bw * 0.5f, tcy - 8f), Offset(cx + bw * 0.2f, cy), strokeWidth = 3f)
-                        // Warm Ember Emblem
-                        scope.drawCircle(Color(0xFFD45B38), 4.5f * (s / 20f), Offset(cx, tcy + bh * 0.35f))
-                        scope.drawCircle(Color(0xFFF5C26B), 2f * (s / 20f), Offset(cx, tcy + bh * 0.35f))
+                        scope.drawPath(spirePath, Color(0xFF473731))
+                        scope.drawPath(spirePath, Color(0xFF291E1A), style = Stroke(2.2f))
+                        scope.drawLine(Color(0xFFD84315), Offset(cx - bw * 0.5f, tcy - 8f), Offset(cx - bw * 0.2f, cy), strokeWidth = 3f)
+                        scope.drawLine(Color(0xFFFF9800), Offset(cx + bw * 0.5f, tcy - 8f), Offset(cx + bw * 0.2f, cy), strokeWidth = 3f)
+                        scope.drawCircle(Color(0xFFFF5722), 4.5f * (s / 20f), Offset(cx, tcy + bh * 0.35f))
+                        scope.drawCircle(Color(0xFFFFD54F), 2f * (s / 20f), Offset(cx, tcy + bh * 0.35f))
                     }
                     EmpireType.ALIEN -> {
-                        // Clean Pearl-White & Mineral Sage-Teal Bio-Dome (Soothing crisp palette)
-                        scope.drawOval(Color(0xFFEEF3F4), Offset(cx - bw * 1.05f, tcy - bh * 0.2f), Size(bw * 2.1f, bh * 1.2f))
-                        scope.drawOval(Color(0xFF558B87), Offset(cx - bw * 1.05f, tcy - bh * 0.2f), Size(bw * 2.1f, bh * 1.2f), style = Stroke(2.5f))
-                        // Calm Aqua Core
-                        scope.drawCircle(Color(0xFF73B5B2), 6f * (s / 20f), Offset(cx, cy - bh * 0.4f))
-                        scope.drawCircle(Color.White, 2.5f * (s / 20f), Offset(cx, cy - bh * 0.4f))
-                        // Brushed Teal Antenna
-                        scope.drawLine(Color(0xFF558B87), Offset(cx, tcy - bh * 0.2f), Offset(cx, tcy - 12f), strokeWidth = 2f)
-                        scope.drawCircle(Color(0xFF73B5B2), 3f * (s / 20f), Offset(cx, tcy - 12f))
+                        // Dark Obsidian Alloy & Ionized Cyan Bio-Dome
+                        scope.drawOval(Color(0xFF24343D), Offset(cx - bw * 1.05f, tcy - bh * 0.2f), Size(bw * 2.1f, bh * 1.2f))
+                        scope.drawOval(Color(0xFF00ACC1), Offset(cx - bw * 1.05f, tcy - bh * 0.2f), Size(bw * 2.1f, bh * 1.2f), style = Stroke(2.5f))
+                        scope.drawCircle(Color(0xFF00E5FF), 6f * (s / 20f), Offset(cx, cy - bh * 0.4f))
+                        scope.drawCircle(Color(0xFFE0F7FA), 2.5f * (s / 20f), Offset(cx, cy - bh * 0.4f))
+                        scope.drawLine(Color(0xFF00ACC1), Offset(cx, tcy - bh * 0.2f), Offset(cx, tcy - 12f), strokeWidth = 2f)
+                        scope.drawCircle(Color(0xFF00E5FF), 3f * (s / 20f), Offset(cx, tcy - 12f))
                     }
                 }
 
@@ -714,16 +778,16 @@ class Renderer3D {
                         lineTo(cx + bw * 1.3f, cy)
                         close()
                     }
-                    scope.drawPath(dragonHqPath, Color(0xFF7D685E))
-                    scope.drawPath(dragonHqPath, Color(0xFFC8643B), style = Stroke(4f))
-                    scope.drawLine(Color(0xFFE8A44A), Offset(cx - bw * 0.4f, tcy - 10f), Offset(cx - bw * 0.1f, cy), strokeWidth = 5f)
-                    scope.drawLine(Color(0xFFD45B38), Offset(cx + bw * 0.4f, tcy - 10f), Offset(cx + bw * 0.1f, cy), strokeWidth = 5f)
+                    scope.drawPath(dragonHqPath, Color(0xFF42322B))
+                    scope.drawPath(dragonHqPath, Color(0xFFD84315), style = Stroke(4f))
+                    scope.drawLine(Color(0xFFFF9800), Offset(cx - bw * 0.4f, tcy - 10f), Offset(cx - bw * 0.1f, cy), strokeWidth = 5f)
+                    scope.drawLine(Color(0xFFFF5722), Offset(cx + bw * 0.4f, tcy - 10f), Offset(cx + bw * 0.1f, cy), strokeWidth = 5f)
                 }
                 EmpireType.ALIEN -> {
-                    scope.drawOval(Color(0xFFEAF0F1), Offset(cx - bw * 1.4f, tcy - 12f), Size(bw * 2.8f, bh * 1.3f))
-                    scope.drawOval(Color(0xFF558B87), Offset(cx - bw * 1.4f, tcy - 12f), Size(bw * 2.8f, bh * 1.3f), style = Stroke(4f))
-                    scope.drawCircle(Color(0xFF73B5B2), 18f * (s / 20f), Offset(cx, cy - bh * 0.3f))
-                    scope.drawCircle(Color.White, 7f * (s / 20f), Offset(cx, cy - bh * 0.3f))
+                    scope.drawOval(Color(0xFF1F2D36), Offset(cx - bw * 1.4f, tcy - 12f), Size(bw * 2.8f, bh * 1.3f))
+                    scope.drawOval(Color(0xFF00B8D4), Offset(cx - bw * 1.4f, tcy - 12f), Size(bw * 2.8f, bh * 1.3f), style = Stroke(4f))
+                    scope.drawCircle(Color(0xFF00E5FF), 18f * (s / 20f), Offset(cx, cy - bh * 0.3f))
+                    scope.drawCircle(Color(0xFFE0F7FA), 7f * (s / 20f), Offset(cx, cy - bh * 0.3f))
                 }
                 EmpireType.HUMAN -> {
                     val hqPath = tmpPath.apply {
@@ -734,10 +798,10 @@ class Renderer3D {
                         lineTo(cx + bw * 1.3f, cy)
                         close()
                     }
-                    scope.drawPath(hqPath, Color(0xFFD6CEC0), style = Fill)
-                    scope.drawPath(hqPath, Color(0xFF5C7558), style = Stroke(4f))
-                    scope.drawOval(Color(0xFF5E8D9E), Offset(cx - bw * 0.45f, tcy - 16f), Size(bw * 0.9f, 20f))
-                    scope.drawOval(Color.White, Offset(cx - bw * 0.2f, tcy - 12f), Size(bw * 0.4f, 8f))
+                    scope.drawPath(hqPath, Color(0xFF6B7268), style = Fill)
+                    scope.drawPath(hqPath, Color(0xFF3E563B), style = Stroke(4f))
+                    scope.drawOval(Color(0xFF2C5E73), Offset(cx - bw * 0.45f, tcy - 16f), Size(bw * 0.9f, 20f))
+                    scope.drawOval(Color(0xFF90CAF9), Offset(cx - bw * 0.2f, tcy - 12f), Size(bw * 0.4f, 8f))
                 }
             }
 
@@ -842,12 +906,28 @@ class Renderer3D {
     }
 
     private fun drawShadows(scope: DrawScope, camera: Camera3D, engine: GameEngine, width: Float, height: Float) {
-        val shadowPos = Vector3D(engine.player.pos.x + 1.2f, engine.player.pos.y - 0.8f, 0.05f)
+        val shadowPos = Vector3D(engine.player.pos.x + 1.4f, engine.player.pos.y - 1.0f, 0.05f)
         val proj = camera.project(shadowPos, width, height)
         if (proj != null) {
-            val rx = proj.scale * 1.8f
+            val rx = proj.scale * 1.85f
             val ry = proj.scale * 1.1f
             scope.drawOval(Color.Black.copy(alpha = 0.45f), Offset(proj.screenPos.x - rx, proj.screenPos.y - ry), Size(rx * 2, ry * 2))
+        }
+
+        val minVisY = camera.y - 18f
+        val maxVisY = camera.y + 165f
+        for (enemy in engine.enemies) {
+            if (enemy.pos.y !in minVisY..maxVisY) continue
+            val isAir = !enemy.isGroundUnit
+            val sPos = Vector3D(enemy.pos.x + (if (isAir) 1.2f else 0.35f), enemy.pos.y - (if (isAir) 0.9f else 0.25f), 0.03f)
+            val eProj = camera.project(sPos, width, height) ?: continue
+            val rx = eProj.scale * (if (isAir) 1.45f else 1.15f)
+            val ry = eProj.scale * (if (isAir) 0.85f else 0.7f)
+            scope.drawOval(
+                Color.Black.copy(alpha = if (isAir) 0.38f else 0.30f),
+                Offset(eProj.screenPos.x - rx, eProj.screenPos.y - ry),
+                Size(rx * 2, ry * 2)
+            )
         }
 
         engine.activeBoss?.let { boss ->

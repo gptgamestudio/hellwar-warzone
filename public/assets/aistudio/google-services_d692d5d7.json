@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "866171692437",
+    "project_id": "hellwar-warzone",
+    "storage_bucket": "hellwar-warzone.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:866171692437:android:14356307a702317650829c",
+        "android_client_info": {
+          "package_name": "com.hellwar.game"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "866171692437-u0mj37opgjl5bbpdmcqal3kdacce55o4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.hellwar.game",
+            "certificate_hash": "2ae4319cf426595dca272bf5fb15b0db007afd8d"
+          }
+        },
+        {
+          "client_id": "866171692437-auacsniph2jr1k7uml504fbt7ec4cr7i.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBnxSzrJlfxbgjPonTZMdvvlLoFBEvZPcc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "866171692437-auacsniph2jr1k7uml504fbt7ec4cr7i.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

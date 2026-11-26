@@ -410,7 +410,7 @@ fun GamePlayScreen(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .background(Color(0xFFF6FAF6))
+                .background(Color(0xFF0E1621))
         ) {
             // 3D Canvas Rendering (reads frameTick so every simulation step triggers a crisp redraw)
             Canvas(modifier = Modifier.fillMaxSize()) {
