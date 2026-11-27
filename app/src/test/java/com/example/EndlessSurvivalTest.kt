@@ -319,9 +319,8 @@ class EndlessSurvivalTest {
             }
         }
 
-        composeRule.onNodeWithTag("endless_wave_hud").assertIsDisplayed()
-        composeRule.onNodeWithTag("hud_wave_score_text").assertTextContains("WAVE 1", substring = true)
-        composeRule.onNodeWithTag("endless_sync_status_badge").assertIsDisplayed()
+        composeRule.onNodeWithTag("hud_health_hearts").assertIsDisplayed()
+        composeRule.onNodeWithTag("hud_health_counter").assertIsDisplayed()
         composeRule.onNodeWithTag("endless_pending_sync_notice").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("YES — WATCH AD (+5 HEARTS)").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("RESTART ENDLESS").performScrollTo().assertIsDisplayed()
@@ -438,9 +437,9 @@ class EndlessSurvivalTest {
             composeRule.mainClock.advanceTimeByFrame()
             org.robolectric.shadows.ShadowLooper.idleMainLooper()
         }
-        // While offline: PENDING SYNC badge shown and Wave 2 NOT claimed unverified
-        composeRule.onNodeWithTag("endless_sync_status_badge").assertIsDisplayed()
+        // While offline: pending Wave 2 remains queued in checkpoint and NOT claimed unverified
         assertTrue(claimedWaves.isEmpty())
+        assertEquals(mapOf(1 to 4, 2 to 6), latestSavedCp?.pendingClaimWaves)
 
         // Now flip failNetwork = false and re-enter with pending checkpoint -> settles Wave 2 only (skips already-settled Wave 1)
         failNetwork = false

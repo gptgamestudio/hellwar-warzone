@@ -7,13 +7,11 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ApplicationProvider
 import com.example.game.engine.GameEngine
@@ -24,7 +22,6 @@ import com.example.game.model.EmpireType
 import com.example.game.ui.HudOverlay
 import com.example.ui.theme.MyApplicationTheme
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -133,7 +130,7 @@ class LandscapeHudAndJoystickTest {
     }
 
     @Test
-    fun rightSideDisplaysFourAmmoIndicatorsPlusOverAndLockedButtonsVertically() {
+    fun rightSideDisplaysOnlyVerticalOverAndLockedCircularButtons() {
         val engine = GameEngine(selectedEmpire = EmpireType.DRAGON, gameMode = GameMode.CAMPAIGN)
         engine.player.overdriveCharge = 100f
         engine.player.lockedTargetId = "boss_or_target"
@@ -167,57 +164,40 @@ class LandscapeHudAndJoystickTest {
         }
         composeRule.waitForIdle()
 
+        // Old rectangular ammo panels must be completely removed
+        composeRule.onNodeWithTag("auto_fire_toggle").assertDoesNotExist()
+        composeRule.onNodeWithTag("flare_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("rocket_barrage_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("missile_ammo_indicator").assertDoesNotExist()
+        composeRule.onNodeWithTag("right_ammo_indicators").assertDoesNotExist()
+
         val rootBounds = composeRule.onRoot().getBoundsInRoot()
         val rootWidth = rootBounds.right - rootBounds.left
+        val rootHeight = rootBounds.bottom - rootBounds.top
 
-        val autoBounds = composeRule.onNodeWithTag("auto_fire_toggle").assertIsDisplayed().getBoundsInRoot()
-        val flareBounds = composeRule.onNodeWithTag("flare_button").assertIsDisplayed().getBoundsInRoot()
-        val rocketBounds = composeRule.onNodeWithTag("rocket_barrage_button").assertIsDisplayed().getBoundsInRoot()
-        val missileAmmoBounds = composeRule.onNodeWithTag("missile_ammo_indicator").assertIsDisplayed().getBoundsInRoot()
         val overBounds = composeRule.onNodeWithTag("overdrive_button").assertIsDisplayed().getBoundsInRoot()
         val lockedBounds = composeRule.onNodeWithTag("missile_attack_button").assertIsDisplayed().getBoundsInRoot()
 
-        // All 4 ammo indicators and OVER/LOCKED buttons sit on the RIGHT side
-        assertTrue(autoBounds.left > rootWidth * 0.5f)
-        assertTrue(flareBounds.left > rootWidth * 0.5f)
-        assertTrue(rocketBounds.left > rootWidth * 0.5f)
-        assertTrue(missileAmmoBounds.left > rootWidth * 0.5f)
+        // Both circular buttons sit on the lower-right side, OVER above LOCKED
         assertTrue(overBounds.left > rootWidth * 0.5f)
         assertTrue(lockedBounds.left > rootWidth * 0.5f)
-
-        // Vertically organized order
-        assertTrue(autoBounds.top < flareBounds.top)
-        assertTrue(flareBounds.top < rocketBounds.top)
-        assertTrue(rocketBounds.top < missileAmmoBounds.top)
+        assertTrue(overBounds.top > rootHeight * 0.35f)
         assertTrue(overBounds.top < lockedBounds.top)
 
         composeRule.onNodeWithText("OVER").assertIsDisplayed()
         composeRule.onNodeWithText("LOCKED").assertIsDisplayed()
-
-        // Interactive verification: toggle auto-fire & launch rockets
-        val initialAutoFire = engine.player.isAutoFiring
-        composeRule.onNodeWithTag("auto_fire_toggle").performClick()
-        assertFalse(engine.player.isAutoFiring == initialAutoFire)
-
-        val initialRocketAmmo = engine.player.rocketAmmo
-        composeRule.onNodeWithTag("rocket_barrage_button").performClick()
-        assertTrue("MRL launch must consume rocket ammo", engine.player.rocketAmmo < initialRocketAmmo)
     }
 
     @Test
-    fun upperHudIsCompactCollapsibleAndShowsMagmaWarningOnlyWhenActive() {
+    fun upperHudShowsOnlyCompactHeartsAndHealthCountWithRadarAndPause() {
         val engine = GameEngine(selectedEmpire = EmpireType.DRAGON, gameMode = GameMode.CAMPAIGN)
-        engine.threatAlert = null
+        engine.threatAlert = ThreatAlert("WARNING: MAGMA GEYSER SURGE DETECTED", Color(0xFFFF3D00), 1.8f)
         engine.update(0.05f)
-
-        val stateWithThreat = androidx.compose.runtime.mutableStateOf(
-            engine.hudState.value.copy(activeThreat = null)
-        )
 
         composeRule.setContent {
             MyApplicationTheme {
                 HudOverlay(
-                    hudState = stateWithThreat.value,
+                    hudState = engine.hudState.value,
                     engine = engine,
                     onPauseClick = {},
                     onReturnToMenu = {},
@@ -227,33 +207,30 @@ class LandscapeHudAndJoystickTest {
         }
         composeRule.waitForIdle()
 
-        // Core HUD elements preserved: health/status, stage/score, kills, radar, BARRACKS progress
-        composeRule.onNodeWithTag("top_status_row").assertIsDisplayed()
-        composeRule.onNodeWithTag("hud_wave_score_text").assertTextContains("STG 1", substring = true)
-        composeRule.onNodeWithTag("campaign_objective_hud").assertIsDisplayed()
-        composeRule.onNodeWithTag("tactical_radar_minimap").assertIsDisplayed()
-        composeRule.onNodeWithTag("pause_button").assertIsDisplayed()
+        // Compact upper-left hearts + health counter + upper-right radar + pause
+        val rootBounds = composeRule.onRoot().getBoundsInRoot()
+        val rootWidth = rootBounds.right - rootBounds.left
+        val rootHeight = rootBounds.bottom - rootBounds.top
 
-        // Magma warning must NOT appear when activeThreat == null
-        composeRule.onNodeWithTag("threat_warning_banner").assertDoesNotExist()
+        val heartsBounds = composeRule.onNodeWithTag("hud_health_hearts").assertIsDisplayed().getBoundsInRoot()
+        composeRule.onNodeWithTag("hud_health_counter").assertIsDisplayed()
+        val radarBounds = composeRule.onNodeWithTag("tactical_radar_minimap").assertIsDisplayed().getBoundsInRoot()
+        val pauseBounds = composeRule.onNodeWithTag("pause_button").assertIsDisplayed().getBoundsInRoot()
 
-        // Secondary HUD panel collapses and expands cleanly
-        composeRule.onNodeWithTag("hud_collapse_toggle").performClick()
-        composeRule.waitForIdle()
+        assertTrue(heartsBounds.left < rootWidth * 0.35f)
+        assertTrue(heartsBounds.top < rootHeight * 0.25f)
+        assertTrue(radarBounds.left > rootWidth * 0.5f)
+        assertTrue(pauseBounds.left > radarBounds.left)
+
+        // All removed upper-left clutter & warning banners must not exist
+        composeRule.onNodeWithTag("top_status_row").assertDoesNotExist()
+        composeRule.onNodeWithTag("hud_secondary_panel").assertDoesNotExist()
+        composeRule.onNodeWithTag("hud_wave_score_text").assertDoesNotExist()
         composeRule.onNodeWithTag("campaign_objective_hud").assertDoesNotExist()
-
-        composeRule.onNodeWithTag("hud_collapse_toggle").performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("campaign_objective_hud").assertIsDisplayed()
-
-        // Magma warning appears ONLY when an actual warning is active
-        composeRule.runOnUiThread {
-            stateWithThreat.value = stateWithThreat.value.copy(
-                activeThreat = ThreatAlert("WARNING: MAGMA GEYSER SURGE DETECTED", Color(0xFFFF3D00), 1.8f)
-            )
-        }
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("threat_warning_banner").assertIsDisplayed()
-        composeRule.onNodeWithText("WARNING: MAGMA GEYSER SURGE DETECTED").assertIsDisplayed()
+        composeRule.onNodeWithTag("endless_wave_hud").assertDoesNotExist()
+        composeRule.onNodeWithTag("boss_health_panel").assertDoesNotExist()
+        composeRule.onNodeWithTag("hud_auto_hide_toggle").assertDoesNotExist()
+        composeRule.onNodeWithTag("endless_sync_status_badge").assertDoesNotExist()
+        composeRule.onNodeWithTag("threat_warning_banner").assertDoesNotExist()
     }
 }
