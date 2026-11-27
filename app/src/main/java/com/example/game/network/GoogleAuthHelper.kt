@@ -282,12 +282,12 @@ fun GoogleSignInButton(
         shape = RoundedCornerShape(10.dp),
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .height(48.dp)
             .testTag("google_sign_in_button")
     ) {
         if (isLoading) {
             CircularProgressIndicator(
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier.size(20.dp),
                 color = Color.Black,
                 strokeWidth = 2.5.dp
             )
@@ -295,12 +295,13 @@ fun GoogleSignInButton(
             Icon(
                 imageVector = Icons.Default.VerifiedUser,
                 contentDescription = null,
-                tint = Color.Black
+                tint = Color.Black,
+                modifier = Modifier.size(18.dp)
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = "SIGN IN WITH GOOGLE",
-                fontSize = 13.sp,
+                fontSize = 11.5.sp,
                 fontWeight = FontWeight.Black,
                 color = Color.Black,
                 fontFamily = FontFamily.Monospace

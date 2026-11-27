@@ -110,47 +110,47 @@ fun ConnectionGateScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             Box(
                 modifier = Modifier
-                    .size(92.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .border(2.dp, AmberWarning, RoundedCornerShape(20.dp))
-                    .padding(4.dp)
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .border(2.dp, AmberWarning, RoundedCornerShape(14.dp))
+                    .padding(3.dp)
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.ic_helicopter_war_launcher_1794117995132),
                     contentDescription = "Helicopter War Icon",
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp))
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(11.dp))
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = "HELICOPTER WAR",
-                fontSize = 26.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
                 color = AmberWarning,
-                letterSpacing = 2.sp
+                letterSpacing = 1.5.sp
             )
             Text(
                 text = "EMPIRE ENDLESS BATTLE",
-                fontSize = 13.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 color = CyberCyan,
-                letterSpacing = 3.sp
+                letterSpacing = 2.sp
             )
 
-            Spacer(modifier = Modifier.height(28.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = Color(0xDD111822),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
@@ -162,31 +162,31 @@ fun ConnectionGateScreen(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(max = 580.dp)
+                    .widthIn(max = 520.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(18.dp),
+                    modifier = Modifier.padding(14.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     when (onlineStatus) {
                         is OnlineStatus.Authenticating -> {
                             CircularProgressIndicator(
                                 color = CyberCyan,
-                                modifier = Modifier.size(42.dp),
-                                strokeWidth = 3.dp
+                                modifier = Modifier.size(32.dp),
+                                strokeWidth = 2.5.dp
                             )
-                            Spacer(modifier = Modifier.height(14.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
                             Text(
                                 text = "ESTABLISHING SATELLITE UPLINK...",
-                                fontSize = 13.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = CyberCyan,
                                 fontFamily = FontFamily.Monospace
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Verifying live TLS link to Firebase Cloud Firestore",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = Color(0xFF90A4AE),
                                 textAlign = TextAlign.Center
                             )
@@ -197,23 +197,23 @@ fun ConnectionGateScreen(
                                 imageVector = Icons.Default.CloudDone,
                                 contentDescription = "Online",
                                 tint = if (currentUser != null) HealthGreen else AmberWarning,
-                                modifier = Modifier.size(46.dp)
+                                modifier = Modifier.size(34.dp)
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = if (currentUser != null) "PILOT AUTHENTICATED & ONLINE" else "GOOGLE SIGN-IN REQUIRED",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Black,
                                 color = if (currentUser != null) HealthGreen else AmberWarning,
                                 fontFamily = FontFamily.Monospace
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(Color(0xFF0C131D), RoundedCornerShape(8.dp))
-                                    .padding(12.dp)
+                                    .padding(10.dp)
                             ) {
                                 DiagnosticRow("NETWORK LINK", onlineStatus.networkType, HealthGreen)
                                 DiagnosticRow("CLOUD BACKEND", "CLOUD FIRESTORE", CyberCyan)
@@ -232,16 +232,16 @@ fun ConnectionGateScreen(
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
                             if (currentUser == null) {
                                 Text(
                                     text = "Sign in with Google to synchronize your 4-Empire campaign and 200 barracks across devices.",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     color = Color(0xFFCFD8DC),
                                     textAlign = TextAlign.Center
                                 )
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(10.dp))
                                 GoogleSignInButton(
                                     onBeforeSignIn = onSignInStarted,
                                     onAuthSuccess = {
@@ -254,10 +254,10 @@ fun ConnectionGateScreen(
                                     }
                                 )
                                 if (!authError.isNullOrBlank()) {
-                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Spacer(modifier = Modifier.height(8.dp))
                                     Text(
                                         text = authError!!,
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         color = ThreatRed,
                                         textAlign = TextAlign.Center
                                     )
@@ -269,18 +269,18 @@ fun ConnectionGateScreen(
                                     shape = RoundedCornerShape(10.dp),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(50.dp)
+                                        .height(48.dp)
                                         .testTag("enter_combat_button")
                                 ) {
                                     Text(
                                         text = "ENTER COMBAT THEATER",
-                                        fontSize = 14.sp,
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Black,
                                         color = Color.Black,
                                         fontFamily = FontFamily.Monospace
                                     )
                                 }
-                                Spacer(modifier = Modifier.height(10.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
                                 OutlinedButton(
                                     onClick = onSignOut,
                                     shape = RoundedCornerShape(10.dp),
@@ -293,12 +293,12 @@ fun ConnectionGateScreen(
                                         imageVector = Icons.AutoMirrored.Filled.Logout,
                                         contentDescription = "Sign Out",
                                         tint = Color(0xFFCFD8DC),
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "SWITCH ACCOUNT / SIGN OUT",
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFCFD8DC),
                                         fontFamily = FontFamily.Monospace
@@ -312,33 +312,33 @@ fun ConnectionGateScreen(
                                 imageVector = Icons.Default.CloudOff,
                                 contentDescription = "Offline Error",
                                 tint = ThreatRed,
-                                modifier = Modifier.size(46.dp)
+                                modifier = Modifier.size(34.dp)
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = "OFFLINE MODE FORBIDDEN",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Black,
                                 color = ThreatRed,
                                 fontFamily = FontFamily.Monospace
                             )
-                            Spacer(modifier = Modifier.height(6.dp))
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = onlineStatus.reason,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = Color(0xFFCFD8DC),
                                 textAlign = TextAlign.Center
                             )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text = "Helicopter War requires an active internet connection for Firebase Authentication and live Cloud Firestore cross-device campaign synchronization.",
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 color = Color(0xFF78909C),
                                 textAlign = TextAlign.Center
                             )
 
-                            Spacer(modifier = Modifier.height(18.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
 
                             Button(
                                 onClick = onRetry,
@@ -349,18 +349,18 @@ fun ConnectionGateScreen(
                                     .height(48.dp)
                                     .testTag("retry_connection_button")
                             ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White)
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "RETRY SATELLITE CONNECTION",
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
                             if (currentUser != null) {
-                                Spacer(modifier = Modifier.height(10.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
                                 OutlinedButton(
                                     onClick = onSignOut,
                                     shape = RoundedCornerShape(10.dp),
@@ -373,12 +373,12 @@ fun ConnectionGateScreen(
                                         imageVector = Icons.AutoMirrored.Filled.Logout,
                                         contentDescription = "Sign Out",
                                         tint = Color(0xFFCFD8DC),
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "SWITCH ACCOUNT / SIGN OUT",
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFCFD8DC),
                                         fontFamily = FontFamily.Monospace
@@ -396,10 +396,10 @@ fun ConnectionGateScreen(
 @Composable
 private fun DiagnosticRow(label: String, value: String, valueColor: Color) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(text = label, fontSize = 10.sp, color = Color(0xFF78909C), fontFamily = FontFamily.Monospace)
-        Text(text = value, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = valueColor, fontFamily = FontFamily.Monospace)
+        Text(text = label, fontSize = 9.5.sp, color = Color(0xFF78909C), fontFamily = FontFamily.Monospace)
+        Text(text = value, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = valueColor, fontFamily = FontFamily.Monospace)
     }
 }

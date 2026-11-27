@@ -279,7 +279,7 @@ private fun CompactHealthHud(
     compactVertical: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val heartSize = if (compactVertical) 13.dp else 15.dp
+    val heartSize = if (compactVertical) 12.dp else 14.dp
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -302,7 +302,7 @@ private fun CompactHealthHud(
         Text(
             text = "$hitsRemainingInHeart/$hitsPerHeart",
             color = Color.White,
-            fontSize = if (compactVertical) 12.sp else 13.sp,
+            fontSize = if (compactVertical) 11.sp else 12.sp,
             fontWeight = FontWeight.SemiBold,
             style = TextStyle(
                 shadow = Shadow(
@@ -736,52 +736,54 @@ private fun TacticalPauseDialog(
 ) {
     Dialog(onDismissRequest = onResume) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             color = Color(0xFF0F1722),
             border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberCyan),
-            modifier = Modifier.fillMaxWidth().padding(16.dp)
+            modifier = Modifier.fillMaxWidth().padding(12.dp)
         ) {
             Column(
                 modifier = Modifier
                     .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "ENDLESS WAVE $currentWave PAUSED" else "SORTIE PAUSED",
-                    fontSize = 18.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     color = CyberCyan
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "CHECKPOINT & RECORDS SAVED LOCALLY" else "WAR-NET BATTLE LINK ON STANDBY",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     color = Color(0xFF90A4AE),
                     fontFamily = FontFamily.Monospace
                 )
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 Button(onClick = onResume, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("RESUME BATTLE", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("RESUME BATTLE", fontSize = 11.5.sp, color = Color.Black, fontWeight = FontWeight.Bold)
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = onRestart, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836))) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = AmberWarning)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = AmberWarning, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "RESTART ENDLESS" else "RESTART SORTIE",
+                        fontSize = 11.5.sp,
                         color = AmberWarning,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Button(onClick = onQuit, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF37474F))) {
                     Text(
                         text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "SAVE & RETURN TO MENU" else "ABORT TO HANGAR",
+                        fontSize = 11.5.sp,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
@@ -813,77 +815,77 @@ private fun DefeatContinueDialog(
 
     Dialog(onDismissRequest = {}) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             color = Color(0xFF0C131D),
             border = androidx.compose.foundation.BorderStroke(2.dp, ThreatRed),
-            modifier = Modifier.fillMaxWidth().padding(12.dp)
+            modifier = Modifier.fillMaxWidth().padding(10.dp)
         ) {
             Column(
                 modifier = Modifier
                     .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = "0/5 HEARTS — CONTINUE?",
-                    fontSize = 18.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     color = ThreatRed
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
                         "WAVE $currentWave ($wavesCompleted CLEARED) // ${empire.title}"
                     } else {
                         "STAGE $stageNumber // ${empire.title}"
                     },
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = empire.primaryColor,
                     fontFamily = FontFamily.Monospace
                 )
 
                 if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = "BEST WAVE: $endlessBestWave • BEST SCORE: $endlessBestScore",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = CyberCyan,
                         fontFamily = FontFamily.Monospace
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth().background(Color(0xFF151F2C), RoundedCornerShape(10.dp)).padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF151F2C), RoundedCornerShape(10.dp)).padding(10.dp),
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("SCORE", fontSize = 9.sp, color = Color(0xFF90A4AE))
-                        Text("$score", fontSize = 16.sp, fontWeight = FontWeight.Black, color = AmberWarning)
+                        Text("SCORE", fontSize = 8.5.sp, color = Color(0xFF90A4AE))
+                        Text("$score", fontSize = 14.sp, fontWeight = FontWeight.Black, color = AmberWarning)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("KILLS", fontSize = 9.sp, color = Color(0xFF90A4AE))
-                        Text("$kills", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        Text("KILLS", fontSize = 8.5.sp, color = Color(0xFF90A4AE))
+                        Text("$kills", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color.White)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "VERIFIED CR" else "CREDITS",
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             color = Color(0xFF90A4AE)
                         )
-                        Text("+$credits", fontSize = 15.sp, fontWeight = FontWeight.Black, color = MilitaryGold)
+                        Text("+$credits", fontSize = 13.5.sp, fontWeight = FontWeight.Black, color = MilitaryGold)
                     }
                 }
 
                 if (gameMode == GameMode.ENDLESS_SURVIVAL && endlessSyncStatus == EndlessSyncStatus.PENDING_OFFLINE) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     Text(
                         text = "CLOUD SYNC PENDING (OFFLINE — CREDITS REQUIRE SERVER VALIDATION)",
-                        fontSize = 9.sp,
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         color = AmberWarning,
@@ -892,27 +894,27 @@ private fun DefeatContinueDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     text = "24H REWARDED CONTINUES LEFT: ${adContinueQuota.remaining}/${adContinueQuota.maxPer24Hours}",
-                    fontSize = 10.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     color = if (adContinueQuota.canWatchAdToContinue) CyberCyan else ThreatRed
                 )
                 statusText?.let { msg ->
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = msg,
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = AmberWarning,
                         textAlign = TextAlign.Center
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // YES — WATCH AD TO RESTORE +5 MAIN HEARTS
                 Button(
@@ -925,7 +927,7 @@ private fun DefeatContinueDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = HealthGreen),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
+                        .height(48.dp)
                         .testTag("defeat_continue_yes_button")
                 ) {
                     Text(
@@ -935,13 +937,13 @@ private fun DefeatContinueDialog(
                             "DAILY 10/10 LIMIT REACHED (24H)"
                         },
                         color = Color.Black,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace
                     )
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // NO — RETURN TO DASHBOARD
                 Button(
@@ -952,7 +954,7 @@ private fun DefeatContinueDialog(
                         .height(48.dp)
                         .testTag("defeat_continue_no_button")
                 ) {
-                    Text("NO — RETURN TO DASHBOARD", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("NO — RETURN TO DASHBOARD", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -962,10 +964,11 @@ private fun DefeatContinueDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF263238)),
                     modifier = Modifier.fillMaxWidth().height(48.dp)
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = AmberWarning)
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = AmberWarning, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (gameMode == GameMode.ENDLESS_SURVIVAL) "RESTART ENDLESS" else "RESTART STAGE",
+                        fontSize = 11.sp,
                         color = AmberWarning,
                         fontWeight = FontWeight.Bold
                     )
@@ -1006,75 +1009,75 @@ private fun MissionDebriefingDialog(
 
     Dialog(onDismissRequest = {}) {
         Surface(
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             color = Color(0xFF0C131D),
             border = androidx.compose.foundation.BorderStroke(2.dp, if (isVictory) HealthGreen else ThreatRed),
-            modifier = Modifier.fillMaxWidth().padding(12.dp)
+            modifier = Modifier.fillMaxWidth().padding(10.dp)
         ) {
             Column(
                 modifier = Modifier
                     .verticalScroll(rememberScrollState())
-                    .padding(22.dp),
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = if (nextStageEmpire == null) "ALL 4 EMPIRES CONQUERED!" else "STAGE $stageNumber CLEARED!",
-                    fontSize = 18.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     color = HealthGreen
                 )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(text = "${empire.title} HQ ANNIHILATED", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = empire.primaryColor, fontFamily = FontFamily.Monospace)
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(text = "${empire.title} HQ ANNIHILATED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = empire.primaryColor, fontFamily = FontFamily.Monospace)
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Row(
-                    modifier = Modifier.fillMaxWidth().background(Color(0xFF151F2C), RoundedCornerShape(10.dp)).padding(14.dp),
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF151F2C), RoundedCornerShape(10.dp)).padding(10.dp),
                     horizontalArrangement = Arrangement.SpaceAround
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("FINAL SCORE", fontSize = 10.sp, color = Color(0xFF90A4AE))
-                        Text("$score", fontSize = 18.sp, fontWeight = FontWeight.Black, color = AmberWarning)
+                        Text("FINAL SCORE", fontSize = 8.5.sp, color = Color(0xFF90A4AE))
+                        Text("$score", fontSize = 14.sp, fontWeight = FontWeight.Black, color = AmberWarning)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("HOSTILES", fontSize = 10.sp, color = Color(0xFF90A4AE))
-                        Text("$kills", fontSize = 18.sp, fontWeight = FontWeight.Black, color = Color.White)
+                        Text("HOSTILES", fontSize = 8.5.sp, color = Color(0xFF90A4AE))
+                        Text("$kills", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color.White)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("WAR CREDITS", fontSize = 10.sp, color = Color(0xFF90A4AE))
-                        Text("+$credits CR", fontSize = 16.sp, fontWeight = FontWeight.Black, color = MilitaryGold)
+                        Text("WAR CREDITS", fontSize = 8.5.sp, color = Color(0xFF90A4AE))
+                        Text("+$credits CR", fontSize = 13.5.sp, fontWeight = FontWeight.Black, color = MilitaryGold)
                     }
                 }
 
                 if (nextStageEmpire != null && onAutoDeployNextStage != null) {
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = if (autoDeployCancelled) {
                             "NEXT STAGE UNLOCKED: ${nextStageEmpire.title}"
                         } else {
                             "AUTO-DEPLOYING STAGE ${stageNumber + 1} IN ${countdown}s..."
                         },
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = CyberCyan,
                         fontFamily = FontFamily.Monospace
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = {
                             autoDeployCancelled = true
                             onAutoDeployNextStage(nextStageEmpire)
                         },
-                        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("auto_deploy_next_stage_button"),
+                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("auto_deploy_next_stage_button"),
                         colors = ButtonDefaults.buttonColors(containerColor = HealthGreen)
                     ) {
-                        Text("DEPLOY STAGE ${stageNumber + 1}: ${nextStageEmpire.name}", color = Color.Black, fontWeight = FontWeight.Black)
+                        Text("DEPLOY STAGE ${stageNumber + 1}: ${nextStageEmpire.name}", fontSize = 11.5.sp, color = Color.Black, fontWeight = FontWeight.Black)
                     }
                 }
 
                 if (onClaimSupplyBonus != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = {
                             if (!bonusClaimed) {
@@ -1103,14 +1106,14 @@ private fun MissionDebriefingDialog(
                                 ?: if (bonusClaimed) "SUPPLY BONUS CREDITED"
                                 else "WATCH AD: CLAIM +${com.example.game.ads.AdMobManager.REWARDED_CREDITS_BONUS} CR",
                             color = MilitaryGold,
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
                     onClick = {
@@ -1120,9 +1123,9 @@ private fun MissionDebriefingDialog(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AmberWarning)
                 ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("REPLAY STAGE", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("REPLAY STAGE", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Button(
@@ -1133,7 +1136,7 @@ private fun MissionDebriefingDialog(
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E2836))
                 ) {
-                    Text("RETURN TO DASHBOARD", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("RETURN TO DASHBOARD", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }

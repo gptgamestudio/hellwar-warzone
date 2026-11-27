@@ -130,118 +130,118 @@ fun MainMenuScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .widthIn(max = 620.dp)
-                    .padding(horizontal = 18.dp, vertical = 12.dp)
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
             // Top Bar: Player profile, callsign, rank, credits, online indicator
             PlayerProfileHeader(profile = profile)
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Game Logo / Title
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(vertical = 4.dp)
+                modifier = Modifier.padding(vertical = 2.dp)
             ) {
                 Text(
                     text = "HELICOPTER WAR",
-                    fontSize = 28.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     color = AmberWarning,
-                    letterSpacing = 2.sp
+                    letterSpacing = 1.5.sp
                 )
                 Text(
                     text = "EMPIRE ENDLESS BATTLE",
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     color = CyberCyan,
-                    letterSpacing = 3.sp
+                    letterSpacing = 2.sp
                 )
                 Text(
                     text = "VERTICAL COMBAT SIMULATOR // ONLINE CLUSTER ACTIVE",
-                    fontSize = 9.sp,
+                    fontSize = 8.sp,
                     color = Color(0xFF90A4AE),
                     fontFamily = FontFamily.Monospace
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 0. RESUME SAVED SORTIE (shown when player backed out mid-stage)
             if (resumeCheckpoint != null) {
                 Button(
                     onClick = onContinueSortie,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = HealthGreen),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(60.dp)
+                        .height(50.dp)
                         .testTag("menu_continue_stage")
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = null,
                         tint = Color.Black,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Column {
                         Text(
                             text = "CONTINUE STAGE ${resumeCheckpoint.stageNumber}: ${resumeCheckpoint.empire.name}",
-                            fontSize = 15.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             color = Color.Black
                         )
                         Text(
                             text = "HEARTS ${resumeCheckpoint.hearts}/5 • BARRACKS ${resumeCheckpoint.destroyedBarracksIds.size}/50 • SCORE ${resumeCheckpoint.score}",
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xDD000000)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(7.dp))
             }
 
             // 1. PRIMARY BUTTON: PLAY WAR (deploys current unlocked stage)
             Button(
                 onClick = onPlayWar,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = AmberWarning),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(58.dp)
+                    .height(50.dp)
                     .testTag("menu_play_war")
             ) {
                 Icon(
                     imageVector = Icons.Default.PlayArrow,
                     contentDescription = null,
                     tint = Color.Black,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(22.dp)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Column {
                     Text(
                         text = if (resumeCheckpoint != null) "NEW SORTIE — STAGE $highestStageNumber" else "PLAY WAR — STAGE $highestStageNumber",
-                        fontSize = 16.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = Color.Black
                     )
                     Text(
                         text = "DEPLOY ${highestUnlockedEmpire.title.uppercase()}",
-                        fontSize = 9.sp,
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xCC000000)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(7.dp))
 
             // 2. EMPIRE CAMPAIGN
             MenuSecondaryButton(
@@ -253,7 +253,7 @@ fun MainMenuScreen(
                 tag = "menu_empire_campaign"
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 3. ENDLESS BATTLE (Optional Continue + Fresh Endless Survival)
             if (endlessResumeCheckpoint != null) {
@@ -265,7 +265,7 @@ fun MainMenuScreen(
                     onClick = onContinueEndless,
                     tag = "menu_continue_endless"
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
             val endlessSubtitle = if (endlessRecord.highestWave > 0) {
@@ -283,7 +283,7 @@ fun MainMenuScreen(
                 tag = "menu_endless_battle"
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 4. HELICOPTER GARAGE
             MenuSecondaryButton(
@@ -295,7 +295,7 @@ fun MainMenuScreen(
                 tag = "menu_helicopter_garage"
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 5. WEAPONS & UPGRADES
             MenuSecondaryButton(
@@ -307,7 +307,7 @@ fun MainMenuScreen(
                 tag = "menu_weapons_upgrades"
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 6. WAR COMMAND
             MenuSecondaryButton(
@@ -319,7 +319,7 @@ fun MainMenuScreen(
                 tag = "menu_war_command"
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 7. PILOT COMBAT RECORD (Zero-Trust Cloud Dossier)
             MenuSecondaryButton(
@@ -331,7 +331,7 @@ fun MainMenuScreen(
                 tag = "menu_online_leaderboard"
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 8. REWARDED SUPPLY DROP
             MenuSecondaryButton(
@@ -348,7 +348,7 @@ fun MainMenuScreen(
                 tag = "menu_rewarded_supply_ad"
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 9. SETTINGS
             MenuSecondaryButton(
@@ -360,7 +360,7 @@ fun MainMenuScreen(
                 tag = "menu_settings"
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             }
 
             AdMobBannerBar()
@@ -371,20 +371,20 @@ fun MainMenuScreen(
 @Composable
 private fun PlayerProfileHeader(profile: PlayerProfile) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         color = Color(0xDD0D1520),
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF2B3A4F)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(30.dp)
                         .background(Color(0xFF1E2836), CircleShape)
                         .border(1.5.dp, CyberCyan, CircleShape),
                     contentAlignment = Alignment.Center
@@ -393,23 +393,23 @@ private fun PlayerProfileHeader(profile: PlayerProfile) {
                         imageVector = Icons.Default.MilitaryTech,
                         contentDescription = "Rank",
                         tint = AmberWarning,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Column {
                     Text(
                         text = profile.callsign,
-                        fontSize = 13.sp,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = Color.White
                     )
                     Text(
                         text = profile.rank,
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
                         color = AmberWarning,
                         fontFamily = FontFamily.Monospace
@@ -423,12 +423,12 @@ private fun PlayerProfileHeader(profile: PlayerProfile) {
                         imageVector = Icons.Default.FiberManualRecord,
                         contentDescription = "Online",
                         tint = HealthGreen,
-                        modifier = Modifier.size(10.dp)
+                        modifier = Modifier.size(8.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
                     Text(
                         text = "ONLINE",
-                        fontSize = 9.sp,
+                        fontSize = 8.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = HealthGreen,
                         fontFamily = FontFamily.Monospace
@@ -436,7 +436,7 @@ private fun PlayerProfileHeader(profile: PlayerProfile) {
                 }
                 Text(
                     text = "${profile.credits} CR",
-                    fontSize = 12.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Black,
                     color = MilitaryGold,
                     fontFamily = FontFamily.Monospace
@@ -462,18 +462,18 @@ private fun MenuSecondaryButton(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF263238)),
         modifier = Modifier
             .fillMaxWidth()
-            .height(52.dp)
+            .height(48.dp)
             .testTag(tag)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp),
+            modifier = Modifier.padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(30.dp)
                         .background(accentColor.copy(alpha = 0.15f), RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -481,23 +481,23 @@ private fun MenuSecondaryButton(
                         imageVector = icon,
                         contentDescription = null,
                         tint = accentColor,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(17.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
                 Column {
                     Text(
                         text = title,
-                        fontSize = 13.sp,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
                         color = Color.White
                     )
                     Text(
                         text = subtitle,
-                        fontSize = 9.sp,
+                        fontSize = 8.5.sp,
                         color = Color(0xFF90A4AE),
                         fontFamily = FontFamily.Monospace
                     )
@@ -508,7 +508,7 @@ private fun MenuSecondaryButton(
                 imageVector = Icons.Default.PlayArrow,
                 contentDescription = null,
                 tint = accentColor,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(14.dp)
             )
         }
     }

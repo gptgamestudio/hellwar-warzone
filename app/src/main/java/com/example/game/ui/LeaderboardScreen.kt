@@ -127,7 +127,7 @@ fun LeaderboardScreen(
                 title = {
                     Text(
                         text = "PILOT COMBAT RECORD",
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = AmberWarning
@@ -171,8 +171,8 @@ fun LeaderboardScreen(
             contentAlignment = Alignment.TopCenter
         ) {
             LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 620.dp)
@@ -187,7 +187,7 @@ fun LeaderboardScreen(
                         ) {
                             Text(
                                 text = "VERIFIED FIRESTORE SERVICE DOSSIER",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = CyberCyan,
                                 fontFamily = FontFamily.Monospace
@@ -197,30 +197,30 @@ fun LeaderboardScreen(
                                     imageVector = Icons.Default.FiberManualRecord,
                                     contentDescription = null,
                                     tint = if (campaignState.isServerConnected) HealthGreen else AmberWarning,
-                                    modifier = Modifier.size(10.dp)
+                                    modifier = Modifier.size(8.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = if (campaignState.isServerConnected) "UID SYNCED" else "CONNECTING",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = if (campaignState.isServerConnected) HealthGreen else AmberWarning,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         // Pilot Verified Summary Card
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = Color(0xFF132030),
                             border = androidx.compose.foundation.BorderStroke(1.5.dp, CyberCyan),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
-                                modifier = Modifier.padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier.padding(11.dp),
+                                verticalArrangement = Arrangement.spacedBy(7.dp)
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -232,20 +232,20 @@ fun LeaderboardScreen(
                                             imageVector = Icons.Default.MilitaryTech,
                                             contentDescription = "Pilot Rank",
                                             tint = AmberWarning,
-                                            modifier = Modifier.size(26.dp)
+                                            modifier = Modifier.size(22.dp)
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Column {
                                             Text(
                                                 text = profile.callsign,
-                                                fontSize = 15.sp,
+                                                fontSize = 13.sp,
                                                 fontWeight = FontWeight.Black,
                                                 color = Color.White,
                                                 fontFamily = FontFamily.Monospace
                                             )
                                             Text(
                                                 text = "ACTIVE GUNSHIP: ${profile.selectedHelicopterClass.title}",
-                                                fontSize = 9.sp,
+                                                fontSize = 8.5.sp,
                                                 color = CyberCyan,
                                                 fontFamily = FontFamily.Monospace
                                             )
@@ -253,7 +253,7 @@ fun LeaderboardScreen(
                                     }
                                     Text(
                                         text = "$globalCompletionPct% WAR",
-                                        fontSize = 14.sp,
+                                        fontSize = 12.5.sp,
                                         fontWeight = FontWeight.Black,
                                         color = HealthGreen,
                                         fontFamily = FontFamily.Monospace
@@ -314,7 +314,7 @@ fun LeaderboardScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "GLOBAL TOP 5 PILOTS",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MilitaryGold,
                                 fontFamily = FontFamily.Monospace
@@ -322,7 +322,7 @@ fun LeaderboardScreen(
                         }
                         Text(
                             text = "LIVE RANKINGS",
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             color = Color(0xFF90A4AE),
                             fontFamily = FontFamily.Monospace
                         )
@@ -450,11 +450,11 @@ fun LeaderboardScreen(
                 item(key = "theater_header") {
                     Text(
                         text = "THEATER CONQUEST BREAKDOWN",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = AmberWarning,
                         fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(top = 6.dp)
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
 
@@ -490,7 +490,7 @@ private fun GlobalPilotRankCard(
             .testTag("leaderboard_rank_row_$rank")
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -500,27 +500,27 @@ private fun GlobalPilotRankCard(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(30.dp)
                         .background(rankAccent.copy(alpha = 0.18f), RoundedCornerShape(8.dp))
                         .border(1.dp, rankAccent, RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "#$rank",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = rankAccent
                     )
                 }
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = entry.callsign.ifBlank { "VIPER-7" },
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             color = Color.White
@@ -544,7 +544,7 @@ private fun GlobalPilotRankCard(
                     }
                     Text(
                         text = "${entry.totalBarracksDestroyed}/200 BARRACKS • ${entry.hqClearedCount}/4 HQ",
-                        fontSize = 9.sp,
+                        fontSize = 8.5.sp,
                         fontFamily = FontFamily.Monospace,
                         color = Color(0xFF90A4AE)
                     )
@@ -554,14 +554,14 @@ private fun GlobalPilotRankCard(
             Column(horizontalAlignment = Alignment.End) {
                 Text(
                     text = "${entry.highScore}",
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     color = rankAccent
                 )
                 Text(
                     text = "PTS",
-                    fontSize = 8.sp,
+                    fontSize = 7.5.sp,
                     fontFamily = FontFamily.Monospace,
                     color = Color(0xFF78909C)
                 )
@@ -581,18 +581,18 @@ private fun StatTile(
         modifier = modifier
             .background(Color(0xFF0C131D), RoundedCornerShape(8.dp))
             .border(1.dp, Color(0xFF233245), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 6.dp, vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = label,
-            fontSize = 8.sp,
+            fontSize = 7.5.sp,
             color = Color(0xFF90A4AE),
             fontFamily = FontFamily.Monospace
         )
         Text(
             text = value,
-            fontSize = 11.sp,
+            fontSize = 10.5.sp,
             fontWeight = FontWeight.Black,
             color = valueColor,
             fontFamily = FontFamily.Monospace
@@ -611,7 +611,7 @@ private fun TheaterRecordCard(progress: CampaignEmpireProgress) {
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(11.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -619,7 +619,7 @@ private fun TheaterRecordCard(progress: CampaignEmpireProgress) {
             ) {
                 Text(
                     text = progress.empire.title,
-                    fontSize = 13.sp,
+                    fontSize = 11.5.sp,
                     fontWeight = FontWeight.Black,
                     fontFamily = FontFamily.Monospace,
                     color = progress.empire.primaryColor
@@ -630,7 +630,7 @@ private fun TheaterRecordCard(progress: CampaignEmpireProgress) {
                         progress.isHeadquartersUnlocked -> "BOSS UNLOCKED"
                         else -> "ACTIVE FRONT"
                     },
-                    fontSize = 10.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     color = when {

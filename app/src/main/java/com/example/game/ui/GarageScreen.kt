@@ -148,13 +148,13 @@ fun GarageScreen(
                 windowInsets = WindowInsets(0),
                 title = {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "MILITARY HANGAR",
-                            fontSize = 16.sp,
+                            fontSize = 14.5.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             color = AmberWarning
@@ -166,18 +166,18 @@ fun GarageScreen(
                             border = androidx.compose.foundation.BorderStroke(1.dp, MilitaryGold)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
                                     text = "WAR CREDITS: ",
-                                    fontSize = 9.sp,
+                                    fontSize = 8.5.sp,
                                     color = Color(0xFF90A4AE),
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Text(
                                     text = "${profile.credits} CR",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Black,
                                     color = MilitaryGold,
                                     fontFamily = FontFamily.Monospace,
@@ -219,7 +219,7 @@ fun GarageScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(230.dp)
+                        .height(176.dp)
                         .background(Color(0xFF0A1017))
                         .border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E2836)))
                 ) {
@@ -233,7 +233,7 @@ fun GarageScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp)
+                        .padding(10.dp)
                         .align(Alignment.TopStart),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -245,11 +245,11 @@ fun GarageScreen(
                     ) {
                         Text(
                             text = currentHeloClass.title,
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Black,
                             color = currentHeloClass.themeColor,
                             fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                         )
                     }
 
@@ -294,11 +294,11 @@ fun GarageScreen(
                 border = androidx.compose.foundation.BorderStroke(1.dp, MilitaryGold.copy(alpha = 0.7f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 5.dp)
                     .testTag("garage_rewarded_ad_button")
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -307,20 +307,20 @@ fun GarageScreen(
                             imageVector = Icons.Default.CardGiftcard,
                             contentDescription = "Watch Supply Ad",
                             tint = MilitaryGold,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text(
                                 text = "SUPPLY AIRDROP: +${AdMobManager.REWARDED_CREDITS_BONUS} CR",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Monospace,
                                 color = MilitaryGold
                             )
                             Text(
                                 text = if (isRewardedReady) "Watch short rewarded video ad" else "Fetching rewarded supply video...",
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = Color(0xFF90A4AE)
                             )
@@ -328,7 +328,7 @@ fun GarageScreen(
                     }
                     Text(
                         text = if (isRewardedReady) "WATCH AD" else "LOAD",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = CyberCyan
@@ -414,24 +414,24 @@ fun GarageScreen(
                 Tab(
                     selected = selectedTab == 0,
                     onClick = { selectedTab = 0 },
-                    text = { Text("FLEET", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) },
+                    text = { Text("FLEET", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) },
                     modifier = Modifier.testTag("tab_fleet")
                 )
                 Tab(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    text = { Text("UPGRADES", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) },
+                    text = { Text("UPGRADES", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) },
                     modifier = Modifier.testTag("tab_upgrades")
                 )
                 Tab(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
-                    text = { Text("PAINTS", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) },
+                    text = { Text("PAINTS", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace) },
                     modifier = Modifier.testTag("tab_paints")
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // 3. Tab Contents
             when (selectedTab) {
@@ -590,8 +590,8 @@ private fun FleetSelectionSection(
     onUnlockHelicopter: (HelicopterClass) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         HelicopterClass.values().forEach { helo ->
             val isUnlocked = profile.unlockedHelicopters.contains(helo.id)
@@ -599,7 +599,7 @@ private fun FleetSelectionSection(
             val isInspecting = currentSelected == helo
 
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = if (isInspecting) Color(0xFF131E2B) else Color(0xFF0F1722),
                 border = androidx.compose.foundation.BorderStroke(
                     width = if (isInspecting) 1.8.dp else 1.dp,
@@ -610,7 +610,7 @@ private fun FleetSelectionSection(
                     .clickable { onSelectClass(helo) }
                     .testTag("helo_card_${helo.id}")
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
+                Column(modifier = Modifier.padding(11.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -619,14 +619,14 @@ private fun FleetSelectionSection(
                         Column {
                             Text(
                                 text = helo.title,
-                                fontSize = 14.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Black,
                                 color = if (isUnlocked) helo.themeColor else Color(0xFF90A4AE),
                                 fontFamily = FontFamily.Monospace
                             )
                             Text(
                                 text = helo.role,
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 color = Color(0xFF78909C),
                                 fontFamily = FontFamily.Monospace
                             )
@@ -718,8 +718,8 @@ private fun UpgradesSection(
     onUpgrade: (UpgradeType) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Surface(
             shape = RoundedCornerShape(10.dp),
@@ -728,17 +728,17 @@ private fun UpgradesSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             Row(
-                modifier = Modifier.padding(12.dp),
+                modifier = Modifier.padding(10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("ACTIVE AIRFRAME BENCH", fontSize = 10.sp, color = Color(0xFF90A4AE), fontFamily = FontFamily.Monospace)
-                    Text(heloClass.title, fontSize = 13.sp, fontWeight = FontWeight.Black, color = heloClass.themeColor, fontFamily = FontFamily.Monospace)
+                    Text("ACTIVE AIRFRAME BENCH", fontSize = 9.sp, color = Color(0xFF90A4AE), fontFamily = FontFamily.Monospace)
+                    Text(heloClass.title, fontSize = 12.sp, fontWeight = FontWeight.Black, color = heloClass.themeColor, fontFamily = FontFamily.Monospace)
                 }
                 Text(
                     text = if (isUnlocked) "TIER 5 CEILING" else "LOCKED",
-                    fontSize = 9.sp,
+                    fontSize = 8.5.sp,
                     fontWeight = FontWeight.Bold,
                     color = if (isUnlocked) MilitaryGold else ThreatRed,
                     fontFamily = FontFamily.Monospace
@@ -871,7 +871,7 @@ private fun UpgradeRow(
         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF263238)),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(11.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -879,15 +879,15 @@ private fun UpgradeRow(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier.size(32.dp).background(color.copy(alpha = 0.15f), CircleShape),
+                        modifier = Modifier.size(28.dp).background(color.copy(alpha = 0.15f), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+                        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Column {
-                        Text(text = title, fontSize = 11.sp, fontWeight = FontWeight.Black, color = Color.White, fontFamily = FontFamily.Monospace)
-                        Text(text = "LEVEL $level / 5", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = color, fontFamily = FontFamily.Monospace)
+                        Text(text = title, fontSize = 10.5.sp, fontWeight = FontWeight.Black, color = Color.White, fontFamily = FontFamily.Monospace)
+                        Text(text = "LEVEL $level / 5", fontSize = 8.5.sp, fontWeight = FontWeight.Bold, color = color, fontFamily = FontFamily.Monospace)
                     }
                 }
 
@@ -896,7 +896,7 @@ private fun UpgradeRow(
                     for (i in 1..5) {
                         Box(
                             modifier = Modifier
-                                .size(10.dp, 8.dp)
+                                .size(10.dp, 7.dp)
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(if (i <= level) color else Color(0xFF263238))
                         )
@@ -904,10 +904,10 @@ private fun UpgradeRow(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = description, fontSize = 9.sp, color = Color(0xFF90A4AE), fontFamily = FontFamily.Monospace)
+            Spacer(modifier = Modifier.height(5.dp))
+            Text(text = description, fontSize = 8.5.sp, color = Color(0xFF90A4AE), fontFamily = FontFamily.Monospace)
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -942,24 +942,24 @@ private fun SkinsSection(
     onSelectSkin: (HelicopterSkin) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
             text = "TACTICAL COATINGS & CAMOUFLAGE",
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             color = CyberCyan,
             fontFamily = FontFamily.Monospace
         )
         Text(
             text = "Select high-contrast military camo or infrared radar-absorbent radar coatings.",
-            fontSize = 9.sp,
+            fontSize = 8.5.sp,
             color = Color(0xFF90A4AE),
             fontFamily = FontFamily.Monospace
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         HelicopterSkin.values().forEach { skin ->
             val isSelected = skin == currentSkin
@@ -977,7 +977,7 @@ private fun SkinsSection(
                     .testTag("skin_${skin.id}")
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(10.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -985,20 +985,20 @@ private fun SkinsSection(
                         // Color Swatch
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(32.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(skin.primaryColor)
                                 .border(2.dp, skin.accentColor, RoundedCornerShape(8.dp))
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
-                            Text(text = skin.label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
+                            Text(text = skin.label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White, fontFamily = FontFamily.Monospace)
                             Text(text = "PBR MATTE SPECULAR", fontSize = 8.sp, color = Color(0xFF78909C), fontFamily = FontFamily.Monospace)
                         }
                     }
 
                     if (isSelected) {
-                        Text("EQUIPPED", fontSize = 10.sp, fontWeight = FontWeight.Black, color = HealthGreen, fontFamily = FontFamily.Monospace)
+                        Text("EQUIPPED", fontSize = 9.5.sp, fontWeight = FontWeight.Black, color = HealthGreen, fontFamily = FontFamily.Monospace)
                     } else {
                         Button(
                             onClick = { onSelectSkin(skin) },

@@ -102,7 +102,7 @@ fun CommandScreen(
                 title = {
                     Text(
                         text = "WAR COMMAND CENTER",
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = AmberWarning
@@ -134,7 +134,7 @@ fun CommandScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 620.dp)
-                    .padding(16.dp)
+                    .padding(12.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -143,23 +143,23 @@ fun CommandScreen(
                 ) {
                     Text(
                         text = "LIVE HIGH COMMAND ORDERS",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         color = CyberCyan,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = "${campaignState.totalBarracksDestroyed}/200 CLEARED",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = HealthGreen,
                         fontFamily = FontFamily.Monospace
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     items(liveOrders, key = { it.id }) { order ->
@@ -182,7 +182,7 @@ private fun WarOrderCard(order: WarOrder) {
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(11.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -199,16 +199,16 @@ private fun WarOrderCard(order: WarOrder) {
                     ) {
                         Text(
                             text = order.empire.name,
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Black,
                             color = order.empire.primaryColor,
                             fontFamily = FontFamily.Monospace
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = order.title,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         fontFamily = FontFamily.Monospace
@@ -220,15 +220,15 @@ private fun WarOrderCard(order: WarOrder) {
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = "Completed",
                         tint = HealthGreen,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(text = order.requirement, fontSize = 11.sp, color = Color(0xFF90A4AE))
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = order.requirement, fontSize = 10.sp, color = Color(0xFF90A4AE))
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -239,29 +239,29 @@ private fun WarOrderCard(order: WarOrder) {
                     progress = { (order.current.toFloat() / order.target.coerceAtLeast(1)).coerceIn(0f, 1f) },
                     modifier = Modifier
                         .weight(1f)
-                        .height(6.dp)
+                        .height(5.dp)
                         .clip(RoundedCornerShape(3.dp)),
                     color = if (order.isCompleted) HealthGreen else AmberWarning,
                     trackColor = Color(0x22FFFFFF)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "${order.current}/${order.target}",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
                     color = Color.White
                 )
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
                 Text(
                     text = if (order.isCompleted) "BOUNTY CREDITED (+${order.rewardCredits} CR)" else "TOTAL REWARD: +${order.rewardCredits} CR",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Black,
                     color = if (order.isCompleted) HealthGreen else MilitaryGold,
                     fontFamily = FontFamily.Monospace

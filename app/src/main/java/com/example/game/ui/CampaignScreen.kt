@@ -94,14 +94,14 @@ fun CampaignScreen(
                     Column {
                         Text(
                             text = "FOUR EMPIRES TOTAL WAR",
-                            fontSize = 16.sp,
+                            fontSize = 14.5.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
                             color = AmberWarning
                         )
                         Text(
                             text = "GLOBAL CONQUEST: ${campaignState.totalBarracksDestroyed} / 200 BARRACKS ANNIHILATED",
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
                             color = CyberCyan
@@ -136,7 +136,7 @@ fun CampaignScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 620.dp)
-                    .padding(16.dp)
+                    .padding(12.dp)
                     .verticalScroll(rememberScrollState())
             ) {
             // Global War Progress Bar (0 to 200)
@@ -145,7 +145,7 @@ fun CampaignScreen(
                     .fillMaxWidth()
                     .background(Color(0xFF0F172A), RoundedCornerShape(10.dp))
                     .border(1.dp, Color(0xFF334155), RoundedCornerShape(10.dp))
-                    .padding(12.dp)
+                    .padding(10.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -153,49 +153,49 @@ fun CampaignScreen(
                 ) {
                     Text(
                         text = "WORLD CAMPAIGN THEATERS",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = Color.White
                     )
                     Text(
                         text = "${campaignState.totalBarracksDestroyed} / 200",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = AmberWarning
                     )
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(5.dp))
                 val globalPct = (campaignState.totalBarracksDestroyed.toFloat() / 200f).coerceIn(0f, 1f)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(8.dp)
-                        .background(Color(0xFF1E293B), RoundedCornerShape(4.dp))
+                        .height(6.dp)
+                        .background(Color(0xFF1E293B), RoundedCornerShape(3.dp))
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(globalPct)
-                            .height(8.dp)
+                            .height(6.dp)
                             .background(
                                 Brush.horizontalGradient(listOf(CyberCyan, AmberWarning)),
-                                RoundedCornerShape(4.dp)
+                                RoundedCornerShape(3.dp)
                             )
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = "CAMPAIGN STAGES (SEQUENTIAL UNLOCK 1 → 4)",
-                fontSize = 12.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 color = CyberCyan,
                 fontFamily = FontFamily.Monospace
             )
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
             // Strict Sequential Stage Selector Tabs (Stage 1 -> Stage 2 -> Stage 3 -> Stage 4)
             Row(
@@ -211,7 +211,7 @@ fun CampaignScreen(
                     Box(
                         modifier = Modifier
                             .weight(1f)
-                            .height(58.dp)
+                            .height(50.dp)
                             .background(
                                 when {
                                     isSelected -> empire.primaryColor.copy(alpha = 0.25f)
@@ -255,7 +255,7 @@ fun CampaignScreen(
                                 }
                                 Text(
                                     text = "S$stageNum:${empire.name}",
-                                    fontSize = 10.sp,
+                                    fontSize = 9.5.sp,
                                     fontWeight = FontWeight.Black,
                                     fontFamily = FontFamily.Monospace,
                                     color = when {
@@ -267,7 +267,7 @@ fun CampaignScreen(
                             }
                             Text(
                                 text = if (!isUnlocked) "LOCKED" else "${p.destroyedCount}/50",
-                                fontSize = 9.sp,
+                                fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
                                 color = when {
@@ -281,16 +281,16 @@ fun CampaignScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Empire Tactical Dossier Card
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = Color(0xFF101824),
                 border = androidx.compose.foundation.BorderStroke(1.5.dp, selected.primaryColor),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(18.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -299,14 +299,14 @@ fun CampaignScreen(
                         Column {
                             Text(
                                 text = selected.title,
-                                fontSize = 20.sp,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Monospace,
                                 color = selected.primaryColor
                             )
                             Text(
                                 text = selected.subtitle,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = selected.accentColor,
                                 fontFamily = FontFamily.Monospace
                             )
@@ -316,11 +316,11 @@ fun CampaignScreen(
                             imageVector = Icons.Default.Dangerous,
                             contentDescription = "Threat",
                             tint = selected.primaryColor,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(28.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Empire 50-Barracks Progress & HQ Status Card
                     Column(
@@ -332,7 +332,7 @@ fun CampaignScreen(
                                 if (selectedProgress.isHeadquartersUnlocked) AmberWarning else Color(0xFF37474F),
                                 RoundedCornerShape(8.dp)
                             )
-                            .padding(12.dp)
+                            .padding(10.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -348,13 +348,13 @@ fun CampaignScreen(
                             )
                             Text(
                                 text = "${selectedProgress.destroyedCount} / 50 DESTROYED",
-                                fontSize = 12.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Monospace,
                                 color = selected.primaryColor
                             )
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(5.dp))
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -368,7 +368,7 @@ fun CampaignScreen(
                                     .background(selected.primaryColor, RoundedCornerShape(3.dp))
                             )
                         }
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         // HQ Lock / Unlock Status Indicator
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -389,11 +389,11 @@ fun CampaignScreen(
                                     "HEADQUARTERS LOCKED: DESTROY 50/50 BARRACKS TO LOWER FORCEFIELD (${selectedProgress.destroyedCount}/50)"
                                 )
                             }
-                            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+                            Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = statusText,
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = tint,
                                 fontFamily = FontFamily.Monospace
@@ -401,13 +401,13 @@ fun CampaignScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // 3D Environment Theater Preview
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(140.dp)
+                            .height(110.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .border(1.dp, selected.primaryColor.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                     ) {
@@ -429,11 +429,11 @@ fun CampaignScreen(
                         Column(
                             modifier = Modifier
                                 .align(Alignment.BottomStart)
-                                .padding(10.dp)
+                                .padding(8.dp)
                         ) {
                             Text(
                                 text = "BATTLEFIELD: ${selected.environmentName.uppercase()}",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Black,
                                 color = Color.White,
                                 fontFamily = FontFamily.Monospace
@@ -441,7 +441,7 @@ fun CampaignScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "HAZARD: ${selected.hazardName.uppercase()}",
-                                fontSize = 10.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = AmberWarning,
                                 fontFamily = FontFamily.Monospace
@@ -449,24 +449,24 @@ fun CampaignScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
                         text = "INTELLIGENCE BRIEFING:",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF78909C),
                         fontFamily = FontFamily.Monospace
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = selected.description,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = Color(0xFFECEFF1),
-                        lineHeight = 18.sp
+                        lineHeight = 15.sp
                     )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
                     // Environmental Hazard Warning Card
                     Column(
@@ -474,44 +474,44 @@ fun CampaignScreen(
                             .fillMaxWidth()
                             .background(Color(0xFF151B24), RoundedCornerShape(8.dp))
                             .border(1.dp, ThreatRed.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                            .padding(10.dp)
+                            .padding(9.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.Dangerous,
                                 contentDescription = null,
                                 tint = ThreatRed,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "ENVIRONMENTAL HAZARD ADVISORY",
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Black,
                                 color = ThreatRed,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
-                        Spacer(modifier = Modifier.height(3.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "${selected.hazardName}: ${selected.hazardDescription}",
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             color = Color(0xFFCFD8DC),
-                            lineHeight = 15.sp
+                            lineHeight = 14.sp
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Hostile Units
                     Text(
                         text = "IDENTIFIED SQUADRONS & UNITS:",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF78909C),
                         fontFamily = FontFamily.Monospace
                     )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(5.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -520,11 +520,11 @@ fun CampaignScreen(
                             Box(
                                 modifier = Modifier
                                     .background(Color(0xFF162334), RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    .padding(horizontal = 7.dp, vertical = 3.dp)
                             ) {
                                 Text(
                                     text = unit,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -532,7 +532,7 @@ fun CampaignScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     // Boss Dossier
                     Column(
@@ -540,31 +540,31 @@ fun CampaignScreen(
                             .fillMaxWidth()
                             .background(Color(0xFF192330), RoundedCornerShape(8.dp))
                             .border(1.dp, Color(0xFF37474F), RoundedCornerShape(8.dp))
-                            .padding(12.dp)
+                            .padding(10.dp)
                     ) {
                         Text(
                             text = "FLAGSHIP / BOSS TARGET:",
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             fontWeight = FontWeight.Black,
                             color = AmberWarning,
                             fontFamily = FontFamily.Monospace
                         )
                         Text(
                             text = selected.bossName,
-                            fontSize = 14.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = "WEAPONS ARSENAL: ${selected.weapons}",
-                            fontSize = 10.sp,
+                            fontSize = 9.5.sp,
                             color = Color(0xFFB0BEC5),
                             fontFamily = FontFamily.Monospace
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // Sequential Lock Gate & Deploy Button (No Advance Stage Selection)
                     if (!isSelectedUnlocked) {
@@ -573,20 +573,20 @@ fun CampaignScreen(
                                 .fillMaxWidth()
                                 .background(Color(0xFF261215), RoundedCornerShape(8.dp))
                                 .border(1.dp, ThreatRed, RoundedCornerShape(8.dp))
-                                .padding(10.dp),
+                                .padding(9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Lock, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = ThreatRed, modifier = Modifier.size(14.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "STAGE $selectedStageNumber LOCKED: DEFEAT STAGE ${selectedStageNumber - 1} MAIN HQ FIRST (NO ADVANCE SKIP)",
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = ThreatRed,
                                 fontFamily = FontFamily.Monospace
                             )
                         }
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
 
                     Button(
@@ -599,7 +599,7 @@ fun CampaignScreen(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(50.dp)
+                            .height(48.dp)
                             .testTag("deploy_empire_button")
                     ) {
                         Icon(
@@ -607,14 +607,14 @@ fun CampaignScreen(
                             contentDescription = null,
                             tint = if (isSelectedUnlocked) Color.Black else Color(0xFF90A4AE)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = if (isSelectedUnlocked) {
                                 "DEPLOY STAGE $selectedStageNumber: ${selected.name}"
                             } else {
                                 "LOCKED — COMPLETE STAGE ${selectedStageNumber - 1}"
                             },
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Black,
                             color = if (isSelectedUnlocked) Color.Black else Color(0xFF90A4AE),
                             fontFamily = FontFamily.Monospace

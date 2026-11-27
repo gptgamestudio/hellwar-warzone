@@ -107,7 +107,7 @@ fun SettingsScreen(
                 title = {
                     Text(
                         text = "TACTICAL SETTINGS",
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = AmberWarning
@@ -139,13 +139,13 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 620.dp)
-                    .padding(16.dp)
+                    .padding(12.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     text = "COMBAT AUDIO & HAPTICS",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = CyberCyan,
                     fontFamily = FontFamily.Monospace
@@ -166,10 +166,10 @@ fun SettingsScreen(
                     onCheckedChange = { settingsManager.setHapticsEnabled(it) }
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "FLIGHT & CAMERA SYSTEMS",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = CyberCyan,
                     fontFamily = FontFamily.Monospace
@@ -190,10 +190,10 @@ fun SettingsScreen(
                     onCheckedChange = { settingsManager.setScreenShakeEnabled(it) }
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "CLOUD SESSION & SECURITY ISOLATION",
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     color = HealthGreen,
                     fontFamily = FontFamily.Monospace
@@ -204,31 +204,31 @@ fun SettingsScreen(
                         .fillMaxWidth()
                         .background(Color(0xFF0F1722), RoundedCornerShape(10.dp))
                         .border(1.dp, Color(0xFF263238), RoundedCornerShape(10.dp))
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     Text(
                         text = "BACKEND: CLOUD FIRESTORE (LIVE SYNC)",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         color = HealthGreen,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "SECURITY: ZERO-TRUST UID ISOLATION (OWNER-ONLY RULES)",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         color = CyberCyan,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = "ACCOUNT: ${pilotEmail.ifBlank { "Google Pilot" }}",
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         color = Color.White,
                         fontFamily = FontFamily.Monospace
                     )
                     Text(
                         text = "UID: $pilotUid",
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         color = Color(0xFF90A4AE),
                         fontFamily = FontFamily.Monospace
                     )
@@ -273,7 +273,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = copyLabel,
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace
                         )
@@ -322,7 +322,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = stringResource(R.string.settings_privacy_ad_consent),
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Monospace
                             )
@@ -348,7 +348,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "SIGN OUT OF ACCOUNT",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Black,
                             color = Color.White,
                             fontFamily = FontFamily.Monospace
@@ -373,19 +373,19 @@ private fun SettingToggleItem(
             .fillMaxWidth()
             .background(Color(0xFF0F1722), RoundedCornerShape(10.dp))
             .border(1.dp, Color(0xFF263238), RoundedCornerShape(10.dp))
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+        Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
             Text(
                 text = title,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 fontFamily = FontFamily.Monospace
             )
-            Text(text = subtitle, fontSize = 10.sp, color = Color(0xFF90A4AE))
+            Text(text = subtitle, fontSize = 9.5.sp, color = Color(0xFF90A4AE))
         }
         Switch(
             checked = checked,
