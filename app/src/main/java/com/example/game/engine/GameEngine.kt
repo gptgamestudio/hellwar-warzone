@@ -484,6 +484,7 @@ class GameEngine(
 
         camera.x = player.pos.x
         camera.y = player.pos.y - 12.5f
+        camera.z = 27.5f
         threatAlert = ThreatAlert(
             "RESUMED STAGE ${checkpoint.stageNumber}: ${barracksDestroyedCount}/50 BARRACKS DESTROYED",
             Color(0xFF00E676),
@@ -576,6 +577,7 @@ class GameEngine(
 
         camera.x = player.pos.x
         camera.y = player.pos.y - 12.5f
+        camera.z = 27.5f
         threatAlert = ThreatAlert(
             "RESUMED WAVE $currentWave // ${selectedEmpire.title} ($waveEnemiesDefeated/$waveTotalEnemies)",
             Color(0xFF00E676),
@@ -689,7 +691,15 @@ class GameEngine(
         if (!isScreenShakeEnabled) {
             camera.screenShake = 0f
         }
-        camera.updateFollow(player.pos.x, player.pos.y, safeDelta, player.velocity.x, player.velocity.y)
+        camera.updateFollow(
+            player.pos.x,
+            player.pos.y,
+            safeDelta,
+            player.velocity.x,
+            player.velocity.y,
+            player.pos.z,
+            player.velocity.z
+        )
 
         // 3. Rotor spin animations
         player.mainRotorAngle = (player.mainRotorAngle + 38.0f * safeDelta) % (kotlin.math.PI.toFloat() * 2f)
@@ -818,6 +828,16 @@ class GameEngine(
         } else {
             player.pos.y.coerceIn(minY, maxY)
         }
+
+        // Option 1: Smooth, bounded automatic dynamic flight altitude (predictable cruise envelope)
+        val hoverBob = if (inputLen <= 0.001f) sin(gameTime * 2.0f) * 0.12f else 0f
+        val targetZ = (9.5f + (if (dirY >= 0f) dirY * 2.6f else dirY * 1.4f) + kotlin.math.abs(dirX) * 0.35f + hoverBob)
+            .coerceIn(7.8f, 12.6f)
+        val zDiff = targetZ - player.pos.z
+        val desiredVelZ = (zDiff * 3.2f).coerceIn(-5.5f, 5.5f)
+        val velZSmooth = 1f - kotlin.math.exp(-7.0f * delta)
+        player.velocity.z += (desiredVelZ - player.velocity.z) * velZSmooth
+        player.pos.z = (player.pos.z + player.velocity.z * delta).coerceIn(7.5f, 13.0f)
 
         // Banking roll on strafe (left input banks left wing down -> positive rollAngle)
         val targetRoll = -dirX * maxBankAngleRad

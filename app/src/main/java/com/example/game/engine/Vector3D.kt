@@ -36,27 +36,33 @@ class Camera3D(
         targetY: Float,
         delta: Float,
         velX: Float = 0f,
-        velY: Float = 0f
+        velY: Float = 0f,
+        targetZ: Float = 9.5f,
+        velZ: Float = 0f
     ) {
-        // Smooth aerial camera tracking with subtle velocity look-ahead
+        val safeDelta = if (delta.isFinite()) delta.coerceIn(0.0001f, 0.16f) else 0.016f
+
+        // Smooth aerial camera tracking with horizontal, forward, and vertical velocity look-ahead
         val leadX = (velX * 0.14f).coerceIn(-4.5f, 4.5f)
         val leadY = (velY * 0.12f).coerceIn(-3.5f, 5.5f)
+        val leadZ = (velZ * 0.16f).coerceIn(-0.8f, 1.0f)
+        val speedZoomZ = (kotlin.math.abs(velY) * 0.03f).coerceIn(0f, 1.0f)
         val targetCamX = targetX + leadX
         val targetCamY = targetY - 12.5f + leadY
-        val targetCamZ = 27.5f
+        val targetCamZ = (targetZ + 18.0f + leadZ + speedZoomZ).coerceIn(24.0f, 34.0f)
 
-        val smoothX = 1f - kotlin.math.exp(-7.5f * delta)
-        val smoothY = 1f - kotlin.math.exp(-8.0f * delta)
-        val smoothZ = 1f - kotlin.math.exp(-4.0f * delta)
+        val smoothX = 1f - kotlin.math.exp(-7.5f * safeDelta)
+        val smoothY = 1f - kotlin.math.exp(-8.0f * safeDelta)
+        val smoothZ = 1f - kotlin.math.exp(-4.8f * safeDelta)
 
         x += (targetCamX - x) * smoothX
         y += (targetCamY - y) * smoothY
-        z += (targetCamZ - z) * smoothZ
+        z = (z + (targetCamZ - z) * smoothZ).coerceIn(22.0f, 36.0f)
 
         if (screenShake > 0.02f) {
             shakeOffsetX = (Math.random().toFloat() - 0.5f) * screenShake
             shakeOffsetY = (Math.random().toFloat() - 0.5f) * screenShake * 0.6f
-            screenShake -= screenShake * (1f - kotlin.math.exp(-7.5f * delta))
+            screenShake -= screenShake * (1f - kotlin.math.exp(-7.5f * safeDelta))
         } else {
             screenShake = 0f
             shakeOffsetX = 0f

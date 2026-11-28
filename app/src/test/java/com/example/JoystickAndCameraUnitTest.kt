@@ -80,4 +80,69 @@ class JoystickAndCameraUnitTest {
         assertTrue("Phone landscape horizon ratio out of bounds: $phoneHorizonRatio", phoneHorizonRatio in 0.34f..0.46f)
         assertTrue("720p landscape horizon ratio out of bounds: $hdHorizonRatio", hdHorizonRatio in 0.34f..0.46f)
     }
+
+    @Test
+    fun automaticDynamicFlightAltitudeRemainsBoundedAndSettlesSmoothly() {
+        val engine = GameEngine(selectedEmpire = EmpireType.DRAGON, gameMode = GameMode.CAMPAIGN)
+        assertEquals(9.5f, engine.player.pos.z, 0.01f)
+
+        // Sustained forward flight gently climbs within safe envelope without uncontrolled runaway
+        engine.setJoystickInput(0f, 1f)
+        repeat(180) {
+            engine.update(0.016f)
+            assertTrue("Altitude Z must stay within safe bounds", engine.player.pos.z in 7.5f..13.0f)
+        }
+        val forwardZ = engine.player.pos.z
+        assertTrue("Forward cruise should climb smoothly above resting 9.5f (was $forwardZ)", forwardZ > 11.0f && forwardZ <= 12.6f)
+
+        // Reverse flight gently dips below cruise altitude without clipping ground
+        engine.setJoystickInput(0f, -1f)
+        repeat(120) {
+            engine.update(0.016f)
+            assertTrue("Reverse dip must stay clear of ground", engine.player.pos.z >= 7.5f)
+        }
+        val reverseZ = engine.player.pos.z
+        assertTrue("Reverse flight should dip smoothly below resting 9.5f (was $reverseZ)", reverseZ < 9.0f && reverseZ >= 7.5f)
+
+        // Releasing joystick settles smoothly back near resting hover altitude (~9.5f)
+        engine.setJoystickInput(0f, 0f)
+        repeat(150) { engine.update(0.016f) }
+        assertTrue("Hover altitude should settle back near 9.5f (was ${engine.player.pos.z})", engine.player.pos.z in 9.2f..9.8f)
+    }
+
+    @Test
+    fun cameraFollowsPlayerAltitudeAndVelocitySmoothlyWithoutJitter() {
+        val camera = Camera3D(x = 0f, y = -12.5f, z = 27.5f)
+        val initialZ = camera.z
+
+        // Climb to 12.5f with upward velocity
+        repeat(45) {
+            camera.updateFollow(
+                targetX = 0f,
+                targetY = 10f,
+                delta = 0.016f,
+                velX = 0f,
+                velY = 18f,
+                targetZ = 12.5f,
+                velZ = 2.5f
+            )
+        }
+        assertTrue("Camera Z should rise smoothly to follow higher altitude", camera.z > initialZ + 1.5f)
+        assertTrue("Camera Z must remain clamped within safe ceiling", camera.z <= 34.5f)
+        assertTrue("Camera Z must remain finite", camera.z.isFinite())
+
+        // Return to resting altitude 9.5f
+        repeat(120) {
+            camera.updateFollow(
+                targetX = 0f,
+                targetY = 10f,
+                delta = 0.016f,
+                velX = 0f,
+                velY = 0f,
+                targetZ = 9.5f,
+                velZ = 0f
+            )
+        }
+        assertEquals(27.5f, camera.z, 0.1f)
+    }
 }

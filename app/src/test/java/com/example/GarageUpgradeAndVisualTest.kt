@@ -259,4 +259,55 @@ class GarageUpgradeAndVisualTest {
         }
         assertEquals(80, renderCount)
     }
+
+    @Test
+    fun renderer3D_smokeRendersAltitudeParallaxAndAllEnemyTypesAcrossEmpires() {
+        val renderer = Renderer3D()
+        val nativeBitmap = android.graphics.Bitmap.createBitmap(
+            640,
+            360,
+            android.graphics.Bitmap.Config.ARGB_8888
+        )
+        val imageBitmap = nativeBitmap.asImageBitmap()
+        val canvas = Canvas(imageBitmap)
+        val drawScope = CanvasDrawScope()
+        val density = Density(1f)
+
+        val altitudes = listOf(7.8f, 9.5f, 12.6f)
+        var frames = 0
+        for (empire in EmpireType.entries) {
+            val engine = GameEngine(selectedEmpire = empire)
+            engine.spawnEmpireBoss()
+            engine.enemies.clear()
+            com.example.game.engine.EnemyCategory.entries.forEachIndexed { idx, cat ->
+                val isGround = cat != com.example.game.engine.EnemyCategory.ATTACK_HELICOPTER &&
+                    cat != com.example.game.engine.EnemyCategory.FIGHTER_AIRCRAFT
+                engine.enemies.add(
+                    com.example.game.engine.EnemyTarget(
+                        id = "E_$idx",
+                        empire = empire,
+                        category = cat,
+                        pos = com.example.game.engine.Vector3D((idx - 3) * 6f, 22f + idx * 3f, if (isGround) 0.1f else 9.5f),
+                        velocity = com.example.game.engine.Vector3D(0f, 0f, 0f),
+                        health = 100f,
+                        maxHealth = 100f,
+                        scoreValue = 100,
+                        unitName = cat.label,
+                        isGroundUnit = isGround,
+                        isAlerted = true
+                    )
+                )
+            }
+            for ((altIdx, alt) in altitudes.withIndex()) {
+                engine.player.pos.z = alt
+                engine.camera.x = (altIdx - 1) * 75f
+                engine.camera.updateFollow(engine.player.pos.x, engine.player.pos.y, 0.1f, 0f, 0f, alt, 0f)
+                drawScope.draw(density, LayoutDirection.Ltr, canvas, Size(640f, 360f)) {
+                    renderer.render(this, engine, size.width, size.height)
+                }
+                frames++
+            }
+        }
+        assertEquals(12, frames)
+    }
 }
