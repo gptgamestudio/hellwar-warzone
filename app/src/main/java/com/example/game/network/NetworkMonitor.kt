@@ -8,6 +8,7 @@ import android.net.NetworkRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicLong
 
 sealed class OnlineStatus {
     object Authenticating : OnlineStatus()
@@ -48,40 +50,58 @@ class NetworkMonitor(
     val status: StateFlow<OnlineStatus> = _status.asStateFlow()
 
     private val scope = CoroutineScope(Dispatchers.IO + Job())
+    private val stateLock = Any()
     private var pingJob: Job? = null
     private var heartbeatJob: Job? = null
+    private val verificationGeneration = AtomicLong(0L)
+    @Volatile
+    private var isCleanedUp = false
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            if (_status.value !is OnlineStatus.Connected) {
+            val shouldVerify = synchronized(stateLock) {
+                !isCleanedUp && _status.value !is OnlineStatus.Connected
+            }
+            if (shouldVerify) {
                 triggerConnectionVerification()
             }
         }
 
         override fun onLost(network: Network) {
-            heartbeatJob?.cancel()
-            _status.value = OnlineStatus.OfflineError(
-                reason = "SATELLITE DATA LINK SEVERED: No active network interface detected.",
-                errorCode = "ERR_NET_LOST",
-                isHardwareDisconnected = true
-            )
-        }
-
-        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-            if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+            synchronized(stateLock) {
+                if (isCleanedUp) return
+                verificationGeneration.incrementAndGet()
+                pingJob?.cancel()
                 heartbeatJob?.cancel()
                 _status.value = OnlineStatus.OfflineError(
-                    reason = "SATELLITE DATA LINK SEVERED: Active network lost internet capability.",
+                    reason = "SATELLITE DATA LINK SEVERED: No active network interface detected.",
                     errorCode = "ERR_NET_LOST",
                     isHardwareDisconnected = true
                 )
-            } else if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
-                _status.value !is OnlineStatus.Connected
-            ) {
-                triggerConnectionVerification()
-            } else if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
-                _status.value is OnlineStatus.Connected
-            ) {
+            }
+        }
+
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            val shouldVerify = synchronized(stateLock) {
+                if (isCleanedUp) return
+                if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                    verificationGeneration.incrementAndGet()
+                    pingJob?.cancel()
+                    heartbeatJob?.cancel()
+                    _status.value = OnlineStatus.OfflineError(
+                        reason = "SATELLITE DATA LINK SEVERED: Active network lost internet capability.",
+                        errorCode = "ERR_NET_LOST",
+                        isHardwareDisconnected = true
+                    )
+                    false
+                } else {
+                    (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+                        _status.value !is OnlineStatus.Connected) ||
+                        (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+                            _status.value is OnlineStatus.Connected)
+                }
+            }
+            if (shouldVerify) {
                 triggerConnectionVerification()
             }
         }
@@ -108,22 +128,32 @@ class NetworkMonitor(
             capabilities!!.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 
         if (!hasInternet) {
-            heartbeatJob?.cancel()
-            _status.value = OnlineStatus.OfflineError(
-                reason = "NO INTERNET CONNECTION: Internet connection is mandatory for War Command.",
-                errorCode = "ERR_OFFLINE_FORBIDDEN",
-                isHardwareDisconnected = true
-            )
+            synchronized(stateLock) {
+                if (isCleanedUp) return
+                verificationGeneration.incrementAndGet()
+                pingJob?.cancel()
+                heartbeatJob?.cancel()
+                _status.value = OnlineStatus.OfflineError(
+                    reason = "NO INTERNET CONNECTION: Internet connection is mandatory for War Command.",
+                    errorCode = "ERR_OFFLINE_FORBIDDEN",
+                    isHardwareDisconnected = true
+                )
+            }
             return
         }
 
         if (isValidated) {
-            _status.value = OnlineStatus.Connected(
-                latencyMs = (_status.value as? OnlineStatus.Connected)?.latencyMs ?: 32L,
-                serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
-                networkType = resolveNetType(capabilities)
-            )
-            startHeartbeat()
+            synchronized(stateLock) {
+                if (isCleanedUp) return
+                val gen = verificationGeneration.incrementAndGet()
+                pingJob?.cancel()
+                _status.value = OnlineStatus.Connected(
+                    latencyMs = (_status.value as? OnlineStatus.Connected)?.latencyMs ?: 32L,
+                    serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
+                    networkType = resolveNetType(capabilities)
+                )
+                startHeartbeatLocked(gen)
+            }
         } else {
             triggerConnectionVerification()
         }
@@ -138,47 +168,60 @@ class NetworkMonitor(
     }
 
     fun triggerConnectionVerification() {
-        pingJob?.cancel()
-        heartbeatJob?.cancel()
-        pingJob = scope.launch {
+        val gen: Long
+        synchronized(stateLock) {
+            if (isCleanedUp) return
+            gen = verificationGeneration.incrementAndGet()
+            pingJob?.cancel()
+            heartbeatJob?.cancel()
             if (_status.value !is OnlineStatus.Connected) {
                 _status.value = OnlineStatus.Authenticating
             }
-            val activeNetwork = connectivityManager.activeNetwork
-            val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+            pingJob = scope.launch {
+                if (isCleanedUp || !isActive || verificationGeneration.get() != gen) return@launch
+                val activeNetwork = connectivityManager.activeNetwork
+                val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
 
-            if (activeNetwork == null || capabilities == null ||
-                !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            ) {
-                _status.value = OnlineStatus.OfflineError(
-                    reason = "NO INTERNET CONNECTION: Internet connection is mandatory for War Command.",
-                    errorCode = "ERR_OFFLINE_FORBIDDEN",
-                    isHardwareDisconnected = true
-                )
-                return@launch
-            }
+                if (activeNetwork == null || capabilities == null ||
+                    !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                ) {
+                    synchronized(stateLock) {
+                        if (!isCleanedUp && isActive && verificationGeneration.get() == gen) {
+                            _status.value = OnlineStatus.OfflineError(
+                                reason = "NO INTERNET CONNECTION: Internet connection is mandatory for War Command.",
+                                errorCode = "ERR_OFFLINE_FORBIDDEN",
+                                isHardwareDisconnected = true
+                            )
+                        }
+                    }
+                    return@launch
+                }
 
-            val netType = resolveNetType(capabilities)
-            val isValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            val pingResult = if (isValidated) runPingProbe() else null
+                val netType = resolveNetType(capabilities)
+                val isValidated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                val pingResult = if (isValidated) runPingProbe() else null
 
-            if (isValidated && pingResult != null) {
-                _status.value = OnlineStatus.Connected(
-                    latencyMs = pingResult,
-                    serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
-                    networkType = netType
-                )
-                startHeartbeat()
-            } else {
-                _status.value = OnlineStatus.OfflineError(
-                    reason = if (!isValidated) {
-                        "NETWORK NOT VALIDATED: Waiting for carrier/Wi-Fi captive-portal verification."
+                synchronized(stateLock) {
+                    if (isCleanedUp || !isActive || verificationGeneration.get() != gen) return@launch
+                    if (isValidated && pingResult != null) {
+                        _status.value = OnlineStatus.Connected(
+                            latencyMs = pingResult,
+                            serverRegion = "US-EAST (VIRGINIA) CLUSTER-04",
+                            networkType = netType
+                        )
+                        startHeartbeatLocked(gen)
                     } else {
-                        "WAR-NET AUTHENTICATION FAILED: Unable to reach live servers."
-                    },
-                    errorCode = "ERR_AUTH_TIMEOUT",
-                    isHardwareDisconnected = false
-                )
+                        _status.value = OnlineStatus.OfflineError(
+                            reason = if (!isValidated) {
+                                "NETWORK NOT VALIDATED: Waiting for carrier/Wi-Fi captive-portal verification."
+                            } else {
+                                "WAR-NET AUTHENTICATION FAILED: Unable to reach live servers."
+                            },
+                            errorCode = "ERR_AUTH_TIMEOUT",
+                            isHardwareDisconnected = false
+                        )
+                    }
+                }
             }
         }
     }
@@ -220,39 +263,51 @@ class NetworkMonitor(
         null
     }
 
-    private fun startHeartbeat() {
+    private fun startHeartbeatLocked(generation: Long) {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             var consecutiveFailures = 0
-            while (isActive) {
+            while (!isCleanedUp && isActive && verificationGeneration.get() == generation) {
                 delay(20000)
+                if (isCleanedUp || !isActive || verificationGeneration.get() != generation) break
                 val activeNetwork = connectivityManager.activeNetwork
                 val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
                 val hasInternet = activeNetwork != null && capabilities != null &&
                     capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 val ping = if (hasInternet) runPingProbe() else null
-                if (ping == null) {
-                    consecutiveFailures++
-                    if (!hasInternet || consecutiveFailures >= 2) {
-                        _status.value = OnlineStatus.OfflineError(
-                            reason = "HEARTBEAT DROPPED: Live server communication interrupted.",
-                            errorCode = "ERR_HEARTBEAT_LOST",
-                            isHardwareDisconnected = !hasInternet
-                        )
-                        break
+                var shouldStop = false
+                synchronized(stateLock) {
+                    if (isCleanedUp || !isActive || verificationGeneration.get() != generation) {
+                        shouldStop = true
+                    } else if (ping == null) {
+                        consecutiveFailures++
+                        if (!hasInternet || consecutiveFailures >= 2) {
+                            _status.value = OnlineStatus.OfflineError(
+                                reason = "HEARTBEAT DROPPED: Live server communication interrupted.",
+                                errorCode = "ERR_HEARTBEAT_LOST",
+                                isHardwareDisconnected = !hasInternet
+                            )
+                            shouldStop = true
+                        }
+                    } else {
+                        consecutiveFailures = 0
                     }
-                } else {
-                    consecutiveFailures = 0
                 }
+                if (shouldStop) break
             }
         }
     }
 
     fun cleanup() {
+        synchronized(stateLock) {
+            isCleanedUp = true
+            verificationGeneration.incrementAndGet()
+            pingJob?.cancel()
+            heartbeatJob?.cancel()
+        }
         try {
             connectivityManager.unregisterNetworkCallback(networkCallback)
         } catch (_: Exception) {}
-        pingJob?.cancel()
-        heartbeatJob?.cancel()
+        scope.cancel()
     }
 }

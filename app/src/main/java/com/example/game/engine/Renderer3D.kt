@@ -1071,11 +1071,17 @@ class Renderer3D {
         }
 
         engine.activeBoss?.let { boss ->
-            val bossAlt = boss.pos.z.coerceAtLeast(1f)
-            val bSpread = (1f + (bossAlt - 10.5f) * 0.025f).coerceIn(0.9f, 1.15f)
-            val bAlpha = (0.50f - (bossAlt - 10.5f) * 0.02f).coerceIn(0.32f, 0.54f)
+            val isGroundEndlessBoss = boss.endlessBossType == EndlessBossType.HEAVY_TANK_BOSS ||
+                boss.endlessBossType == EndlessBossType.ELITE_MECH_SOLDIER_BOSS
+            val bossAlt = if (isGroundEndlessBoss) 0.5f else boss.pos.z.coerceAtLeast(1f)
+            val bSpread = if (isGroundEndlessBoss) 1.05f else (1f + (bossAlt - 10.5f) * 0.025f).coerceIn(0.9f, 1.15f)
+            val bAlpha = if (isGroundEndlessBoss) 0.42f else (0.50f - (bossAlt - 10.5f) * 0.02f).coerceIn(0.32f, 0.54f)
             val bProj = camera.project(
-                Vector3D(boss.pos.x + 0.19f * bossAlt, boss.pos.y - 0.14f * bossAlt, 0.05f),
+                Vector3D(
+                    boss.pos.x + (if (isGroundEndlessBoss) 0.9f else 0.19f * bossAlt),
+                    boss.pos.y - (if (isGroundEndlessBoss) 0.7f else 0.14f * bossAlt),
+                    0.05f
+                ),
                 width,
                 height
             )
@@ -1678,6 +1684,29 @@ class Renderer3D {
         val cx = proj.screenPos.x
         val cy = proj.screenPos.y
 
+        val endlessType = boss.endlessBossType
+        if (endlessType != null) {
+            drawEndlessBigBoss3D(scope, camera, boss, endlessType, currentPos, s, cx, cy, width, height)
+            // Boss Evasive Boost & Hit Flash Visual Feedback
+            if (boss.isEvading) {
+                scope.drawOval(
+                    Color(0x6600E5FF),
+                    Offset(cx - 72f * (s / 20f), cy - 32f * (s / 20f)),
+                    Size(144f * (s / 20f), 64f * (s / 20f)),
+                    style = Stroke(3.5f)
+                )
+            }
+            if (boss.hitFlashTimer > 0f) {
+                scope.drawCircle(
+                    Color(0x77FFFFFF),
+                    58f * (s / 20f),
+                    Offset(cx, cy),
+                    style = Stroke(4f)
+                )
+            }
+            return
+        }
+
         when (boss.empire) {
             EmpireType.DRAGON -> {
                 // Ignis Rex: Giant Wyrm with flapping wings, magma breath & glowing heart core
@@ -1890,6 +1919,177 @@ class Renderer3D {
                 56f * (s / 20f),
                 Offset(cx, cy),
                 style = Stroke(4f)
+            )
+        }
+    }
+
+    private fun drawEndlessBigBoss3D(
+        scope: DrawScope,
+        camera: Camera3D,
+        boss: BossCombatEntity,
+        bossType: EndlessBossType,
+        currentPos: Vector3D,
+        s: Float,
+        cx: Float,
+        cy: Float,
+        width: Float,
+        height: Float
+    ) {
+        val unit = s / 20f
+        val tierAccent = if (boss.bossTier > 1) Color(0xFFFFD600) else bossType.accentColor
+
+        when (bossType) {
+            EndlessBossType.HEAVY_TANK_BOSS -> {
+                // Super-Heavy Siege Land Battleship with Quad Treads, Dual Rail Barrels & Reactor Hatch
+                val bw = 86f * unit
+                val bh = 104f * unit
+                val treadW = 18f * unit
+                val treadRadius = androidx.compose.ui.geometry.CornerRadius(5f)
+
+                scope.drawRoundRect(Color(0xFF1F1D1B), Offset(cx - bw * 0.62f, cy - bh * 0.5f), Size(treadW, bh), treadRadius)
+                scope.drawRoundRect(Color(0xFF1F1D1B), Offset(cx + bw * 0.62f - treadW, cy - bh * 0.5f), Size(treadW, bh), treadRadius)
+                scope.drawRoundRect(tierAccent, Offset(cx - bw * 0.62f, cy - bh * 0.5f), Size(treadW, bh), treadRadius, style = Stroke(2.2f))
+                scope.drawRoundRect(tierAccent, Offset(cx + bw * 0.62f - treadW, cy - bh * 0.5f), Size(treadW, bh), treadRadius, style = Stroke(2.2f))
+
+                // Main Armored Superstructure
+                scope.drawRoundRect(Color(0xFF3E4539), Offset(cx - bw * 0.5f, cy - bh * 0.44f), Size(bw, bh * 0.88f), androidx.compose.ui.geometry.CornerRadius(10f))
+                scope.drawRoundRect(tierAccent, Offset(cx - bw * 0.5f, cy - bh * 0.44f), Size(bw, bh * 0.88f), androidx.compose.ui.geometry.CornerRadius(10f), style = Stroke(3.5f))
+                // Armor plates & forward dozer wedge
+                scope.drawLine(Color(0x88E2E8F0), Offset(cx - bw * 0.42f, cy - bh * 0.34f), Offset(cx + bw * 0.42f, cy - bh * 0.34f), 3f, StrokeCap.Round)
+                // Twin Siege Cannon Barrels aiming down toward player
+                val barrelRecoil = sin(boss.animationPhase * 3.5f) * 4f * unit
+                scope.drawLine(Color(0xFF1B1E21), Offset(cx - 16f * unit, cy + 8f * unit), Offset(cx - 16f * unit, cy + 56f * unit + barrelRecoil), 8f * unit, StrokeCap.Round)
+                scope.drawLine(Color(0xFF1B1E21), Offset(cx + 16f * unit, cy + 8f * unit), Offset(cx + 16f * unit, cy + 56f * unit + barrelRecoil), 8f * unit, StrokeCap.Round)
+                scope.drawLine(tierAccent, Offset(cx - 16f * unit, cy + 16f * unit), Offset(cx - 16f * unit, cy + 52f * unit + barrelRecoil), 2.5f * unit, StrokeCap.Round)
+                scope.drawLine(tierAccent, Offset(cx + 16f * unit, cy + 16f * unit), Offset(cx + 16f * unit, cy + 52f * unit + barrelRecoil), 2.5f * unit, StrokeCap.Round)
+                // Central Rotating Turret Dome
+                scope.drawCircle(Color(0xFF282E26), 24f * unit, Offset(cx, cy))
+                scope.drawCircle(tierAccent, 24f * unit, Offset(cx, cy), style = Stroke(2.5f))
+            }
+
+            EndlessBossType.WAR_HELICOPTER_BOSS -> {
+                // Sky Reaper Gunship: Massive Twin-Rotor Attack Helicopter with Heavy Weapon Wings
+                val w = 78f * unit
+                val h = 102f * unit
+                val fuse = tmpPath.apply {
+                    reset()
+                    moveTo(cx, cy + h * 0.50f)
+                    lineTo(cx + w * 0.38f, cy + h * 0.16f)
+                    lineTo(cx + w * 0.28f, cy - h * 0.36f)
+                    lineTo(cx, cy - h * 0.54f)
+                    lineTo(cx - w * 0.28f, cy - h * 0.36f)
+                    lineTo(cx - w * 0.38f, cy + h * 0.16f)
+                    close()
+                }
+                scope.drawPath(fuse, Color(0xFF3D0C14), style = Fill)
+                scope.drawPath(fuse, tierAccent, style = Stroke(3.5f))
+                // Stub wings + missile racks
+                scope.drawLine(Color(0xFF27272A), Offset(cx - w * 0.68f, cy + 4f * unit), Offset(cx + w * 0.68f, cy + 4f * unit), 10f * unit, StrokeCap.Round)
+                scope.drawLine(tierAccent, Offset(cx - w * 0.68f, cy + 4f * unit), Offset(cx + w * 0.68f, cy + 4f * unit), 2.5f * unit, StrokeCap.Round)
+                // Red glowing canopy
+                scope.drawOval(Color(0xFFFF5252), Offset(cx - w * 0.16f, cy + h * 0.14f), Size(w * 0.32f, h * 0.22f))
+                scope.drawOval(Color(0xAAFFFFFF), Offset(cx - w * 0.10f, cy + h * 0.17f), Size(w * 0.12f, h * 0.08f))
+                // Coaxial Dual Contra-Rotating Rotors (6 blades)
+                val rR = 76f * unit
+                val a1 = boss.animationPhase * 11f
+                val a2 = -boss.animationPhase * 11f
+                for (b in 0..3) {
+                    val ang1 = a1 + b * (kotlin.math.PI.toFloat() / 2f)
+                    scope.drawLine(Color(0xFFF8FAFC), Offset(cx, cy), Offset(cx + cos(ang1) * rR, cy + sin(ang1) * rR * 0.55f), 3.2f)
+                    val ang2 = a2 + b * (kotlin.math.PI.toFloat() / 2f)
+                    scope.drawLine(Color(0xFF94A3B8), Offset(cx, cy - 6f * unit), Offset(cx + cos(ang2) * rR * 0.85f, cy - 6f * unit + sin(ang2) * rR * 0.48f), 2.6f)
+                }
+                scope.drawCircle(tierAccent, 7f * unit, Offset(cx, cy))
+            }
+
+            EndlessBossType.ELITE_MECH_SOLDIER_BOSS -> {
+                // Aegis Titan-X: Towering Bipedal Exo-Armor Juggernaut with Shoulder Railguns & Reactor Shield
+                val mw = 74f * unit
+                val mh = 92f * unit
+                val stride = sin(boss.animationPhase * 2.8f) * 8f * unit
+                // Ground exo-legs
+                scope.drawLine(Color(0xFF1E293B), Offset(cx - mw * 0.28f, cy + 6f * unit), Offset(cx - mw * 0.32f, cy + mh * 0.45f + stride), 14f * unit, StrokeCap.Round)
+                scope.drawLine(Color(0xFF1E293B), Offset(cx + mw * 0.28f, cy + 6f * unit), Offset(cx + mw * 0.32f, cy + mh * 0.45f - stride), 14f * unit, StrokeCap.Round)
+                // Armored torso & broad shoulder pauldrons
+                scope.drawRoundRect(Color(0xFF0F293A), Offset(cx - mw * 0.48f, cy - mh * 0.34f), Size(mw * 0.96f, mh * 0.52f), androidx.compose.ui.geometry.CornerRadius(10f))
+                scope.drawRoundRect(tierAccent, Offset(cx - mw * 0.48f, cy - mh * 0.34f), Size(mw * 0.96f, mh * 0.52f), androidx.compose.ui.geometry.CornerRadius(10f), style = Stroke(3.2f))
+                // Shoulder rail cannons
+                scope.drawRect(Color(0xFF1E293B), Offset(cx - mw * 0.62f, cy - mh * 0.36f), Size(16f * unit, 44f * unit))
+                scope.drawRect(Color(0xFF1E293B), Offset(cx + mw * 0.62f - 16f * unit, cy - mh * 0.36f), Size(16f * unit, 44f * unit))
+                scope.drawRect(tierAccent, Offset(cx - mw * 0.62f, cy - mh * 0.36f), Size(16f * unit, 44f * unit), style = Stroke(2f))
+                scope.drawRect(tierAccent, Offset(cx + mw * 0.62f - 16f * unit, cy - mh * 0.36f), Size(16f * unit, 44f * unit), style = Stroke(2f))
+                // Helmet visor
+                scope.drawCircle(Color(0xFF334155), 14f * unit, Offset(cx, cy - mh * 0.32f))
+                scope.drawLine(Color(0xFF00E5FF), Offset(cx - 8f * unit, cy - mh * 0.30f), Offset(cx + 8f * unit, cy - mh * 0.30f), 4f * unit, StrokeCap.Round)
+            }
+
+            EndlessBossType.HEAVY_AIRCRAFT_BOSS -> {
+                // Valkyrie Dreadnought: Massive Flying-Wing Heavy Bomber with Quad Fusion Thrusters
+                val span = 104f * unit
+                val len = 94f * unit
+                val wing = tmpPath.apply {
+                    reset()
+                    moveTo(cx, cy + len * 0.46f)
+                    lineTo(cx + span, cy - len * 0.10f)
+                    lineTo(cx + span * 0.65f, cy - len * 0.42f)
+                    lineTo(cx, cy - len * 0.24f)
+                    lineTo(cx - span * 0.65f, cy - len * 0.42f)
+                    lineTo(cx - span, cy - len * 0.10f)
+                    close()
+                }
+                scope.drawPath(wing, Color(0xFF28103D), style = Fill)
+                scope.drawPath(wing, tierAccent, style = Stroke(3.5f))
+                scope.drawLine(Color(0x99F3E8FF), Offset(cx, cy + len * 0.44f), Offset(cx - span * 0.85f, cy - len * 0.08f), 2.5f, StrokeCap.Round)
+                // Central cockpit & dorsal spine
+                scope.drawOval(Color(0xFFE040FB), Offset(cx - 12f * unit, cy + len * 0.12f), Size(24f * unit, 22f * unit))
+                // Quad engine plasma glow vents
+                for (ex in listOf(-0.48f, -0.24f, 0.24f, 0.48f)) {
+                    scope.drawCircle(Color(0xFF00E5FF), 7f * unit, Offset(cx + span * ex, cy - len * 0.34f))
+                    scope.drawCircle(Color.White, 3.2f * unit, Offset(cx + span * ex, cy - len * 0.34f))
+                }
+            }
+        }
+
+        // Subsystems
+        for (sub in boss.subsystems) {
+            val subProj = camera.project(currentPos + sub.offset, width, height)
+            if (subProj != null) {
+                val sx = subProj.screenPos.x
+                val sy = subProj.screenPos.y
+                val subR = 9f * unit
+                if (sub.isDestroyed) {
+                    scope.drawCircle(Color(0xFF212121), subR, Offset(sx, sy))
+                    scope.drawCircle(Color(0xFFFF1744), subR * 1.2f, Offset(sx, sy), style = Stroke(1.5f))
+                } else {
+                    scope.drawCircle(tierAccent, subR, Offset(sx, sy))
+                    scope.drawCircle(Color.White, subR * 1.3f, Offset(sx, sy), style = Stroke(2f))
+                }
+            }
+        }
+
+        // Weak Point Pulse
+        boss.weakPoint?.let { wp ->
+            if (wp.isExposed) {
+                val wpProj = camera.project(currentPos + wp.offset, width, height)
+                if (wpProj != null) {
+                    val wpx = wpProj.screenPos.x
+                    val wpy = wpProj.screenPos.y
+                    val wpR = wp.radius * unit * 2.2f
+                    val pulse = sin(boss.animationPhase * 6f) * 0.5f + 0.5f
+                    scope.drawCircle(Color(0xFFFFD600), wpR * (0.85f + pulse * 0.35f), Offset(wpx, wpy))
+                    scope.drawCircle(Color.White, wpR * 0.4f, Offset(wpx, wpy))
+                }
+            }
+        }
+
+        // Active Energy Shield Ring
+        if (boss.shield > 0f) {
+            val shieldAlpha = (boss.shield / boss.maxShield).coerceIn(0.2f, 0.65f)
+            scope.drawOval(
+                tierAccent.copy(alpha = shieldAlpha),
+                Offset(cx - 72f * unit, cy - 48f * unit),
+                Size(144f * unit, 96f * unit),
+                style = Stroke(2.8f)
             )
         }
     }

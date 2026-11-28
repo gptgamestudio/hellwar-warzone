@@ -18,11 +18,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
@@ -35,6 +38,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -61,11 +66,14 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.game.engine.BossCombatEntity
+import com.example.game.engine.BossEncounterState
 import com.example.game.engine.EndlessSyncStatus
 import com.example.game.engine.GameEngine
 import com.example.game.engine.GameHudState
@@ -78,6 +86,8 @@ import com.example.ui.theme.HealthGreen
 import com.example.ui.theme.MilitaryGold
 import com.example.ui.theme.ThreatRed
 import kotlinx.coroutines.delay
+import java.text.NumberFormat
+import java.util.Locale
 import kotlin.math.sqrt
 
 @Composable
@@ -95,7 +105,9 @@ fun HudOverlay(
     onWatchAdContinue: ((onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit)? = null,
     nextStageEmpire: EmpireType? = null,
     onAutoDeployNextStage: ((EmpireType) -> Unit)? = null,
-    hapticsEnabled: Boolean = true
+    hapticsEnabled: Boolean = true,
+    soundAndMusicEnabled: Boolean = true,
+    onToggleSoundAndMusic: ((Boolean) -> Unit)? = null
 ) {
     var showPauseDialog by remember { mutableStateOf(false) }
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -112,16 +124,43 @@ fun HudOverlay(
         val joystickSize = if (compactVertical) 86.dp else 96.dp
         val missileButtonSize = if (compactVertical) 58.dp else 64.dp
 
-        // UPPER-LEFT COMPACT HUD: Compact Hearts + Health Counter (positioned slightly downward)
-        CompactHealthHud(
-            hearts = hudState.hearts,
-            maxHearts = hudState.maxHearts,
-            hitsRemainingInHeart = hudState.hitsRemainingInHeart,
-            hitsPerHeart = hudState.hitsPerHeart,
-            compactVertical = compactVertical,
+        // UPPER-LEFT COMPACT HUD: Compact Hearts + Health Counter + Endless 1,000,000 Challenge Counters
+        Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(start = 16.dp, top = if (compactVertical) 18.dp else 22.dp)
+                .padding(start = 16.dp, top = if (compactVertical) 16.dp else 20.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            CompactHealthHud(
+                hearts = hudState.hearts,
+                maxHearts = hudState.maxHearts,
+                hitsRemainingInHeart = hudState.hitsRemainingInHeart,
+                hitsPerHeart = hudState.hitsPerHeart,
+                compactVertical = compactVertical
+            )
+
+            if (hudState.gameMode == GameMode.ENDLESS_SURVIVAL) {
+                EndlessChallengeHud(
+                    activeEmpire = hudState.activeEmpire,
+                    totalRegularKills = hudState.endlessTotalRegularKills,
+                    challengeTarget = hudState.endlessChallengeTarget,
+                    aggregateKills = hudState.endlessAggregateKills,
+                    aggregateTarget = hudState.endlessAggregateTarget,
+                    cycleKills = hudState.endlessCycleKills,
+                    cycleTarget = hudState.endlessCycleTarget,
+                    bossesDefeated = hudState.endlessBossesDefeated,
+                    compactVertical = compactVertical
+                )
+            }
+        }
+
+        // TOP-CENTER: Big Boss Introduction / Boss Health Bar / Boss Defeated Banner
+        TopCenterBossHud(
+            hudState = hudState,
+            compactVertical = compactVertical,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = if (compactVertical) 10.dp else 12.dp, start = 168.dp, end = 72.dp)
         )
 
         // UPPER-RIGHT: Pause Button Only (aligned with lower-right LOCKED button)
@@ -181,6 +220,8 @@ fun HudOverlay(
             TacticalPauseDialog(
                 gameMode = hudState.gameMode,
                 currentWave = hudState.currentWave,
+                soundAndMusicEnabled = soundAndMusicEnabled,
+                onToggleSoundAndMusic = onToggleSoundAndMusic,
                 onResume = {
                     showPauseDialog = false
                     onPauseStateChange(false)
@@ -211,6 +252,11 @@ fun HudOverlay(
                 wavesCompleted = hudState.wavesCompleted,
                 endlessBestWave = hudState.endlessBestWave,
                 endlessBestScore = hudState.endlessBestScore,
+                endlessTotalRegularKills = hudState.endlessTotalRegularKills,
+                endlessChallengeTarget = hudState.endlessChallengeTarget,
+                endlessAggregateKills = hudState.endlessAggregateKills,
+                endlessAggregateTarget = hudState.endlessAggregateTarget,
+                endlessBossesDefeated = hudState.endlessBossesDefeated,
                 endlessSyncStatus = hudState.endlessSyncStatus,
                 adContinueQuota = adContinueQuota,
                 onWatchAdContinue = onWatchAdContinue,
@@ -278,6 +324,244 @@ private fun CompactHealthHud(
             ),
             modifier = Modifier.testTag("hud_health_counter")
         )
+    }
+}
+
+@Composable
+private fun EndlessChallengeHud(
+    activeEmpire: EmpireType,
+    totalRegularKills: Int,
+    challengeTarget: Int,
+    aggregateKills: Int,
+    aggregateTarget: Int,
+    cycleKills: Int,
+    cycleTarget: Int,
+    bossesDefeated: Int,
+    compactVertical: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val formatter = remember { NumberFormat.getIntegerInstance(Locale.US) }
+    val formattedKills = remember(totalRegularKills) { formatter.format(totalRegularKills) }
+    val formattedTarget = remember(challengeTarget) { formatter.format(challengeTarget) }
+    val formattedAggKills = remember(aggregateKills) { formatter.format(aggregateKills) }
+    val formattedAggTarget = remember(aggregateTarget) { formatter.format(aggregateTarget) }
+    val isEmpireConquered = totalRegularKills >= challengeTarget
+    val isAggregateComplete = aggregateKills >= aggregateTarget
+    val cyclePct = (cycleKills.toFloat() / cycleTarget.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+
+    Column(
+        modifier = modifier
+            .widthIn(max = 150.dp)
+            .background(Color(0x990A131E), RoundedCornerShape(8.dp))
+            .border(
+                width = 1.dp,
+                color = if (isEmpireConquered) MilitaryGold.copy(alpha = 0.85f) else activeEmpire.primaryColor.copy(alpha = 0.65f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(horizontal = 6.dp, vertical = if (compactVertical) 3.dp else 4.dp)
+            .testTag("endless_challenge_hud"),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = "${activeEmpire.name}: $formattedKills / $formattedTarget",
+            color = if (isEmpireConquered) MilitaryGold else Color.White,
+            fontSize = if (compactVertical) 8.sp else 8.5.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag("endless_total_kills_text")
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            Text(
+                text = "Next Boss: $cycleKills / $cycleTarget",
+                color = if (cycleKills >= cycleTarget) ThreatRed else AmberWarning,
+                fontSize = if (compactVertical) 8.sp else 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.testTag("endless_next_boss_text")
+            )
+            if (bossesDefeated > 0) {
+                Text(
+                    text = "B:$bossesDefeated",
+                    color = CyberCyan,
+                    fontSize = if (compactVertical) 7.5.sp else 8.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    modifier = Modifier.testTag("endless_bosses_defeated_text")
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .width(if (compactVertical) 114.dp else 128.dp)
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(Color(0x55FFFFFF))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(cyclePct)
+                    .height(3.dp)
+                    .background(
+                        if (cycleKills >= cycleTarget) ThreatRed else AmberWarning
+                    )
+            )
+        }
+        Text(
+            text = "4-Empire: $formattedAggKills / $formattedAggTarget",
+            color = if (isAggregateComplete) MilitaryGold else CyberCyan,
+            fontSize = if (compactVertical) 7.5.sp else 8.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = FontFamily.Monospace,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag("endless_aggregate_kills_text")
+        )
+    }
+}
+
+@Composable
+private fun TopCenterBossHud(
+    hudState: GameHudState,
+    compactVertical: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val announcementTitle = hudState.bossAnnouncementTitle
+    val boss = hudState.bossEntity
+
+    if (announcementTitle != null) {
+        val tag = when (hudState.bossEncounterState) {
+            BossEncounterState.BOSS_INTRO -> "boss_intro_banner"
+            BossEncounterState.BOSS_DEFEATED -> "boss_defeated_banner"
+            BossEncounterState.NEXT_WAVE -> "boss_next_wave_banner"
+            else -> "boss_announcement_banner"
+        }
+        val accent = when (hudState.bossEncounterState) {
+            BossEncounterState.BOSS_INTRO -> hudState.activeEndlessBossType?.accentColor ?: hudState.activeEmpire.primaryColor
+            BossEncounterState.BOSS_DEFEATED -> HealthGreen
+            else -> CyberCyan
+        }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = modifier
+                .widthIn(max = 260.dp)
+                .background(Color(0xD90A121C), RoundedCornerShape(10.dp))
+                .border(1.5.dp, accent, RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = if (compactVertical) 5.dp else 7.dp)
+                .testTag(tag)
+        ) {
+            Text(
+                text = announcementTitle,
+                color = accent,
+                fontSize = if (compactVertical) 10.5.sp else 12.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            hudState.bossAnnouncementSubtitle?.let { subtitle ->
+                Text(
+                    text = subtitle,
+                    color = Color.White,
+                    fontSize = if (compactVertical) 8.5.sp else 9.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    } else if (boss != null) {
+        val accent = boss.endlessBossType?.accentColor ?: boss.empire.primaryColor
+        val hpPct = (boss.health / boss.maxHealth.coerceAtLeast(1f)).coerceIn(0f, 1f)
+        val shieldPct = if (boss.maxShield > 0f) (boss.shield / boss.maxShield).coerceIn(0f, 1f) else 0f
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = modifier
+                .widthIn(min = 170.dp, max = 270.dp)
+                .background(Color(0xD90B121D), RoundedCornerShape(10.dp))
+                .border(1.3.dp, accent, RoundedCornerShape(10.dp))
+                .padding(horizontal = 10.dp, vertical = if (compactVertical) 4.dp else 6.dp)
+                .testTag("boss_health_panel")
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = boss.name,
+                    color = Color.White,
+                    fontSize = if (compactVertical) 9.sp else 10.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("boss_name_text")
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "P${boss.phase} • ${(hpPct * 100).toInt()}%",
+                    color = accent,
+                    fontSize = if (compactVertical) 8.5.sp else 9.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1
+                )
+            }
+            Spacer(modifier = Modifier.height(3.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (compactVertical) 7.dp else 8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF1F2937))
+                    .border(0.8.dp, Color(0x66FFFFFF), RoundedCornerShape(4.dp))
+                    .testTag("boss_health_bar")
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(hpPct)
+                        .height(if (compactVertical) 7.dp else 8.dp)
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(ThreatRed, accent)
+                            )
+                        )
+                )
+            }
+            if (shieldPct > 0f) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color(0x3300E5FF))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(shieldPct)
+                            .height(2.5.dp)
+                            .background(CyberCyan)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -507,6 +791,8 @@ private fun DedicatedMissileButton(
 private fun TacticalPauseDialog(
     gameMode: GameMode = GameMode.CAMPAIGN,
     currentWave: Int = 1,
+    soundAndMusicEnabled: Boolean = true,
+    onToggleSoundAndMusic: ((Boolean) -> Unit)? = null,
     onResume: () -> Unit,
     onRestart: () -> Unit,
     onQuit: () -> Unit
@@ -538,6 +824,48 @@ private fun TacticalPauseDialog(
                     color = Color(0xFF90A4AE),
                     fontFamily = FontFamily.Monospace
                 )
+                if (onToggleSoundAndMusic != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF162130), RoundedCornerShape(10.dp))
+                            .border(1.dp, Color(0xFF284056), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (soundAndMusicEnabled) {
+                                    Icons.AutoMirrored.Filled.VolumeUp
+                                } else {
+                                    Icons.AutoMirrored.Filled.VolumeOff
+                                },
+                                contentDescription = null,
+                                tint = if (soundAndMusicEnabled) CyberCyan else Color(0xFF78909C),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "SOUND & MUSIC",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Switch(
+                            checked = soundAndMusicEnabled,
+                            onCheckedChange = onToggleSoundAndMusic,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = AmberWarning,
+                                checkedTrackColor = AmberWarning.copy(alpha = 0.4f)
+                            ),
+                            modifier = Modifier.testTag("pause_global_audio_toggle")
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Button(onClick = onResume, modifier = Modifier.fillMaxWidth().height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)) {
@@ -582,6 +910,11 @@ private fun DefeatContinueDialog(
     wavesCompleted: Int = 0,
     endlessBestWave: Int = 0,
     endlessBestScore: Int = 0,
+    endlessTotalRegularKills: Int = 0,
+    endlessChallengeTarget: Int = GameEngine.EMPIRE_ENDLESS_CHALLENGE_TARGET,
+    endlessAggregateKills: Int = 0,
+    endlessAggregateTarget: Int = GameEngine.ENDLESS_CHALLENGE_TARGET,
+    endlessBossesDefeated: Int = 0,
     endlessSyncStatus: EndlessSyncStatus = EndlessSyncStatus.IDLE,
     adContinueQuota: AdContinueQuota,
     onWatchAdContinue: ((onContinued: () -> Unit, onStatus: (String) -> Unit) -> Unit)?,
@@ -624,10 +957,25 @@ private fun DefeatContinueDialog(
                 )
 
                 if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                    val nf = remember { NumberFormat.getIntegerInstance(Locale.US) }
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
-                        text = "BEST WAVE: $endlessBestWave • BEST SCORE: $endlessBestScore",
+                        text = "BEST WAVE: $endlessBestWave • BEST SCORE: $endlessBestScore • BOSSES: $endlessBossesDefeated",
                         fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = CyberCyan,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = "${empire.name} KILLS: ${nf.format(endlessTotalRegularKills)} / ${nf.format(endlessChallengeTarget)}",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MilitaryGold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Text(
+                        text = "4-EMPIRE TOTAL: ${nf.format(endlessAggregateKills)} / ${nf.format(endlessAggregateTarget)}",
+                        fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = CyberCyan,
                         fontFamily = FontFamily.Monospace

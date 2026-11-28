@@ -32,6 +32,16 @@ data class EndlessWaveCompletionEvent(
     val survivalScore: Int
 )
 
+data class EndlessBossDefeatedEvent(
+    val bossNumber: Int,
+    val empire: EmpireType = EmpireType.DRAGON,
+    val bossType: EndlessBossType? = null,
+    val bossName: String,
+    val totalRegularKills: Int,
+    val scoreAwarded: Int,
+    val survivalScore: Int
+)
+
 data class GameHudState(
     val health: Float = 100f,
     val maxHealth: Float = 100f,
@@ -96,7 +106,21 @@ data class GameHudState(
     val waveEnemiesTotal: Int = 0,
     val endlessBestWave: Int = 0,
     val endlessBestScore: Int = 0,
-    val endlessSyncStatus: EndlessSyncStatus = EndlessSyncStatus.IDLE
+    val endlessSyncStatus: EndlessSyncStatus = EndlessSyncStatus.IDLE,
+
+    // Endless 4-Empire x 250,000 Enemy Challenge & 100-Kill Big Boss Cycle State
+    val endlessTotalRegularKills: Int = 0,
+    val endlessChallengeTarget: Int = GameEngine.EMPIRE_ENDLESS_CHALLENGE_TARGET,
+    val endlessAggregateKills: Int = 0,
+    val endlessAggregateTarget: Int = GameEngine.ENDLESS_CHALLENGE_TARGET,
+    val endlessCycleKills: Int = 0,
+    val endlessCycleTarget: Int = GameEngine.ENDLESS_BOSS_CYCLE_KILLS,
+    val endlessBossesDefeated: Int = 0,
+    val endlessBossRotationIndex: Int = 0,
+    val bossEncounterState: BossEncounterState = BossEncounterState.NORMAL_WAVE,
+    val activeEndlessBossType: EndlessBossType? = null,
+    val bossAnnouncementTitle: String? = null,
+    val bossAnnouncementSubtitle: String? = null
 )
 
 class GameEngine(
@@ -109,7 +133,14 @@ class GameEngine(
     initialScreenShakeEnabled: Boolean = true,
     private val initialAutoFire: Boolean = true,
     val gameMode: GameMode = GameMode.CAMPAIGN,
-    private val onEndlessWaveCompleted: ((EndlessWaveCompletionEvent) -> Unit)? = null
+    private val onEndlessWaveCompleted: ((EndlessWaveCompletionEvent) -> Unit)? = null,
+    private val onEndlessBossDefeated: ((EndlessBossDefeatedEvent) -> Unit)? = null,
+    initialEndlessMaxActiveEnemies: Int = 10,
+    initialEndlessSpawnIntervalSec: Float = 0.65f,
+    private val initialEndlessRegularKills: Int = 0,
+    private val initialEndlessCycleKills: Int = 0,
+    private val initialEndlessBossesDefeated: Int = 0,
+    private val otherEmpiresCappedKills: Int = 0
 ) {
     val player = PlayerHelo()
     val camera = Camera3D()
@@ -214,10 +245,48 @@ class GameEngine(
     var endlessSyncStatus: EndlessSyncStatus = EndlessSyncStatus.IDLE
         private set
 
-    /** Difficulty escalates continuously across barracks (Campaign) or waves (Endless). */
+    // Endless 1,000,000 Enemy Challenge & 100-Kill Rotating Big Boss State
+    var endlessTotalRegularKills: Int = 0
+        private set
+    var endlessCycleKills: Int = 0
+        private set
+    var endlessBossesDefeated: Int = 0
+        private set
+    var endlessBossRotationIndex: Int = 0
+        private set
+    var bossEncounterState: BossEncounterState = BossEncounterState.NORMAL_WAVE
+        private set
+    var activeEndlessBossType: EndlessBossType? = null
+        private set
+    var endlessMaxActiveEnemies: Int = initialEndlessMaxActiveEnemies.coerceIn(1, MAX_ACTIVE_ENEMIES)
+        set(value) {
+            field = value.coerceIn(1, MAX_ACTIVE_ENEMIES)
+        }
+    var endlessSpawnIntervalSec: Float = initialEndlessSpawnIntervalSec.coerceIn(0.2f, 5.0f)
+        set(value) {
+            field = value.coerceIn(0.2f, 5.0f)
+        }
+    private var bossStateTimer: Float = 0f
+    private var endlessBossRewardClaimed: Boolean = false
+    private var empireMilestone250kAnnounced: Boolean = false
+    private var millionMilestoneAnnounced: Boolean = false
+    private var bossAnnouncementTitle: String? = null
+    private var bossAnnouncementSubtitle: String? = null
+
+    // Object Pools for long-running Endless sessions (prevents GC spikes & unbounded allocations)
+    private val enemyPool = ArrayDeque<EnemyTarget>(32)
+    private val bulletPool = ArrayDeque<TracerBullet>(MAX_BULLETS)
+    private val particlePool = ArrayDeque<VisualParticle>(MAX_PARTICLES)
+    private val endlessCategoryDeck = ArrayDeque<EnemyCategory>(EnemyCategory.entries.size)
+
+    val enemyPoolSize: Int get() = enemyPool.size
+    val bulletPoolSize: Int get() = bulletPool.size
+    val particlePoolSize: Int get() = particlePool.size
+
+    /** Difficulty escalates continuously across barracks (Campaign) or waves/boss cycles (Endless). */
     val difficultyFactor: Float
         get() = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-            ((currentWave - 1) / 15f).coerceIn(0f, 1f)
+            (((currentWave - 1) + endlessBossesDefeated * 2) / 18f).coerceIn(0f, 1f)
         } else {
             (barracksDestroyedCount / 50f).coerceIn(0f, 1f)
         }
@@ -245,23 +314,40 @@ class GameEngine(
         const val MAX_MISSILES = 20
         const val MAX_PARTICLES = 180
         const val MAX_ACTIVE_ENEMIES = 18
+        const val MAX_ENEMY_POOL = 32
         const val MAX_HAZARDS = 16
         const val MAX_STRUCTURES = 140
         const val HQ_DANGER_ZONE_RADIUS = 110f
         private const val HUD_SYNC_INTERVAL = 0.04f
 
-        val ENDLESS_THEATER_CYCLE: List<EmpireType> = listOf(
-            EmpireType.DRAGON,
-            EmpireType.ALIEN,
-            EmpireType.ORC,
-            EmpireType.HUMAN
-        )
-        const val ENDLESS_WAVES_PER_THEATER = 5
+        const val EMPIRE_ENDLESS_CHALLENGE_TARGET = 250_000
+        const val ENDLESS_CHALLENGE_TARGET = 1_000_000
+        const val ENDLESS_BOSS_CYCLE_KILLS = 100
+        private const val BOSS_INTRO_DURATION_SEC = 1.5f
+        private const val BOSS_DEFEATED_BANNER_SEC = 1.8f
+        private const val NEXT_WAVE_BANNER_SEC = 0.8f
 
-        fun endlessEmpireForWave(wave: Int): EmpireType {
-            val safeWave = wave.coerceAtLeast(1)
-            val idx = ((safeWave - 1) / ENDLESS_WAVES_PER_THEATER) % ENDLESS_THEATER_CYCLE.size
-            return ENDLESS_THEATER_CYCLE[idx]
+        val ENDLESS_BOSS_ROTATION: List<EndlessBossType> = listOf(
+            EndlessBossType.HEAVY_TANK_BOSS,
+            EndlessBossType.WAR_HELICOPTER_BOSS,
+            EndlessBossType.ELITE_MECH_SOLDIER_BOSS,
+            EndlessBossType.HEAVY_AIRCRAFT_BOSS
+        )
+
+        fun endlessThemedBossName(empire: EmpireType): String = when (empire) {
+            EmpireType.DRAGON -> "Ignis Rex — The World Burner"
+            EmpireType.ALIEN -> "Overseer Prime — Mothership Dreadnought"
+            EmpireType.ORC -> "Warlord Gashrak's Sky Fortress"
+            EmpireType.HUMAN -> "Project Titan — Strategic Fortress Carrier"
+        }
+
+        fun endlessBossTypeForRotation(rotationIndex: Int): EndlessBossType {
+            val safeIdx = ((rotationIndex % ENDLESS_BOSS_ROTATION.size) + ENDLESS_BOSS_ROTATION.size) % ENDLESS_BOSS_ROTATION.size
+            return ENDLESS_BOSS_ROTATION[safeIdx]
+        }
+
+        fun endlessBossScoreReward(bossesDefeatedBeforeThis: Int): Int {
+            return 25_000 + bossesDefeatedBeforeThis.coerceAtLeast(0) * 5_000
         }
 
         fun endlessEnemyCountForWave(wave: Int): Int {
@@ -291,9 +377,68 @@ class GameEngine(
         }
     }
 
+    private fun obtainBullet(
+        pos: Vector3D,
+        velocity: Vector3D,
+        damage: Float,
+        isPlayer: Boolean,
+        life: Float = 1.6f,
+        isTankShell: Boolean = false,
+        isFlakBurst: Boolean = false,
+        isPlayerPlasma: Boolean = false
+    ): TracerBullet {
+        val recycled = bulletPool.removeFirstOrNull()
+        return if (recycled != null) {
+            recycled.reset(
+                px = pos.x,
+                py = pos.y,
+                pz = pos.z,
+                vx = velocity.x,
+                vy = velocity.y,
+                vz = velocity.z,
+                damage = damage,
+                isPlayer = isPlayer,
+                life = life,
+                isTankShell = isTankShell,
+                isFlakBurst = isFlakBurst,
+                isPlayerPlasma = isPlayerPlasma
+            )
+            recycled
+        } else {
+            TracerBullet(
+                pos = pos,
+                velocity = velocity,
+                damage = damage,
+                isPlayer = isPlayer,
+                life = life,
+                isTankShell = isTankShell,
+                isFlakBurst = isFlakBurst,
+                isPlayerPlasma = isPlayerPlasma
+            )
+        }
+    }
+
+    private fun recycleBullet(bullet: TracerBullet) {
+        if (bulletPool.size < MAX_BULLETS) {
+            bulletPool.addLast(bullet)
+        }
+    }
+
+    private fun recycleParticle(particle: VisualParticle) {
+        if (particlePool.size < MAX_PARTICLES) {
+            particlePool.addLast(particle)
+        }
+    }
+
+    private fun recycleEnemy(enemy: EnemyTarget) {
+        if (enemyPool.size < MAX_ENEMY_POOL) {
+            enemyPool.addLast(enemy)
+        }
+    }
+
     private fun addBullet(bullet: TracerBullet) {
         if (bullets.size >= MAX_BULLETS) {
-            bullets.removeAt(0)
+            recycleBullet(bullets.removeAt(0))
         }
         bullets.add(bullet)
     }
@@ -317,7 +462,7 @@ class GameEngine(
         resetBattle()
     }
 
-    fun resetBattle() {
+    fun resetBattle(preserveEndlessCumulative: Boolean = false) {
         player.applyConfiguration(player.heloClass, player.skin, player.upgrades)
         player.pos = Vector3D(0f, 0f, 9.5f)
         player.velocity = Vector3D(0f, 0f, 0f)
@@ -338,10 +483,13 @@ class GameEngine(
 
         clearMovementInputs()
 
+        for (b in bullets) recycleBullet(b)
         bullets.clear()
         rockets.clear()
         missiles.clear()
+        for (e in enemies) recycleEnemy(e)
         enemies.clear()
+        for (p in particles) recycleParticle(p)
         particles.clear()
         hazards.clear()
         structures.clear()
@@ -369,7 +517,6 @@ class GameEngine(
         isVictory = false
 
         if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-            selectedEmpire = endlessEmpireForWave(1)
             currentWave = 1
             wavesCompleted = 0
             waveTotalEnemies = endlessEnemyCountForWave(1)
@@ -379,15 +526,45 @@ class GameEngine(
             enemySpawnTimer = 0.4f
             completedWaveNumbers.clear()
             creditedWaveNumbers.clear()
+            endlessCategoryDeck.clear()
+            endlessTotalRegularKills = if (preserveEndlessCumulative) {
+                maxOf(initialEndlessRegularKills, endlessTotalRegularKills).coerceAtLeast(0)
+            } else {
+                initialEndlessRegularKills.coerceAtLeast(0)
+            }
+            kills = endlessTotalRegularKills
+            endlessCycleKills = if (preserveEndlessCumulative) {
+                endlessCycleKills.coerceIn(0, ENDLESS_BOSS_CYCLE_KILLS)
+            } else {
+                initialEndlessCycleKills.coerceIn(0, ENDLESS_BOSS_CYCLE_KILLS)
+            }
+            endlessBossesDefeated = if (preserveEndlessCumulative) {
+                maxOf(initialEndlessBossesDefeated, endlessBossesDefeated).coerceAtLeast(0)
+            } else {
+                initialEndlessBossesDefeated.coerceAtLeast(0)
+            }
+            endlessBossRotationIndex = selectedEmpire.ordinal
+            bossEncounterState = BossEncounterState.NORMAL_WAVE
+            activeEndlessBossType = null
+            bossStateTimer = 0f
+            endlessBossRewardClaimed = false
+            empireMilestone250kAnnounced = endlessTotalRegularKills >= EMPIRE_ENDLESS_CHALLENGE_TARGET
+            millionMilestoneAnnounced = currentAggregateChallengeKills() >= ENDLESS_CHALLENGE_TARGET
+            bossAnnouncementTitle = null
+            bossAnnouncementSubtitle = null
             allBarracks.clear()
             enemyHeadquarters = null
             barracksDestroyedCount = 0
             threatAlert = ThreatAlert(
-                "ENDLESS SURVIVAL — WAVE 1 // ${selectedEmpire.title}",
+                "ENDLESS WAR — ${selectedEmpire.title} (250,000 KILL CHALLENGE)",
                 selectedEmpire.primaryColor,
                 4.0f
             )
         } else {
+            bossEncounterState = BossEncounterState.NORMAL_WAVE
+            activeEndlessBossType = null
+            bossAnnouncementTitle = null
+            bossAnnouncementSubtitle = null
             threatAlert = ThreatAlert(
                 "STAGE ${getStageNumber(selectedEmpire)}: DESTROY 50 BARRACKS TO UNLOCK HQ",
                 selectedEmpire.primaryColor,
@@ -514,7 +691,16 @@ class GameEngine(
             overdriveCharge = player.overdriveCharge,
             endlessSessionId = sessionId,
             settledWaves = settledWaves,
-            pendingClaimWaves = pendingClaimWaves
+            pendingClaimWaves = pendingClaimWaves,
+            totalRegularKills = endlessTotalRegularKills,
+            cycleKills = endlessCycleKills,
+            bossesDefeated = endlessBossesDefeated,
+            bossRotationIndex = endlessBossRotationIndex,
+            bossEncounterState = bossEncounterState.name,
+            activeBossHealth = activeBoss?.health ?: 0f,
+            activeBossMaxHealth = activeBoss?.maxHealth ?: 0f,
+            activeBossHitsRemaining = activeBoss?.bossHitsRemaining ?: 0,
+            bossRewardClaimed = endlessBossRewardClaimed
         )
     }
 
@@ -522,7 +708,7 @@ class GameEngine(
         if (gameMode != GameMode.ENDLESS_SURVIVAL) return
         currentWave = checkpoint.currentWave.coerceAtLeast(1)
         wavesCompleted = checkpoint.wavesCompleted.coerceAtLeast(0)
-        selectedEmpire = endlessEmpireForWave(currentWave)
+        selectedEmpire = checkpoint.activeEmpire
         waveTotalEnemies = endlessEnemyCountForWave(currentWave)
         waveEnemiesDefeated = checkpoint.waveEnemiesDefeated.coerceIn(0, waveTotalEnemies - 1)
         waveEnemiesSpawned = waveEnemiesDefeated
@@ -548,12 +734,25 @@ class GameEngine(
         player.invulnerableTimer = 2.0f
 
         score = checkpoint.score.coerceAtLeast(0)
-        kills = checkpoint.kills.coerceAtLeast(0)
+        endlessTotalRegularKills = maxOf(
+            initialEndlessRegularKills,
+            checkpoint.totalRegularKills,
+            checkpoint.kills
+        ).coerceAtLeast(0)
+        kills = endlessTotalRegularKills
+        endlessCycleKills = checkpoint.cycleKills.coerceIn(0, ENDLESS_BOSS_CYCLE_KILLS)
+        endlessBossesDefeated = maxOf(initialEndlessBossesDefeated, checkpoint.bossesDefeated).coerceAtLeast(0)
+        endlessBossRotationIndex = selectedEmpire.ordinal
+        endlessBossRewardClaimed = checkpoint.bossRewardClaimed
+        empireMilestone250kAnnounced = endlessTotalRegularKills >= EMPIRE_ENDLESS_CHALLENGE_TARGET
+        millionMilestoneAnnounced = currentAggregateChallengeKills() >= ENDLESS_CHALLENGE_TARGET
         creditsEarned = checkpoint.confirmedCreditsEarned.coerceAtLeast(0)
         isGameOver = false
         isVictory = false
 
+        for (e in enemies) recycleEnemy(e)
         enemies.clear()
+        for (b in bullets) recycleBullet(b)
         bullets.clear()
         rockets.clear()
         missiles.clear()
@@ -570,16 +769,61 @@ class GameEngine(
             furthestGeneratedY += 30f
         }
 
-        val initialBurst = minOf(3, (waveTotalEnemies - waveEnemiesSpawned).coerceAtLeast(0))
-        repeat(initialBurst) {
-            spawnEndlessWaveEnemy()
+        val parsedBossState = runCatching {
+            BossEncounterState.valueOf(checkpoint.bossEncounterState)
+        }.getOrDefault(BossEncounterState.NORMAL_WAVE)
+
+        when (parsedBossState) {
+            BossEncounterState.BOSS_ACTIVE -> {
+                spawnEndlessBigBoss()
+                activeBoss?.let { boss ->
+                    if (checkpoint.activeBossHealth > 0f) {
+                        boss.health = checkpoint.activeBossHealth.coerceIn(1f, boss.maxHealth)
+                    }
+                    if (checkpoint.activeBossHitsRemaining > 0) {
+                        boss.bossHitsRemaining = checkpoint.activeBossHitsRemaining.coerceIn(1, boss.maxBossHits)
+                    }
+                }
+                bossEncounterState = BossEncounterState.BOSS_ACTIVE
+                bossAnnouncementTitle = null
+                bossAnnouncementSubtitle = null
+            }
+            BossEncounterState.BOSS_INTRO -> {
+                bossEncounterState = BossEncounterState.BOSS_INTRO
+                bossStateTimer = 1.0f
+                activeEndlessBossType = null
+                bossAnnouncementTitle = "BIG BOSS APPROACHING"
+                bossAnnouncementSubtitle = endlessThemedBossName(selectedEmpire)
+            }
+            BossEncounterState.BOSS_DEFEATED, BossEncounterState.NEXT_WAVE -> {
+                endlessCycleKills = 0
+                bossEncounterState = BossEncounterState.NEXT_WAVE
+                bossStateTimer = 0.6f
+                activeEndlessBossType = null
+                bossAnnouncementTitle = "NEXT WAVE INCOMING"
+                bossAnnouncementSubtitle = "CYCLE #${endlessBossesDefeated + 1}"
+            }
+            BossEncounterState.NORMAL_WAVE -> {
+                if (endlessCycleKills >= ENDLESS_BOSS_CYCLE_KILLS) {
+                    triggerEndlessBossIntro()
+                } else {
+                    bossEncounterState = BossEncounterState.NORMAL_WAVE
+                    activeEndlessBossType = null
+                    bossAnnouncementTitle = null
+                    bossAnnouncementSubtitle = null
+                    val initialBurst = minOf(2, endlessMaxActiveEnemies, (waveTotalEnemies - waveEnemiesSpawned).coerceAtLeast(0))
+                    repeat(initialBurst) {
+                        spawnEndlessWaveEnemy()
+                    }
+                }
+            }
         }
 
         camera.x = player.pos.x
         camera.y = player.pos.y - 12.5f
         camera.z = 27.5f
         threatAlert = ThreatAlert(
-            "RESUMED WAVE $currentWave // ${selectedEmpire.title} ($waveEnemiesDefeated/$waveTotalEnemies)",
+            "RESUMED ${selectedEmpire.name} WAVE $currentWave // $endlessTotalRegularKills / $EMPIRE_ENDLESS_CHALLENGE_TARGET",
             Color(0xFF00E676),
             3.5f
         )
@@ -614,7 +858,7 @@ class GameEngine(
 
     private fun spawnInitialSquadron() {
         if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-            val initialBurst = minOf(3, waveTotalEnemies - waveEnemiesSpawned)
+            val initialBurst = minOf(2, endlessMaxActiveEnemies, (waveTotalEnemies - waveEnemiesSpawned).coerceAtLeast(0))
             repeat(initialBurst) {
                 spawnEndlessWaveEnemy()
             }
@@ -713,6 +957,11 @@ class GameEngine(
 
         // 6. Progressive Endless Environment & Hazards
         updateEnvironment(safeDelta)
+
+        // 6b. Endless Big Boss Encounter State Machine
+        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            updateEndlessBossStateMachine(safeDelta)
+        }
 
         // 7. Enemy AI & Spawner
         updateEnemies(safeDelta)
@@ -861,8 +1110,8 @@ class GameEngine(
                 val bulletSpeed = 75.0f
 
                 val dmg = player.mgDamage
-                addBullet(TracerBullet(leftMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
-                addBullet(TracerBullet(rightMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
+                addBullet(obtainBullet(leftMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
+                addBullet(obtainBullet(rightMuzzle, Vector3D(0f, bulletSpeed, 0f), damage = dmg, isPlayer = true))
                 audioSystem?.playMachineGun()
             } else {
                 player.activeMuzzleFlash = false
@@ -955,7 +1204,7 @@ class GameEngine(
         for (xOff in offsets) {
             val origin = Vector3D(player.pos.x + xOff, player.pos.y + 2.5f, player.pos.z - 0.1f)
             addBullet(
-                TracerBullet(
+                obtainBullet(
                     pos = origin,
                     velocity = Vector3D(xOff * 1.4f, 88.0f, 0f),
                     damage = player.mgDamage * 3.8f,
@@ -1077,19 +1326,22 @@ class GameEngine(
         val dmgMult = currentWaveDamageMultiplier
 
         if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-            if (waveTransitionTimer > 0f) {
-                waveTransitionTimer = (waveTransitionTimer - delta).coerceAtLeast(0f)
-                if (waveTransitionTimer <= 0f) {
-                    val burst = minOf(3, (waveTotalEnemies - waveEnemiesSpawned).coerceAtLeast(0))
-                    repeat(burst) {
+            val activeLimit = endlessMaxActiveEnemies.coerceIn(1, MAX_ACTIVE_ENEMIES)
+            if (bossEncounterState == BossEncounterState.NORMAL_WAVE && activeBoss == null) {
+                if (waveTransitionTimer > 0f) {
+                    waveTransitionTimer = (waveTransitionTimer - delta).coerceAtLeast(0f)
+                    if (waveTransitionTimer <= 0f) {
+                        if (waveEnemiesSpawned < waveTotalEnemies && enemies.size < activeLimit) {
+                            spawnEndlessWaveEnemy()
+                            enemySpawnTimer = (endlessSpawnIntervalSec * (1f - diff * 0.40f)).coerceAtLeast(0.30f)
+                        }
+                    }
+                } else if (waveEnemiesSpawned < waveTotalEnemies && enemies.size < activeLimit) {
+                    enemySpawnTimer -= delta
+                    if (enemySpawnTimer <= 0f) {
+                        enemySpawnTimer = (endlessSpawnIntervalSec * (1f - diff * 0.40f)).coerceAtLeast(0.30f)
                         spawnEndlessWaveEnemy()
                     }
-                }
-            } else if (waveEnemiesSpawned < waveTotalEnemies && enemies.size < 8 && activeBoss == null) {
-                enemySpawnTimer -= delta
-                if (enemySpawnTimer <= 0f) {
-                    enemySpawnTimer = (1.65f - (diff * 0.85f)).coerceAtLeast(0.55f)
-                    spawnEndlessWaveEnemy()
                 }
             }
         } else {
@@ -1244,11 +1496,13 @@ class GameEngine(
             }
 
             if (enemy.pos.y < camera.y - 16.0f && enemy.category == EnemyCategory.FIGHTER_AIRCRAFT) {
+                recycleEnemy(enemy)
                 it.remove()
                 if (gameMode == GameMode.ENDLESS_SURVIVAL) {
                     waveEnemiesSpawned = (waveEnemiesSpawned - 1).coerceAtLeast(waveEnemiesDefeated)
                 }
             } else if (enemy.pos.y < camera.y - 24.0f) {
+                recycleEnemy(enemy)
                 it.remove()
                 if (gameMode == GameMode.ENDLESS_SURVIVAL) {
                     waveEnemiesSpawned = (waveEnemiesSpawned - 1).coerceAtLeast(waveEnemiesDefeated)
@@ -1265,21 +1519,23 @@ class GameEngine(
         }
     }
 
+    private fun nextMixedEndlessCategory(): EnemyCategory {
+        if (endlessCategoryDeck.isEmpty()) {
+            val shuffled = EnemyCategory.entries.toMutableList().apply { shuffle() }
+            for (cat in shuffled) {
+                endlessCategoryDeck.addLast(cat)
+            }
+        }
+        return endlessCategoryDeck.removeFirst()
+    }
+
     private fun spawnEndlessWaveEnemy() {
-        if (waveEnemiesSpawned >= waveTotalEnemies || enemies.size >= MAX_ACTIVE_ENEMIES) return
+        if (bossEncounterState != BossEncounterState.NORMAL_WAVE || activeBoss != null) return
+        val activeLimit = endlessMaxActiveEnemies.coerceIn(1, MAX_ACTIVE_ENEMIES)
+        if (waveEnemiesSpawned >= waveTotalEnemies || enemies.size >= activeLimit) return
         val spawnX = (player.pos.x + ((Math.random().toFloat() - 0.5f) * 38f)).coerceIn(minX + 4f, maxX - 4f)
         val spawnY = player.pos.y + 30f + (Math.random().toFloat() * 12f)
-        val categories = when (selectedEmpire) {
-            EmpireType.DRAGON -> listOf(EnemyCategory.ATTACK_HELICOPTER, EnemyCategory.AA_TURRET, EnemyCategory.ROCKET_SOLDIER, EnemyCategory.GROUND_TANK)
-            EmpireType.ALIEN -> listOf(EnemyCategory.FIGHTER_AIRCRAFT, EnemyCategory.AA_TURRET, EnemyCategory.MISSILE_LAUNCHER, EnemyCategory.INFANTRY_SOLDIER)
-            EmpireType.ORC -> listOf(EnemyCategory.GROUND_TANK, EnemyCategory.ROCKET_SOLDIER, EnemyCategory.INFANTRY_SOLDIER, EnemyCategory.ATTACK_HELICOPTER)
-            EmpireType.HUMAN -> listOf(EnemyCategory.FIGHTER_AIRCRAFT, EnemyCategory.GROUND_TANK, EnemyCategory.MISSILE_LAUNCHER, EnemyCategory.WATCHTOWER_SNIPER)
-        }
-        val category = if (currentWave <= 2) {
-            categories.take(3).random()
-        } else {
-            EnemyCategory.values().random()
-        }
+        val category = nextMixedEndlessCategory()
         if (spawnEnemy(category, spawnX, spawnY, alerted = true)) {
             waveEnemiesSpawned++
         }
@@ -1310,22 +1566,104 @@ class GameEngine(
             EnemyCategory.WATCHTOWER_SNIPER -> 0f
         }
 
-        enemies.add(
+        val id = UUID.randomUUID().toString()
+        val maxHp = category.baseHp * hpMultiplier
+        val unitName = "${selectedEmpire.name} ${category.label}"
+        val pooled = enemyPool.removeFirstOrNull()
+        val enemy = if (pooled != null) {
+            pooled.reset(
+                id = id,
+                empire = selectedEmpire,
+                category = category,
+                px = x,
+                py = y,
+                pz = z,
+                vx = 0f,
+                vy = velY,
+                vz = 0f,
+                maxHealth = maxHp,
+                scoreValue = category.scoreVal,
+                unitName = unitName,
+                isGroundUnit = isGround,
+                isAlerted = alerted
+            )
+            pooled
+        } else {
             EnemyTarget(
-                id = UUID.randomUUID().toString(),
+                id = id,
                 empire = selectedEmpire,
                 category = category,
                 pos = Vector3D(x, y, z),
                 velocity = Vector3D(0f, velY, 0f),
-                health = category.baseHp * hpMultiplier,
-                maxHealth = category.baseHp * hpMultiplier,
+                health = maxHp,
+                maxHealth = maxHp,
                 scoreValue = category.scoreVal,
-                unitName = "${selectedEmpire.name} ${category.label}",
+                unitName = unitName,
                 isGroundUnit = isGround,
                 isAlerted = alerted
             )
-        )
+        }
+        enemies.add(enemy)
         return true
+    }
+
+    private data class EmpireFlagshipBossSpec(
+        val campaignName: String,
+        val endlessName: String,
+        val hp: Float,
+        val shield: Float,
+        val weakPoint: BossWeakPoint?,
+        val subsystems: MutableList<BossSubsystem>
+    )
+
+    private fun buildEmpireFlagshipBossSpec(
+        empire: EmpireType,
+        scale: Float = 1.0f
+    ): EmpireFlagshipBossSpec {
+        val campaignName = when (empire) {
+            EmpireType.DRAGON -> "Ignis Rex: Dragon Emperor"
+            EmpireType.ALIEN -> "Overseer Prime: Alien Mothership"
+            EmpireType.ORC -> "Warlord Gashrak: Ironclad Sky Fortress"
+            EmpireType.HUMAN -> "Project Titan: Supreme Gunship"
+        }
+        val baseHp = when (empire) {
+            EmpireType.DRAGON -> 1800f
+            EmpireType.ALIEN -> 2200f
+            EmpireType.ORC -> 2400f
+            EmpireType.HUMAN -> 2600f
+        } * scale
+        val baseShield = when (empire) {
+            EmpireType.DRAGON -> 200f
+            EmpireType.ALIEN -> 650f
+            EmpireType.ORC -> 0f
+            EmpireType.HUMAN -> 500f
+        } * scale
+        val weakPoint = when (empire) {
+            EmpireType.DRAGON -> BossWeakPoint("Dragon Heart Core", Vector3D(0f, -0.6f, 0.2f), radius = 2.4f, damageMultiplier = 2.2f)
+            EmpireType.ORC -> BossWeakPoint("Boiler Exhaust Vent", Vector3D(0f, 2.8f, 0.5f), radius = 2.2f, damageMultiplier = 2.5f)
+            else -> null
+        }
+        val subsystems = mutableListOf<BossSubsystem>()
+        when (empire) {
+            EmpireType.ALIEN -> {
+                subsystems.add(BossSubsystem("A_L_TURRET", "PORT PLASMA CANNON", 90f * scale, 90f * scale, offset = Vector3D(-4.2f, 0f, 0f)))
+                subsystems.add(BossSubsystem("A_R_TURRET", "STARBOARD PLASMA CANNON", 90f * scale, 90f * scale, offset = Vector3D(4.2f, 0f, 0f)))
+            }
+            EmpireType.HUMAN -> {
+                subsystems.add(BossSubsystem("H_GATLING", "30MM ROTARY VULCAN", 110f * scale, 110f * scale, offset = Vector3D(0f, -3.2f, -0.5f)))
+                subsystems.add(BossSubsystem("H_L_MISSILE", "PORT STINGER POD", 85f * scale, 85f * scale, offset = Vector3D(-3.8f, 1.0f, 0f)))
+                subsystems.add(BossSubsystem("H_R_MISSILE", "STARBOARD STINGER POD", 85f * scale, 85f * scale, offset = Vector3D(3.8f, 1.0f, 0f)))
+            }
+            else -> {}
+        }
+        return EmpireFlagshipBossSpec(
+            campaignName = campaignName,
+            endlessName = endlessThemedBossName(empire),
+            hp = baseHp,
+            shield = baseShield,
+            weakPoint = weakPoint,
+            subsystems = subsystems
+        )
     }
 
     /**
@@ -1335,46 +1673,7 @@ class GameEngine(
     fun spawnEmpireBoss() {
         if (activeBoss != null) return
         bossSpawned = true
-        val bossName = when (selectedEmpire) {
-            EmpireType.DRAGON -> "Ignis Rex: Dragon Emperor"
-            EmpireType.ALIEN -> "Overseer Prime: Alien Mothership"
-            EmpireType.ORC -> "Warlord Gashrak: Ironclad Sky Fortress"
-            EmpireType.HUMAN -> "Project Titan: Supreme Gunship"
-        }
-
-        val bossHp = when (selectedEmpire) {
-            EmpireType.DRAGON -> 1800f
-            EmpireType.ALIEN -> 2200f
-            EmpireType.ORC -> 2400f
-            EmpireType.HUMAN -> 2600f
-        }
-
-        val bossShield = when (selectedEmpire) {
-            EmpireType.DRAGON -> 200f
-            EmpireType.ALIEN -> 650f
-            EmpireType.ORC -> 0f
-            EmpireType.HUMAN -> 500f
-        }
-
-        val weakPoint = when (selectedEmpire) {
-            EmpireType.DRAGON -> BossWeakPoint("Dragon Heart Core", Vector3D(0f, -0.6f, 0.2f), radius = 2.4f, damageMultiplier = 2.2f)
-            EmpireType.ORC -> BossWeakPoint("Boiler Exhaust Vent", Vector3D(0f, 2.8f, 0.5f), radius = 2.2f, damageMultiplier = 2.5f)
-            else -> null
-        }
-
-        val subsystems = mutableListOf<BossSubsystem>()
-        when (selectedEmpire) {
-            EmpireType.ALIEN -> {
-                subsystems.add(BossSubsystem("A_L_TURRET", "PORT PLASMA CANNON", 90f, 90f, offset = Vector3D(-4.2f, 0f, 0f)))
-                subsystems.add(BossSubsystem("A_R_TURRET", "STARBOARD PLASMA CANNON", 90f, 90f, offset = Vector3D(4.2f, 0f, 0f)))
-            }
-            EmpireType.HUMAN -> {
-                subsystems.add(BossSubsystem("H_GATLING", "30MM ROTARY VULCAN", 110f, 110f, offset = Vector3D(0f, -3.2f, -0.5f)))
-                subsystems.add(BossSubsystem("H_L_MISSILE", "PORT STINGER POD", 85f, 85f, offset = Vector3D(-3.8f, 1.0f, 0f)))
-                subsystems.add(BossSubsystem("H_R_MISSILE", "STARBOARD STINGER POD", 85f, 85f, offset = Vector3D(3.8f, 1.0f, 0f)))
-            }
-            else -> {}
-        }
+        val spec = buildEmpireFlagshipBossSpec(selectedEmpire, scale = 1.0f)
 
         val spawnPos = enemyHeadquarters?.let { hq ->
             if (kotlin.math.abs(player.pos.y - hq.pos.y) <= HQ_DANGER_ZONE_RADIUS + 40f) {
@@ -1387,22 +1686,145 @@ class GameEngine(
         activeBoss = BossCombatEntity(
             id = UUID.randomUUID().toString(),
             empire = selectedEmpire,
-            name = bossName,
+            name = spec.campaignName,
             pos = spawnPos,
-            health = bossHp,
-            maxHealth = bossHp,
-            shield = bossShield,
-            maxShield = bossShield,
+            health = spec.hp,
+            maxHealth = spec.hp,
+            shield = spec.shield,
+            maxShield = spec.shield,
             phase = 1,
-            weakPoint = weakPoint,
-            subsystems = subsystems,
+            weakPoint = spec.weakPoint,
+            subsystems = spec.subsystems,
             bossHitsRemaining = 100,
             maxBossHits = 100
         )
         audioSystem?.playBossWarning()
-        threatAlert = ThreatAlert("HQ DANGER ZONE: $bossName EMERGED! (100 HITS TO DEFEAT)", Color(0xFFFF1744), 6.0f)
+        threatAlert = ThreatAlert("HQ DANGER ZONE: ${spec.campaignName} EMERGED! (100 HITS TO DEFEAT)", Color(0xFFFF1744), 6.0f)
         camera.screenShake = 5.0f
         createExplosion(spawnPos, selectedEmpire.primaryColor, count = 24, speed = 10f)
+    }
+
+    private fun updateEndlessBossStateMachine(delta: Float) {
+        if (gameMode != GameMode.ENDLESS_SURVIVAL) return
+        when (bossEncounterState) {
+            BossEncounterState.NORMAL_WAVE -> Unit
+            BossEncounterState.BOSS_INTRO -> {
+                bossStateTimer -= delta
+                if (bossStateTimer <= 0f) {
+                    if (activeBoss == null && !bossSpawned) {
+                        spawnEndlessBigBoss()
+                    }
+                    bossEncounterState = BossEncounterState.BOSS_ACTIVE
+                    bossAnnouncementTitle = null
+                    bossAnnouncementSubtitle = null
+                }
+            }
+            BossEncounterState.BOSS_ACTIVE -> {
+                if (activeBoss == null) {
+                    bossEncounterState = BossEncounterState.BOSS_DEFEATED
+                    bossStateTimer = BOSS_DEFEATED_BANNER_SEC
+                }
+            }
+            BossEncounterState.BOSS_DEFEATED -> {
+                bossStateTimer -= delta
+                if (bossStateTimer <= 0f) {
+                    endlessCycleKills = 0
+                    bossEncounterState = BossEncounterState.NEXT_WAVE
+                    bossStateTimer = NEXT_WAVE_BANNER_SEC
+                    bossAnnouncementTitle = "NEXT WAVE INCOMING"
+                    bossAnnouncementSubtitle = "CYCLE #${endlessBossesDefeated + 1} • $ENDLESS_BOSS_CYCLE_KILLS HOSTILES"
+                }
+            }
+            BossEncounterState.NEXT_WAVE -> {
+                bossStateTimer -= delta
+                if (bossStateTimer <= 0f) {
+                    bossEncounterState = BossEncounterState.NORMAL_WAVE
+                    activeEndlessBossType = null
+                    bossAnnouncementTitle = null
+                    bossAnnouncementSubtitle = null
+                    enemySpawnTimer = 0.25f
+                    if (waveEnemiesDefeated >= waveTotalEnemies && enemies.isEmpty()) {
+                        completeCurrentEndlessWave()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun triggerEndlessBossIntro() {
+        if (gameMode != GameMode.ENDLESS_SURVIVAL ||
+            bossEncounterState != BossEncounterState.NORMAL_WAVE ||
+            activeBoss != null ||
+            bossSpawned
+        ) {
+            return
+        }
+        val themedBossName = endlessThemedBossName(selectedEmpire)
+        bossEncounterState = BossEncounterState.BOSS_INTRO
+        bossStateTimer = BOSS_INTRO_DURATION_SEC
+        activeEndlessBossType = null
+        endlessBossRewardClaimed = false
+        bossAnnouncementTitle = "BIG BOSS APPROACHING"
+        bossAnnouncementSubtitle = themedBossName
+
+        // Clear unkilled regular escort enemies cleanly back into pool without counting as kills
+        for (e in enemies) {
+            createExplosion(e.pos, Color(0xFFFF9100), count = 4, speed = 5f)
+            recycleEnemy(e)
+        }
+        enemies.clear()
+        waveEnemiesSpawned = waveEnemiesDefeated
+
+        audioSystem?.playBossWarning()
+        threatAlert = ThreatAlert(
+            "WARNING: ${selectedEmpire.name} BOSS #${endlessBossesDefeated + 1} — $themedBossName",
+            selectedEmpire.primaryColor,
+            3.5f
+        )
+        updateHud()
+    }
+
+    fun spawnEndlessBigBoss() {
+        if (activeBoss != null || bossSpawned) return
+        val tier = endlessBossesDefeated + 1
+        val diffScale = 1.0f + endlessBossesDefeated * 0.28f
+        val spec = buildEmpireFlagshipBossSpec(selectedEmpire, scale = diffScale)
+        val bossTitle = if (tier > 1) "${spec.endlessName} [T$tier]" else spec.endlessName
+        val bossHits = 100 + (endlessBossesDefeated * 10).coerceAtMost(100)
+
+        val spawnPos = Vector3D(
+            player.pos.x.coerceIn(minX + 20f, maxX - 20f),
+            player.pos.y + 30.0f,
+            10.5f
+        )
+        bossSpawned = true
+        activeEndlessBossType = null
+        activeBoss = BossCombatEntity(
+            id = "ENDLESS_BOSS_${tier}_${selectedEmpire.name}",
+            empire = selectedEmpire,
+            name = bossTitle,
+            pos = spawnPos,
+            health = spec.hp,
+            maxHealth = spec.hp,
+            shield = spec.shield,
+            maxShield = spec.shield,
+            phase = 1,
+            enrageFactor = (1.0f + endlessBossesDefeated * 0.08f).coerceAtMost(1.85f),
+            weakPoint = spec.weakPoint,
+            subsystems = spec.subsystems,
+            bossHitsRemaining = bossHits,
+            maxBossHits = bossHits,
+            endlessBossType = null,
+            bossTier = tier
+        )
+        audioSystem?.playBossWarning()
+        camera.screenShake = 4.5f
+        createExplosion(spawnPos, selectedEmpire.primaryColor, count = 26, speed = 11f)
+        threatAlert = ThreatAlert(
+            "${selectedEmpire.name} BIG BOSS #$tier DEPLOYED: $bossTitle!",
+            selectedEmpire.primaryColor,
+            4.5f
+        )
     }
 
     private fun updateBoss(delta: Float) {
@@ -1416,12 +1838,12 @@ class GameEngine(
         val hpPct = kotlin.math.min(boss.health / boss.maxHealth, hitPct)
         if (hpPct <= 0.33f && boss.phase < 3) {
             boss.phase = 3
-            boss.enrageFactor = 1.5f
+            boss.enrageFactor = kotlin.math.max(boss.enrageFactor, 1.5f)
             boss.weakPoint?.isExposed = true
             threatAlert = ThreatAlert("BOSS WARNING: ${boss.name} ENTERED PHASE 3 ENRAGED!", Color(0xFFFF1744), 5.0f)
         } else if (hpPct <= 0.66f && boss.phase < 2) {
             boss.phase = 2
-            boss.enrageFactor = 1.25f
+            boss.enrageFactor = kotlin.math.max(boss.enrageFactor, 1.25f)
             threatAlert = ThreatAlert("BOSS WARNING: ${boss.name} ENTERED PHASE 2 AGGRESSIVE!", Color(0xFFFF9100), 4.0f)
         }
 
@@ -1436,8 +1858,12 @@ class GameEngine(
             createExplosion(boss.pos, Color(0xFF00E5FF), count = 6, speed = 5f)
         }
 
-        // Hover & Evasion Flight Positioning
-        val targetY = (player.pos.y + 22.0f).coerceIn(minY + 12f, maxY - 12f)
+        // Hover & Evasion Flight Positioning (Endless mode allows unbounded +Y beyond Campaign maxY)
+        val targetY = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            (player.pos.y + 22.0f).coerceAtLeast(minY + 12f)
+        } else {
+            (player.pos.y + 22.0f).coerceIn(minY + 12f, maxY - 12f)
+        }
         boss.pos.y += (targetY - boss.pos.y) * 1.8f * delta
         if (boss.isEvading) {
             boss.evadeTimer -= delta
@@ -1446,7 +1872,12 @@ class GameEngine(
                 boss.isEvading = false
             }
         } else {
-            val weaveTargetX = player.pos.x + sin(boss.animationPhase * 0.85f * boss.enrageFactor) * 10.5f
+            val weaveSpan = when (boss.endlessBossType) {
+                EndlessBossType.HEAVY_TANK_BOSS -> 8.5f
+                EndlessBossType.ELITE_MECH_SOLDIER_BOSS -> 11.5f
+                else -> 10.5f
+            }
+            val weaveTargetX = player.pos.x + sin(boss.animationPhase * 0.85f * boss.enrageFactor) * weaveSpan
             boss.pos.x += (weaveTargetX - boss.pos.x) * 2.2f * delta
         }
         when (boss.currentAttackMode) {
@@ -1505,191 +1936,198 @@ class GameEngine(
             boss.attackTimer = 0f
             val aim = (player.pos - (boss.pos + boss.chargeOffset)).normalized()
             val roll = Math.random()
-
-            when (boss.empire) {
-                EmpireType.DRAGON -> {
-                    when {
-                        boss.phase == 1 -> {
-                            if (roll < 0.6) {
-                                boss.currentAttackMode = BossAttackMode.FIREBALL_SALVO
-                                for (offset in listOf(-2.8f, 0f, 2.8f)) {
-                                    val fireDir = Vector3D(aim.x + (offset * 0.08f), aim.y, aim.z).normalized()
-                                    addBullet(TracerBullet(boss.pos.copy(z = 10f), fireDir * 28.0f, damage = 18f, isPlayer = false))
+            val endlessType = boss.endlessBossType
+            if (endlessType != null) {
+                dispatchEndlessBossAttack(boss, endlessType, aim, roll)
+            } else {
+                when (boss.empire) {
+                    EmpireType.DRAGON -> {
+                        when {
+                            boss.phase == 1 -> {
+                                if (roll < 0.6) {
+                                    boss.currentAttackMode = BossAttackMode.FIREBALL_SALVO
+                                    for (offset in listOf(-2.8f, 0f, 2.8f)) {
+                                        val fireDir = Vector3D(aim.x + (offset * 0.08f), aim.y, aim.z).normalized()
+                                        addBullet(obtainBullet(boss.pos.copy(z = 10f), fireDir * 28.0f, damage = 18f, isPlayer = false))
+                                    }
+                                } else {
+                                    boss.currentAttackMode = BossAttackMode.WING_SHOCKWAVE
+                                    addBullet(obtainBullet(boss.pos.copy(), Vector3D(-24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
+                                    addBullet(obtainBullet(boss.pos.copy(), Vector3D(24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
+                                    camera.screenShake = 2.0f
                                 }
-                            } else {
-                                boss.currentAttackMode = BossAttackMode.WING_SHOCKWAVE
-                                addBullet(TracerBullet(boss.pos.copy(), Vector3D(-24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
-                                addBullet(TracerBullet(boss.pos.copy(), Vector3D(24f, -12f, 0f), damage = 16f, isPlayer = false, isFlakBurst = true))
-                                camera.screenShake = 2.0f
                             }
-                        }
-                        boss.phase == 2 -> {
-                            when {
-                                roll < 0.35 -> {
+                            boss.phase == 2 -> {
+                                when {
+                                    roll < 0.35 -> {
+                                        boss.currentAttackMode = BossAttackMode.FIRE_BREATH
+                                        boss.modeTimer = 0f
+                                        bossFireBreathCooldown = 0f
+                                        audioSystem?.playDragonRoar()
+                                    }
+                                    roll < 0.70 -> {
+                                        boss.currentAttackMode = BossAttackMode.AERIAL_CHARGE
+                                        boss.modeTimer = 0f
+                                        audioSystem?.playDragonRoar()
+                                        threatAlert = ThreatAlert("DRAGON AERIAL CHARGE DETECTED", Color(0xFFFF3D00), 1.5f)
+                                    }
+                                    else -> {
+                                        boss.currentAttackMode = BossAttackMode.FIREBALL_SALVO
+                                        for (i in -2..2) {
+                                            val fireDir = Vector3D(aim.x + (i * 0.12f), aim.y, aim.z).normalized()
+                                            addBullet(obtainBullet(boss.pos.copy(z = 10f), fireDir * 32.0f, damage = 20f, isPlayer = false))
+                                        }
+                                    }
+                                }
+                            }
+                            else -> {
+                                // Phase 3: Enraged
+                                if (roll < 0.5) {
+                                    boss.currentAttackMode = BossAttackMode.AERIAL_CHARGE
+                                    boss.modeTimer = 0f
+                                    audioSystem?.playDragonRoar()
+                                    threatAlert = ThreatAlert("ENRAGED DRAGON SWOOP CHARGE!", Color(0xFFFF1744), 1.5f)
+                                } else {
                                     boss.currentAttackMode = BossAttackMode.FIRE_BREATH
                                     boss.modeTimer = 0f
                                     bossFireBreathCooldown = 0f
                                     audioSystem?.playDragonRoar()
                                 }
-                                roll < 0.70 -> {
-                                    boss.currentAttackMode = BossAttackMode.AERIAL_CHARGE
-                                    boss.modeTimer = 0f
-                                    audioSystem?.playDragonRoar()
-                                    threatAlert = ThreatAlert("DRAGON AERIAL CHARGE DETECTED", Color(0xFFFF3D00), 1.5f)
+                                for (i in -3..3) {
+                                    val fireDir = Vector3D(aim.x + (i * 0.15f), aim.y, aim.z).normalized()
+                                    addBullet(obtainBullet(boss.pos.copy(z = 10f), fireDir * 36.0f, damage = 24f, isPlayer = false))
                                 }
-                                else -> {
-                                    boss.currentAttackMode = BossAttackMode.FIREBALL_SALVO
+                            }
+                        }
+                    }
+
+                    EmpireType.ALIEN -> {
+                        val leftAlive = boss.subsystems.find { it.id == "A_L_TURRET" }?.isDestroyed == false
+                        val rightAlive = boss.subsystems.find { it.id == "A_R_TURRET" }?.isDestroyed == false
+
+                        when {
+                            boss.phase == 1 -> {
+                                boss.currentAttackMode = BossAttackMode.PLASMA_CANNONS
+                                audioSystem?.playPlasmaCharge()
+                                if (leftAlive) {
+                                    addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x - 4.2f), aim * 26f, damage = 18f, isPlayer = false))
+                                }
+                                if (rightAlive) {
+                                    addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + 4.2f), aim * 26f, damage = 18f, isPlayer = false))
+                                }
+                            }
+                            boss.phase == 2 -> {
+                                if (roll < 0.5 && gameMode != GameMode.ENDLESS_SURVIVAL) {
+                                    boss.currentAttackMode = BossAttackMode.SUMMON_UFOS
+                                    spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, boss.pos.x - 3f, boss.pos.y + 4f)
+                                    spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, boss.pos.x + 3f, boss.pos.y + 4f)
+                                    threatAlert = ThreatAlert("WARNING: ESCORT UFO FIGHTERS DEPLOYED", Color(0xFFD500F9), 2.0f)
+                                } else {
+                                    boss.currentAttackMode = BossAttackMode.HOMING_PLASMA
+                                    val m1 = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3f), Vector3D(-2f, -16f, 0f), "PLAYER", 32f, isEnemy = true)
+                                    val m2 = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3f), Vector3D(2f, -16f, 0f), "PLAYER", 32f, isEnemy = true)
+                                    addMissile(m1)
+                                    addMissile(m2)
+                                }
+                            }
+                            else -> {
+                                // Phase 3: Antimatter sweep
+                                boss.currentAttackMode = BossAttackMode.ANTIMATTER_SWEEP
+                                audioSystem?.playPlasmaCharge()
+                                for (i in -4..4) {
+                                    addBullet(obtainBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.09f, -34f, 0f), damage = 22f, isPlayer = false))
+                                }
+                                if (leftAlive || rightAlive) {
+                                    val m = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(), Vector3D(0f, -18f, 0f), "PLAYER", 35f, isEnemy = true)
+                                    addMissile(m)
+                                }
+                            }
+                        }
+                    }
+
+                    EmpireType.ORC -> {
+                        when {
+                            boss.phase == 1 -> {
+                                boss.currentAttackMode = BossAttackMode.SIEGE_CANNONS
+                                audioSystem?.playHeavyCannon()
+                                addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x - 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
+                                addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
+                            }
+                            boss.phase == 2 -> {
+                                if (roll < 0.5 || gameMode == GameMode.ENDLESS_SURVIVAL) {
+                                    boss.currentAttackMode = BossAttackMode.FLAK_MINEFIELD
                                     for (i in -2..2) {
-                                        val fireDir = Vector3D(aim.x + (i * 0.12f), aim.y, aim.z).normalized()
-                                        addBullet(TracerBullet(boss.pos.copy(z = 10f), fireDir * 32.0f, damage = 20f, isPlayer = false))
+                                        addBullet(obtainBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.15f, aim.y * 0.8f, 0f) * 22f, damage = 20f, isPlayer = false, isFlakBurst = true))
+                                    }
+                                } else {
+                                    boss.currentAttackMode = BossAttackMode.SUMMON_REINFORCEMENTS
+                                    spawnEnemy(EnemyCategory.ATTACK_HELICOPTER, boss.pos.x - 4f, boss.pos.y + 4f)
+                                    spawnEnemy(EnemyCategory.ATTACK_HELICOPTER, boss.pos.x + 4f, boss.pos.y + 4f)
+                                    threatAlert = ThreatAlert("WARNING: ORC REINFORCEMENTS AIRBORNE", Color(0xFFC2410C), 2.0f)
+                                }
+                            }
+                            else -> {
+                                // Phase 3: Enraged ramming surge
+                                if (roll < 0.5) {
+                                    boss.currentAttackMode = BossAttackMode.RAMMING_SURGE
+                                    boss.modeTimer = 0f
+                                    threatAlert = ThreatAlert("WARNING: SKY FORTRESS RAMMING SURGE!", Color(0xFFFF1744), 1.5f)
+                                } else {
+                                    boss.currentAttackMode = BossAttackMode.SIEGE_CANNONS
+                                    audioSystem?.playHeavyCannon()
+                                    for (i in -2..2) {
+                                        addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + i * 1.5f), aim * 28f, damage = 30f, isPlayer = false, isTankShell = true))
                                     }
                                 }
                             }
                         }
-                        else -> {
-                            // Phase 3: Enraged
-                            if (roll < 0.5) {
-                                boss.currentAttackMode = BossAttackMode.AERIAL_CHARGE
-                                boss.modeTimer = 0f
-                                audioSystem?.playDragonRoar()
-                                threatAlert = ThreatAlert("ENRAGED DRAGON SWOOP CHARGE!", Color(0xFFFF1744), 1.5f)
-                            } else {
-                                boss.currentAttackMode = BossAttackMode.FIRE_BREATH
-                                boss.modeTimer = 0f
-                                bossFireBreathCooldown = 0f
-                                audioSystem?.playDragonRoar()
-                            }
-                            for (i in -3..3) {
-                                val fireDir = Vector3D(aim.x + (i * 0.15f), aim.y, aim.z).normalized()
-                                addBullet(TracerBullet(boss.pos.copy(z = 10f), fireDir * 36.0f, damage = 24f, isPlayer = false))
-                            }
-                        }
                     }
-                }
 
-                EmpireType.ALIEN -> {
-                    val leftAlive = boss.subsystems.find { it.id == "A_L_TURRET" }?.isDestroyed == false
-                    val rightAlive = boss.subsystems.find { it.id == "A_R_TURRET" }?.isDestroyed == false
+                    EmpireType.HUMAN -> {
+                        val gatlingAlive = boss.subsystems.find { it.id == "H_GATLING" }?.isDestroyed == false
+                        val leftMissileAlive = boss.subsystems.find { it.id == "H_L_MISSILE" }?.isDestroyed == false
+                        val rightMissileAlive = boss.subsystems.find { it.id == "H_R_MISSILE" }?.isDestroyed == false
 
-                    when {
-                        boss.phase == 1 -> {
-                            boss.currentAttackMode = BossAttackMode.PLASMA_CANNONS
-                            audioSystem?.playPlasmaCharge()
-                            if (leftAlive) {
-                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 4.2f), aim * 26f, damage = 18f, isPlayer = false))
-                            }
-                            if (rightAlive) {
-                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 4.2f), aim * 26f, damage = 18f, isPlayer = false))
-                            }
-                        }
-                        boss.phase == 2 -> {
-                            if (roll < 0.5) {
-                                boss.currentAttackMode = BossAttackMode.SUMMON_UFOS
-                                spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, boss.pos.x - 3f, boss.pos.y + 4f)
-                                spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, boss.pos.x + 3f, boss.pos.y + 4f)
-                                threatAlert = ThreatAlert("WARNING: ESCORT UFO FIGHTERS DEPLOYED", Color(0xFFD500F9), 2.0f)
-                            } else {
-                                boss.currentAttackMode = BossAttackMode.HOMING_PLASMA
-                                val m1 = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3f), Vector3D(-2f, -16f, 0f), "PLAYER", 32f, isEnemy = true)
-                                val m2 = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3f), Vector3D(2f, -16f, 0f), "PLAYER", 32f, isEnemy = true)
-                                addMissile(m1)
-                                addMissile(m2)
-                            }
-                        }
-                        else -> {
-                            // Phase 3: Antimatter sweep
-                            boss.currentAttackMode = BossAttackMode.ANTIMATTER_SWEEP
-                            audioSystem?.playPlasmaCharge()
-                            for (i in -4..4) {
-                                addBullet(TracerBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.09f, -34f, 0f), damage = 22f, isPlayer = false))
-                            }
-                            if (leftAlive || rightAlive) {
-                                val m = GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(), Vector3D(0f, -18f, 0f), "PLAYER", 35f, isEnemy = true)
-                                addMissile(m)
-                            }
-                        }
-                    }
-                }
-
-                EmpireType.ORC -> {
-                    when {
-                        boss.phase == 1 -> {
-                            boss.currentAttackMode = BossAttackMode.SIEGE_CANNONS
-                            audioSystem?.playHeavyCannon()
-                            addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
-                            addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 2.5f), aim * 24f, damage = 35f, isPlayer = false, isTankShell = true))
-                        }
-                        boss.phase == 2 -> {
-                            if (roll < 0.5) {
-                                boss.currentAttackMode = BossAttackMode.FLAK_MINEFIELD
-                                for (i in -2..2) {
-                                    addBullet(TracerBullet(boss.pos.copy(), Vector3D(aim.x + i * 0.15f, aim.y * 0.8f, 0f) * 22f, damage = 20f, isPlayer = false, isFlakBurst = true))
-                                }
-                            } else {
-                                boss.currentAttackMode = BossAttackMode.SUMMON_REINFORCEMENTS
-                                spawnEnemy(EnemyCategory.ATTACK_HELICOPTER, boss.pos.x - 4f, boss.pos.y + 4f)
-                                spawnEnemy(EnemyCategory.ATTACK_HELICOPTER, boss.pos.x + 4f, boss.pos.y + 4f)
-                                threatAlert = ThreatAlert("WARNING: ORC REINFORCEMENTS AIRBORNE", Color(0xFFC2410C), 2.0f)
-                            }
-                        }
-                        else -> {
-                            // Phase 3: Enraged ramming surge
-                            if (roll < 0.5) {
-                                boss.currentAttackMode = BossAttackMode.RAMMING_SURGE
-                                boss.modeTimer = 0f
-                                threatAlert = ThreatAlert("WARNING: SKY FORTRESS RAMMING SURGE!", Color(0xFFFF1744), 1.5f)
-                            } else {
-                                boss.currentAttackMode = BossAttackMode.SIEGE_CANNONS
-                                audioSystem?.playHeavyCannon()
-                                for (i in -2..2) {
-                                    addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + i * 1.5f), aim * 28f, damage = 30f, isPlayer = false, isTankShell = true))
+                        when {
+                            boss.phase == 1 -> {
+                                boss.currentAttackMode = BossAttackMode.GATLING_BARRAGE
+                                if (gatlingAlive) {
+                                    addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
+                                    addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
                                 }
                             }
-                        }
-                    }
-                }
-
-                EmpireType.HUMAN -> {
-                    val gatlingAlive = boss.subsystems.find { it.id == "H_GATLING" }?.isDestroyed == false
-                    val leftMissileAlive = boss.subsystems.find { it.id == "H_L_MISSILE" }?.isDestroyed == false
-                    val rightMissileAlive = boss.subsystems.find { it.id == "H_R_MISSILE" }?.isDestroyed == false
-
-                    when {
-                        boss.phase == 1 -> {
-                            boss.currentAttackMode = BossAttackMode.GATLING_BARRAGE
-                            if (gatlingAlive) {
-                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
-                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
+                            boss.phase == 2 -> {
+                                if (roll < 0.5 || gameMode == GameMode.ENDLESS_SURVIVAL) {
+                                    boss.currentAttackMode = BossAttackMode.MISSILE_SALVO
+                                    if (leftMissileAlive) {
+                                        addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
+                                    }
+                                    if (rightMissileAlive) {
+                                        addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
+                                    }
+                                    if (gameMode == GameMode.ENDLESS_SURVIVAL && gatlingAlive) {
+                                        addBullet(obtainBullet(boss.pos.copy(y = boss.pos.y - 2.5f), aim * 36f, damage = 16f, isPlayer = false))
+                                    }
+                                } else {
+                                    boss.currentAttackMode = BossAttackMode.JET_AIRSTRIKE_SUPPORT
+                                    spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, -8f, player.pos.y + 40f)
+                                    spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, 8f, player.pos.y + 42f)
+                                    threatAlert = ThreatAlert("WARNING: STEALTH FIGHTER AIRSTRIKE INCOMING", Color(0xFF0284C7), 2.0f)
+                                }
                             }
-                        }
-                        boss.phase == 2 -> {
-                            if (roll < 0.5) {
-                                boss.currentAttackMode = BossAttackMode.MISSILE_SALVO
+                            else -> {
+                                // Phase 3: Titan Overdrive
+                                boss.currentAttackMode = BossAttackMode.TITAN_OVERDRIVE
+                                if (gatlingAlive) {
+                                    addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
+                                    addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
+                                }
                                 if (leftMissileAlive) {
-                                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
+                                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
                                 }
                                 if (rightMissileAlive) {
-                                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2f, -16f, 0f), "PLAYER", 35f, isEnemy = true))
+                                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
                                 }
-                            } else {
-                                boss.currentAttackMode = BossAttackMode.JET_AIRSTRIKE_SUPPORT
-                                spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, -8f, player.pos.y + 40f)
-                                spawnEnemy(EnemyCategory.FIGHTER_AIRCRAFT, 8f, player.pos.y + 42f)
-                                threatAlert = ThreatAlert("WARNING: STEALTH FIGHTER AIRSTRIKE INCOMING", Color(0xFF0284C7), 2.0f)
-                            }
-                        }
-                        else -> {
-                            // Phase 3: Titan Overdrive
-                            boss.currentAttackMode = BossAttackMode.TITAN_OVERDRIVE
-                            if (gatlingAlive) {
-                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x - 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
-                                addBullet(TracerBullet(boss.pos.copy(x = boss.pos.x + 1f, y = boss.pos.y - 2.5f), aim * 38f, damage = 18f, isPlayer = false))
-                            }
-                            if (leftMissileAlive) {
-                                addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.8f), Vector3D(-2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
-                            }
-                            if (rightMissileAlive) {
-                                addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.8f), Vector3D(2.5f, -18f, 0f), "PLAYER", 36f, isEnemy = true))
                             }
                         }
                     }
@@ -1697,14 +2135,133 @@ class GameEngine(
             }
         }
 
-        // Check Boss Defeat (100 Hits OR HP <= 0 unlocks Final Siege on 1000-Hit Main Headquarters)
+        // Check Boss Defeat
         if (boss.bossHitsRemaining <= 0 || boss.health <= 0f) {
             onBossDefeated(boss)
         }
     }
 
+    private fun dispatchEndlessBossAttack(
+        boss: BossCombatEntity,
+        bossType: EndlessBossType,
+        aim: Vector3D,
+        roll: Double
+    ) {
+        val tierMult = 1f + (boss.bossTier - 1) * 0.15f
+        when (bossType) {
+            EndlessBossType.HEAVY_TANK_BOSS -> {
+                if (boss.phase >= 2 && roll < 0.35) {
+                    boss.currentAttackMode = BossAttackMode.RAMMING_SURGE
+                    boss.modeTimer = 0f
+                } else if (roll < 0.7) {
+                    boss.currentAttackMode = BossAttackMode.SIEGE_CANNONS
+                    audioSystem?.playHeavyCannon()
+                    val count = if (boss.phase >= 3) 2 else 1
+                    for (i in -count..count) {
+                        val dir = Vector3D(aim.x + i * 0.12f, aim.y, aim.z).normalized()
+                        addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + i * 1.4f, z = 1.6f), dir * (28f * tierMult), damage = 26f * tierMult, isPlayer = false, isTankShell = true))
+                    }
+                } else {
+                    boss.currentAttackMode = BossAttackMode.FLAK_MINEFIELD
+                    for (i in -2..2) {
+                        val dir = Vector3D(aim.x + i * 0.14f, aim.y, aim.z).normalized()
+                        addBullet(obtainBullet(boss.pos.copy(z = 1.6f), dir * 24f, damage = 18f * tierMult, isPlayer = false, isFlakBurst = true))
+                    }
+                }
+            }
+
+            EndlessBossType.WAR_HELICOPTER_BOSS -> {
+                if (boss.phase >= 2 && roll < 0.45) {
+                    boss.currentAttackMode = BossAttackMode.MISSILE_SALVO
+                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.6f), Vector3D(-2f, -17f, 0f), "PLAYER", 30f * tierMult, isEnemy = true))
+                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.6f), Vector3D(2f, -17f, 0f), "PLAYER", 30f * tierMult, isEnemy = true))
+                } else {
+                    boss.currentAttackMode = BossAttackMode.GATLING_BARRAGE
+                    val spread = if (boss.phase >= 3) 2 else 1
+                    for (i in -spread..spread) {
+                        val dir = Vector3D(aim.x + i * 0.08f, aim.y, aim.z).normalized()
+                        addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + i * 1.1f), dir * 34f, damage = 16f * tierMult, isPlayer = false))
+                    }
+                }
+            }
+
+            EndlessBossType.ELITE_MECH_SOLDIER_BOSS -> {
+                if (boss.phase >= 2 && roll < 0.45) {
+                    boss.currentAttackMode = BossAttackMode.HOMING_PLASMA
+                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 3.2f, z = 2.4f), Vector3D(-1.8f, -16f, 2f), "PLAYER", 32f * tierMult, isEnemy = true))
+                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 3.2f, z = 2.4f), Vector3D(1.8f, -16f, 2f), "PLAYER", 32f * tierMult, isEnemy = true))
+                } else {
+                    boss.currentAttackMode = BossAttackMode.PLASMA_CANNONS
+                    audioSystem?.playPlasmaCharge()
+                    val half = if (boss.phase >= 3) 2 else 1
+                    for (i in -half..half) {
+                        val dir = Vector3D(aim.x + i * 0.10f, aim.y, aim.z).normalized()
+                        addBullet(obtainBullet(boss.pos.copy(x = boss.pos.x + i * 1.6f, z = 2.2f), dir * 32f, damage = 20f * tierMult, isPlayer = false, isFlakBurst = (i == 0)))
+                    }
+                }
+            }
+
+            EndlessBossType.HEAVY_AIRCRAFT_BOSS -> {
+                if (boss.phase >= 2 && roll < 0.35) {
+                    boss.currentAttackMode = BossAttackMode.AERIAL_CHARGE
+                    boss.modeTimer = 0f
+                } else if (roll < 0.7) {
+                    boss.currentAttackMode = BossAttackMode.ANTIMATTER_SWEEP
+                    audioSystem?.playPlasmaCharge()
+                    for (i in -3..3) {
+                        val dir = Vector3D(aim.x + i * 0.09f, aim.y, aim.z).normalized()
+                        addBullet(obtainBullet(boss.pos.copy(), dir * 36f, damage = 20f * tierMult, isPlayer = false))
+                    }
+                } else {
+                    boss.currentAttackMode = BossAttackMode.WING_SHOCKWAVE
+                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x - 4.4f), Vector3D(-2.5f, -18f, 0f), "PLAYER", 34f * tierMult, isEnemy = true))
+                    addMissile(GuidedMissile(UUID.randomUUID().toString(), boss.pos.copy(x = boss.pos.x + 4.4f), Vector3D(2.5f, -18f, 0f), "PLAYER", 34f * tierMult, isEnemy = true))
+                }
+            }
+        }
+    }
+
     private fun onBossDefeated(boss: BossCombatEntity) {
-        triggerBossDestruction(boss)
+        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+            if (endlessBossRewardClaimed || bossEncounterState != BossEncounterState.BOSS_ACTIVE) return
+            endlessBossRewardClaimed = true
+
+            val scoreAwarded = endlessBossScoreReward(endlessBossesDefeated)
+            triggerBossDestruction(boss, scoreAwarded = scoreAwarded, grantCampaignRewards = false)
+            activeBoss = null
+            bossSpawned = false
+
+            endlessBossesDefeated++
+            endlessBossRotationIndex = selectedEmpire.ordinal
+            endlessBestScore = maxOf(endlessBestScore, score)
+
+            bossEncounterState = BossEncounterState.BOSS_DEFEATED
+            bossStateTimer = BOSS_DEFEATED_BANNER_SEC
+            bossAnnouncementTitle = "BIG BOSS DEFEATED!"
+            bossAnnouncementSubtitle = "${boss.name} DESTROYED (+$scoreAwarded PTS)"
+
+            onEndlessBossDefeated?.invoke(
+                EndlessBossDefeatedEvent(
+                    bossNumber = endlessBossesDefeated,
+                    empire = selectedEmpire,
+                    bossType = boss.endlessBossType,
+                    bossName = boss.name,
+                    totalRegularKills = endlessTotalRegularKills,
+                    scoreAwarded = scoreAwarded,
+                    survivalScore = score
+                )
+            )
+
+            threatAlert = ThreatAlert(
+                "${selectedEmpire.name} BOSS #$endlessBossesDefeated DEFEATED! RESUMING NEXT 100-ENEMY WAVE",
+                Color(0xFF00E676),
+                4.5f
+            )
+            updateHud()
+            return
+        }
+
+        triggerBossDestruction(boss, scoreAwarded = 25000, grantCampaignRewards = true)
         activeBoss = null
         enemyHeadquarters?.isBossDefeated = true
         threatAlert = ThreatAlert(
@@ -1714,10 +2271,16 @@ class GameEngine(
         )
     }
 
-    private fun triggerBossDestruction(boss: BossCombatEntity) {
-        kills++
-        score += 25000
-        creditsEarned += 5000
+    private fun triggerBossDestruction(
+        boss: BossCombatEntity,
+        scoreAwarded: Int = 25000,
+        grantCampaignRewards: Boolean = true
+    ) {
+        if (grantCampaignRewards) {
+            kills++
+            creditsEarned += 5000
+        }
+        score += scoreAwarded
         camera.screenShake = 6.0f
         audioSystem?.playExplosion()
 
@@ -1735,12 +2298,23 @@ class GameEngine(
     fun applyDamageToBoss(damage: Float, hitPos: Vector3D, discreteHits: Int = 1): Boolean {
         val boss = activeBoss ?: return false
         val currentBossPos = boss.pos + boss.chargeOffset
+        val isGroundOrTallBoss = boss.endlessBossType == EndlessBossType.HEAVY_TANK_BOSS ||
+            boss.endlessBossType == EndlessBossType.ELITE_MECH_SOLDIER_BOSS
+
+        fun withinHitRange(targetPos: Vector3D, radius: Float): Boolean {
+            return if (isGroundOrTallBoss) {
+                kotlin.math.hypot(hitPos.x - targetPos.x, hitPos.y - targetPos.y) < radius &&
+                    kotlin.math.abs(hitPos.z - targetPos.z) < 12.5f
+            } else {
+                (hitPos - targetPos).length() < radius
+            }
+        }
 
         // 1. Check Destructible Subsystems
         for (subsystem in boss.subsystems) {
             if (!subsystem.isDestroyed) {
                 val subPos = currentBossPos + subsystem.offset
-                if ((hitPos - subPos).length() < 3.2f) {
+                if (withinHitRange(subPos, 3.2f)) {
                     val wasDestroyed = subsystem.takeDamage(damage)
                     boss.registerHit(discreteHits, isWeakPointHit = false)
                     createExplosion(subPos, Color(0xFFFF9100), count = 6, speed = 5f)
@@ -1763,7 +2337,7 @@ class GameEngine(
         boss.weakPoint?.let { wp ->
             if (wp.isExposed) {
                 val wpPos = currentBossPos + wp.offset
-                if ((hitPos - wpPos).length() < wp.radius) {
+                if (withinHitRange(wpPos, wp.radius)) {
                     boss.takeDamage(damage, isWeakPointHit = true)
                     boss.registerHit(discreteHits, isWeakPointHit = true)
                     createExplosion(wpPos, Color(0xFFFFD600), count = 16, speed = 8f)
@@ -1777,7 +2351,7 @@ class GameEngine(
         }
 
         // 3. Main Hull Hit
-        if ((hitPos - currentBossPos).length() < 7.8f) {
+        if (withinHitRange(currentBossPos, if (isGroundOrTallBoss) 8.8f else 7.8f)) {
             boss.takeDamage(damage, isWeakPointHit = false)
             boss.registerHit(discreteHits, isWeakPointHit = false)
             createExplosion(hitPos, boss.empire.primaryColor, count = 8, speed = 6f)
@@ -1807,6 +2381,7 @@ class GameEngine(
                 if (b.life <= 0f && b.isFlakBurst) {
                     createExplosion(b.pos, Color(0xFFFF9100), count = 10, speed = 6f)
                 }
+                recycleBullet(b)
                 bIt.remove()
             }
         }
@@ -1888,6 +2463,7 @@ class GameEngine(
             // Boss check
             if (applyDamageToBoss(b.damage, b.pos, discreteHits = bulletHits)) {
                 player.overdriveCharge = (player.overdriveCharge + 1.2f).coerceAtMost(100f)
+                recycleBullet(b)
                 bIt.remove()
                 continue
             }
@@ -1900,6 +2476,7 @@ class GameEngine(
                     damageBarracks(barracks, barracksBulletDmg)
                     player.overdriveCharge = (player.overdriveCharge + 1.0f).coerceAtMost(100f)
                     createExplosion(b.pos, if (b.isPlayerPlasma) Color(0xFF00E5FF) else Color(0xFFFFD600), count = 5, speed = 6f)
+                    recycleBullet(b)
                     bIt.remove()
                     break
                 }
@@ -1919,6 +2496,7 @@ class GameEngine(
                     } else if ((b.pos - hq.pos).length() < 10.5f) {
                         createExplosion(b.pos, Color(0xFF00E5FF), count = 3, speed = 4f)
                     }
+                    recycleBullet(b)
                     bIt.remove()
                     hitBarracks = true
                 }
@@ -1934,6 +2512,7 @@ class GameEngine(
                     player.overdriveCharge = (player.overdriveCharge + 1.8f).coerceAtMost(100f)
                     createExplosion(b.pos, if (b.isPlayerPlasma) Color(0xFF00E5FF) else Color(0xFFFFD600), count = 4, speed = 5f)
                     if (!b.isPlayerPlasma) {
+                        recycleBullet(b)
                         bIt.remove()
                     }
                     break
@@ -2077,6 +2656,7 @@ class GameEngine(
                 applyPlayerIncomingDamage(rawDamage = b.damage, hitWeight = 1)
                 camera.screenShake = 2.0f
                 createExplosion(b.pos, Color(0xFF00E5FF), count = 6, speed = 5f)
+                recycleBullet(b)
                 ebIt.remove()
             }
         }
@@ -2090,17 +2670,51 @@ class GameEngine(
                 score += enemy.scoreValue
                 if (gameMode == GameMode.ENDLESS_SURVIVAL) {
                     waveEnemiesDefeated++
+                    endlessTotalRegularKills++
+                    if (bossEncounterState == BossEncounterState.NORMAL_WAVE &&
+                        endlessCycleKills < ENDLESS_BOSS_CYCLE_KILLS
+                    ) {
+                        endlessCycleKills++
+                    }
+                    if (endlessTotalRegularKills >= EMPIRE_ENDLESS_CHALLENGE_TARGET && !empireMilestone250kAnnounced) {
+                        empireMilestone250kAnnounced = true
+                        threatAlert = ThreatAlert(
+                            "${selectedEmpire.title} 250,000 KILLS REACHED — EMPIRE CONQUERED! WAR CONTINUES!",
+                            Color(0xFF00E676),
+                            6.0f
+                        )
+                    }
+                    if (currentAggregateChallengeKills() >= ENDLESS_CHALLENGE_TARGET && !millionMilestoneAnnounced) {
+                        millionMilestoneAnnounced = true
+                        threatAlert = ThreatAlert(
+                            "1,000,000 FOUR-EMPIRE CHALLENGE COMPLETE — LEGENDARY COMMANDER! ENDLESS WAR CONTINUES!",
+                            Color(0xFFFFD600),
+                            6.0f
+                        )
+                    }
                     endlessBestScore = maxOf(endlessBestScore, score)
                 }
                 player.overdriveCharge = (player.overdriveCharge + 8f).coerceAtMost(100f)
                 createExplosion(enemy.pos, enemy.empire.primaryColor, count = 22, speed = 10f)
                 audioSystem?.playExplosion()
                 camera.screenShake = 1.6f
+                recycleEnemy(enemy)
                 eIt.remove()
             }
         }
 
         if (gameMode == GameMode.ENDLESS_SURVIVAL &&
+            bossEncounterState == BossEncounterState.NORMAL_WAVE &&
+            endlessCycleKills >= ENDLESS_BOSS_CYCLE_KILLS &&
+            activeBoss == null &&
+            !bossSpawned
+        ) {
+            triggerEndlessBossIntro()
+        }
+
+        if (gameMode == GameMode.ENDLESS_SURVIVAL &&
+            bossEncounterState == BossEncounterState.NORMAL_WAVE &&
+            activeBoss == null &&
             waveTransitionTimer <= 0f &&
             waveEnemiesDefeated >= waveTotalEnemies &&
             enemies.isEmpty()
@@ -2110,14 +2724,21 @@ class GameEngine(
     }
 
     private fun completeCurrentEndlessWave() {
-        if (gameMode != GameMode.ENDLESS_SURVIVAL || isGameOver) return
+        if (gameMode != GameMode.ENDLESS_SURVIVAL ||
+            isGameOver ||
+            bossEncounterState != BossEncounterState.NORMAL_WAVE ||
+            activeBoss != null
+        ) {
+            return
+        }
         val completedWave = currentWave
         if (!completedWaveNumbers.add(completedWave)) return
 
         val waveKills = waveTotalEnemies
         val currentEmp = selectedEmpire
         val nextWave = completedWave + 1
-        val nextEmp = endlessEmpireForWave(nextWave)
+        // Endless sorties stay in the player-selected Empire's theater until the player exits.
+        val nextEmp = currentEmp
 
         wavesCompleted++
         score += endlessWaveRewardScore(completedWave, waveKills)
@@ -2141,16 +2762,12 @@ class GameEngine(
         waveTransitionTimer = 1.6f
         enemySpawnTimer = 0.4f
 
-        if (nextEmp != currentEmp) {
-            transitionEndlessEmpire(nextEmp, nextWave)
-        } else {
-            threatAlert = ThreatAlert(
-                "WAVE $completedWave CLEARED! INCOMING WAVE $nextWave (${waveTotalEnemies} HOSTILES)",
-                Color(0xFF00E676),
-                3.2f
-            )
-            updateHud()
-        }
+        threatAlert = ThreatAlert(
+            "${currentEmp.name} WAVE $completedWave CLEARED! INCOMING WAVE $nextWave (${waveTotalEnemies} HOSTILES)",
+            Color(0xFF00E676),
+            3.2f
+        )
+        updateHud()
     }
 
     private fun transitionEndlessEmpire(newEmpire: EmpireType, waveNumberForBanner: Int) {
@@ -2326,6 +2943,7 @@ class GameEngine(
             p.pos.z += p.velocity.z * delta
             p.life -= delta
             if (p.life <= 0f) {
+                recycleParticle(p)
                 it.remove()
             }
         }
@@ -2340,28 +2958,48 @@ class GameEngine(
         }
         for (i in 0 until spawnCount) {
             if (particles.size >= MAX_PARTICLES) {
-                particles.removeAt(0)
+                recycleParticle(particles.removeAt(0))
             }
             val theta = Math.random().toFloat() * kotlin.math.PI.toFloat() * 2f
             val phi = (Math.random().toFloat() - 0.5f) * kotlin.math.PI.toFloat()
             val spd = (Math.random().toFloat() * 0.8f + 0.2f) * speed
-            val vel = Vector3D(
-                cos(phi) * cos(theta) * spd,
-                cos(phi) * sin(theta) * spd,
-                sin(phi) * spd
-            )
+            val vx = cos(phi) * cos(theta) * spd
+            val vy = cos(phi) * sin(theta) * spd
+            val vz = sin(phi) * spd
             val life = Math.random().toFloat() * 0.45f + 0.25f
-            particles.add(
+            val radius = (Math.random().toFloat() * 4.5f + 3f)
+            val pooled = particlePool.removeFirstOrNull()
+            val particle = if (pooled != null) {
+                pooled.reset(
+                    px = center.x,
+                    py = center.y,
+                    pz = center.z,
+                    vx = vx,
+                    vy = vy,
+                    vz = vz,
+                    color = color,
+                    radius = radius,
+                    life = life
+                )
+                pooled
+            } else {
                 VisualParticle(
                     pos = center.copy(),
-                    velocity = vel,
+                    velocity = Vector3D(vx, vy, vz),
                     color = color,
-                    radius = (Math.random().toFloat() * 4.5f + 3f),
+                    radius = radius,
                     life = life,
                     maxLife = life
                 )
-            )
+            }
+            particles.add(particle)
         }
+    }
+
+    private fun currentAggregateChallengeKills(): Int {
+        val currentCapped = endlessTotalRegularKills.coerceIn(0, EMPIRE_ENDLESS_CHALLENGE_TARGET)
+        return (otherEmpiresCappedKills.coerceAtLeast(0) + currentCapped)
+            .coerceIn(0, ENDLESS_CHALLENGE_TARGET)
     }
 
     private fun updateHud() {
@@ -2424,7 +3062,19 @@ class GameEngine(
             waveEnemiesTotal = waveTotalEnemies,
             endlessBestWave = maxOf(endlessBestWave, currentWave),
             endlessBestScore = maxOf(endlessBestScore, score),
-            endlessSyncStatus = endlessSyncStatus
+            endlessSyncStatus = endlessSyncStatus,
+            endlessTotalRegularKills = endlessTotalRegularKills,
+            endlessChallengeTarget = EMPIRE_ENDLESS_CHALLENGE_TARGET,
+            endlessAggregateKills = currentAggregateChallengeKills(),
+            endlessAggregateTarget = ENDLESS_CHALLENGE_TARGET,
+            endlessCycleKills = endlessCycleKills,
+            endlessCycleTarget = ENDLESS_BOSS_CYCLE_KILLS,
+            endlessBossesDefeated = endlessBossesDefeated,
+            endlessBossRotationIndex = endlessBossRotationIndex,
+            bossEncounterState = bossEncounterState,
+            activeEndlessBossType = activeEndlessBossType,
+            bossAnnouncementTitle = bossAnnouncementTitle,
+            bossAnnouncementSubtitle = bossAnnouncementSubtitle
         )
     }
 

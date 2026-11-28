@@ -128,6 +128,81 @@ class ProductionReadinessAuditTest : FirestoreEmulatorTestBase() {
     }
 
     @Test
+    fun networkMonitor_preventsDuplicateAndStaleVerificationOverwrites_andTransitionsOfflineToAuthenticatingToOnline() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val shadowCm = Shadows.shadowOf(cm)
+        val net = cm.activeNetwork
+        if (net != null) {
+            val validated = ShadowNetworkCapabilities.newInstance()
+            Shadows.shadowOf(validated).apply {
+                addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            }
+            shadowCm.setNetworkCapabilities(net, validated)
+        }
+
+        val firstSlowStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val allowFirstSlowFinish = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val probeCalls = java.util.concurrent.atomic.AtomicInteger(0)
+
+        val monitor = NetworkMonitor(
+            context = context,
+            pingProbe = {
+                val callNum = probeCalls.incrementAndGet()
+                if (callNum == 1) {
+                    firstSlowStarted.complete(Unit)
+                    allowFirstSlowFinish.await()
+                    null // Slow stale probe fails; must never overwrite newer generation
+                } else {
+                    19L
+                }
+            }
+        )
+        try {
+            // Wait until the slow initial verification is in-flight
+            withTimeout(2000L) { firstSlowStarted.await() }
+            assertEquals(OnlineStatus.Authenticating, monitor.status.value)
+
+            // Trigger a superseding verification while the first is still blocked
+            monitor.triggerConnectionVerification()
+            assertEquals(OnlineStatus.Authenticating, monitor.status.value)
+
+            // Let the stale first probe finish with null after the second succeeds with 19ms
+            val connected = awaitStatus(monitor) { it is OnlineStatus.Connected } as OnlineStatus.Connected
+            assertEquals(19L, connected.latencyMs)
+
+            allowFirstSlowFinish.complete(Unit)
+            delay(60L)
+            assertTrue("Stale generation must not overwrite Connected", monitor.status.value is OnlineStatus.Connected)
+            assertEquals(19L, (monitor.status.value as OnlineStatus.Connected).latencyMs)
+
+            // Simulate offline -> confirmOnlineFromAuth() cancels in-flight verification -> Authenticating -> Connected
+            if (net != null) {
+                shadowCm.setNetworkCapabilities(net, ShadowNetworkCapabilities.newInstance())
+                monitor.confirmOnlineFromAuth()
+                val offline = monitor.status.value as OnlineStatus.OfflineError
+                assertEquals("ERR_OFFLINE_FORBIDDEN", offline.errorCode)
+
+                val validated = ShadowNetworkCapabilities.newInstance()
+                Shadows.shadowOf(validated).apply {
+                    addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                    addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                }
+                shadowCm.setNetworkCapabilities(net, validated)
+                monitor.triggerConnectionVerification()
+                assertEquals(OnlineStatus.Authenticating, monitor.status.value)
+                val reconnected = awaitStatus(monitor) { it is OnlineStatus.Connected } as OnlineStatus.Connected
+                assertEquals(19L, reconnected.latencyMs)
+            }
+        } finally {
+            monitor.cleanup()
+        }
+    }
+
+    @Test
     fun stageProgression_ignoresLocalCacheWhenCampaignStatePresent_evenIfDisconnected() {
         val mgr = CampaignProgressionManager(prefs = null)
         val uid = "pilot_tamper_test"

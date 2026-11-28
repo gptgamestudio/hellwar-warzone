@@ -2,6 +2,7 @@ package com.example.game.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.media.SoundPool
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,26 +17,77 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.sin
 
 /**
- * Low-overhead Procedural Audio Synthesizer for Helicopter War combat sound effects.
- * Synthesizes 9 compact WAV SFX once into app cache and plays via bounded SoundPool (max 8 streams)
- * with per-effect cooldown throttling so rapid combat bursts never exhaust native AudioTrack limits.
+ * Low-overhead Procedural Audio Synthesizer for Helicopter War combat sound effects and
+ * looping tactical background music.
+ * Synthesizes 9 compact WAV SFX + 1 looping tactical soundtrack into app cache and controls
+ * SoundPool + MediaPlayer playback cleanly with global mute/music controls.
  */
 class CombatAudioSystem(context: Context? = null) {
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private val sampleRate = 22050
     private val isReady = AtomicBoolean(false)
     private val isReleased = AtomicBoolean(false)
+    private val isMusicPrepared = AtomicBoolean(false)
 
     @Volatile
     var isMuted = false
+        set(value) {
+            field = value
+            syncMusicPlayback()
+        }
+
+    @Volatile
+    var isMusicMuted = false
+        set(value) {
+            field = value
+            syncMusicPlayback()
+        }
+
+    @Volatile
+    private var musicRequested = false
 
     private var soundPool: SoundPool? = null
-    private val soundIds = IntArray(9) { 0 }
+    private var musicPlayer: MediaPlayer? = null
+    private val soundIds = IntArray(9)
     private val lastPlayedMs = Array(9) { AtomicLong(0L) }
 
     init {
         if (context != null) {
             initializeSoundPool(context.applicationContext)
+        }
+    }
+
+    fun setAudioEnabled(sfxEnabled: Boolean, musicEnabled: Boolean) {
+        isMuted = !sfxEnabled
+        isMusicMuted = !musicEnabled
+    }
+
+    fun startMusic() {
+        musicRequested = true
+        syncMusicPlayback()
+    }
+
+    fun pauseMusic() {
+        musicRequested = false
+        syncMusicPlayback()
+    }
+
+    private fun syncMusicPlayback() {
+        val player = musicPlayer ?: return
+        if (isReleased.get() || !isMusicPrepared.get()) return
+        try {
+            if (!isMusicMuted && musicRequested) {
+                player.setVolume(0.32f, 0.32f)
+                if (!player.isPlaying) {
+                    player.start()
+                }
+            } else {
+                if (player.isPlaying) {
+                    player.pause()
+                }
+            }
+        } catch (_: Exception) {
+            // Keep gameplay stable if audio hardware is unavailable (e.g. headless/JVM tests)
         }
     }
 
@@ -80,9 +132,41 @@ class CombatAudioSystem(context: Context? = null) {
                     soundIds[idx] = pool.load(wavFile.absolutePath, 1)
                 }
                 isReady.set(true)
+
+                val bgmFile = File(sfxDir, "bgm_tactical.wav")
+                if (!bgmFile.exists() || bgmFile.length() < 44L) {
+                    writeWavFile(bgmFile, generateTacticalBackgroundMusic())
+                }
+                prepareBackgroundMusicPlayer(bgmFile)
             } catch (_: Exception) {
                 // Keep gameplay silent rather than crashing if storage/audio fails
             }
+        }
+    }
+
+    private fun prepareBackgroundMusicPlayer(bgmFile: File) {
+        if (isReleased.get()) return
+        try {
+            val mp = MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_GAME)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                setDataSource(bgmFile.absolutePath)
+                isLooping = true
+                prepare()
+            }
+            if (isReleased.get()) {
+                mp.release()
+                return
+            }
+            musicPlayer = mp
+            isMusicPrepared.set(true)
+            syncMusicPlayback()
+        } catch (_: Exception) {
+            // Safe fallback on headless environments without MediaPlayer codec support
         }
     }
 
@@ -115,10 +199,37 @@ class CombatAudioSystem(context: Context? = null) {
     fun release() {
         if (isReleased.compareAndSet(false, true)) {
             isReady.set(false)
+            isMusicPrepared.set(false)
+            musicRequested = false
             try {
                 soundPool?.release()
             } catch (_: Exception) {}
             soundPool = null
+            try {
+                musicPlayer?.stop()
+            } catch (_: Exception) {}
+            try {
+                musicPlayer?.release()
+            } catch (_: Exception) {}
+            musicPlayer = null
+        }
+    }
+
+    private fun generateTacticalBackgroundMusic(): ShortArray {
+        val durationSec = 4
+        val numSamples = sampleRate * durationSec
+        val barSamples = numSamples / 4
+        val bassFreqs = doubleArrayOf(55.0, 55.0, 65.41, 73.42)
+        val arpFreqs = doubleArrayOf(220.0, 261.63, 329.63, 293.66)
+        return ShortArray(numSamples) { i ->
+            val t = i.toDouble() / sampleRate
+            val barIdx = (i / barSamples).coerceIn(0, 3)
+            val beatProgress = ((i % (barSamples / 2)).toDouble() / (barSamples / 2))
+            val pulseEnv = kotlin.math.exp(-beatProgress * 3.5)
+            val bass = sin(2.0 * Math.PI * bassFreqs[barIdx] * t) * 0.45 * (0.4 + 0.6 * pulseEnv)
+            val arp = sin(2.0 * Math.PI * arpFreqs[barIdx] * t) * 0.22 * pulseEnv
+            val pad = sin(2.0 * Math.PI * (bassFreqs[barIdx] * 2.0) * t) * 0.14
+            ((bass + arp + pad) * 14000.0).toInt().coerceIn(-32767, 32767).toShort()
         }
     }
 

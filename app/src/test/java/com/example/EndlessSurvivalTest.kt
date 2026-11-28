@@ -89,17 +89,12 @@ class EndlessSurvivalTest {
     }
 
     @Test
-    fun endlessMode_fiveWaveTheaterCycleAndProgressiveDifficultyScaling() {
-        // Waves 1..5 DRAGON -> 6..10 ALIEN -> 11..15 ORC -> 16..20 HUMAN -> 21..25 DRAGON
-        assertEquals(EmpireType.DRAGON, GameEngine.endlessEmpireForWave(1))
-        assertEquals(EmpireType.DRAGON, GameEngine.endlessEmpireForWave(5))
-        assertEquals(EmpireType.ALIEN, GameEngine.endlessEmpireForWave(6))
-        assertEquals(EmpireType.ALIEN, GameEngine.endlessEmpireForWave(10))
-        assertEquals(EmpireType.ORC, GameEngine.endlessEmpireForWave(11))
-        assertEquals(EmpireType.ORC, GameEngine.endlessEmpireForWave(15))
-        assertEquals(EmpireType.HUMAN, GameEngine.endlessEmpireForWave(16))
-        assertEquals(EmpireType.HUMAN, GameEngine.endlessEmpireForWave(20))
-        assertEquals(EmpireType.DRAGON, GameEngine.endlessEmpireForWave(21))
+    fun endlessMode_selectedEmpireStaysFixedAndDifficultyScalesProgressively() {
+        for (emp in EmpireType.entries) {
+            val engine = GameEngine(selectedEmpire = emp, gameMode = GameMode.ENDLESS_SURVIVAL)
+            assertEquals(emp, engine.selectedEmpire)
+            assertEquals(emp, engine.hudState.value.activeEmpire)
+        }
 
         val w1Count = GameEngine.endlessEnemyCountForWave(1)
         val w5Count = GameEngine.endlessEnemyCountForWave(5)
@@ -122,17 +117,17 @@ class EndlessSurvivalTest {
     }
 
     @Test
-    fun endlessMode_clearingFiveWavesCyclesDragonToAlienAndAppliesNoUnverifiedCredits() {
+    fun endlessMode_clearingSixWavesInSelectedEmpireKeepsTheaterFixedAndAppliesNoUnverifiedCredits() {
         val completedEvents = mutableListOf<EndlessWaveCompletionEvent>()
         val engine = GameEngine(
+            selectedEmpire = EmpireType.ORC,
             gameMode = GameMode.ENDLESS_SURVIVAL,
             onEndlessWaveCompleted = { completedEvents.add(it) }
         )
 
         for (expectedWave in 1..6) {
             assertEquals(expectedWave, engine.currentWave)
-            val expectedEmpire = if (expectedWave <= 5) EmpireType.DRAGON else EmpireType.ALIEN
-            assertEquals(expectedEmpire, engine.selectedEmpire)
+            assertEquals(EmpireType.ORC, engine.selectedEmpire)
 
             // Wait through transition timer if active, spawn all wave enemies, and eliminate them
             var guardSteps = 0
@@ -147,10 +142,11 @@ class EndlessSurvivalTest {
         }
 
         assertEquals(6, completedEvents.size)
-        assertEquals(EmpireType.DRAGON, completedEvents[4].empire)
-        assertEquals(EmpireType.ALIEN, completedEvents[4].nextEmpire)
-        assertEquals(EmpireType.ALIEN, completedEvents[5].empire)
-        assertEquals(EmpireType.ALIEN, engine.selectedEmpire)
+        completedEvents.forEach { event ->
+            assertEquals(EmpireType.ORC, event.empire)
+            assertEquals(EmpireType.ORC, event.nextEmpire)
+        }
+        assertEquals(EmpireType.ORC, engine.selectedEmpire)
         assertFalse(engine.isVictory)
 
         // Client must NEVER grant unverified spendable credits until Cloud Functions confirms
@@ -407,7 +403,7 @@ class EndlessSurvivalTest {
                         initialEndlessRecord = EndlessSurvivalRecord(highestWave = 3, bestSurvivalScore = 2200, totalWavesCompleted = 2),
                         onSaveEndlessCheckpoint = { latestSavedCp = it },
                         onReturnToMenu = {},
-                        onStartEndlessSession = {
+                        onStartEndlessSession = { _ ->
                             if (failNetwork) Result.failure(IllegalStateException("offline"))
                             else Result.success("sess_recovered")
                         },

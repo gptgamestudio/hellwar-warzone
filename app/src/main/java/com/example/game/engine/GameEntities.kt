@@ -14,6 +14,25 @@ enum class EnemyCategory(val label: String, val baseHp: Float, val scoreVal: Int
     WATCHTOWER_SNIPER("WATCHTOWER SENTRY", 50f, 260)
 }
 
+enum class BossEncounterState {
+    NORMAL_WAVE,
+    BOSS_INTRO,
+    BOSS_ACTIVE,
+    BOSS_DEFEATED,
+    NEXT_WAVE
+}
+
+enum class EndlessBossType(
+    val title: String,
+    val subtitle: String,
+    val accentColor: Color
+) {
+    HEAVY_TANK_BOSS("IRON BEHEMOTH MK-IV", "HEAVY TANK BOSS", Color(0xFFFF6D00)),
+    WAR_HELICOPTER_BOSS("SKY REAPER GUNSHIP", "WAR HELICOPTER BOSS", Color(0xFFFF1744)),
+    ELITE_MECH_SOLDIER_BOSS("AEGIS TITAN-X", "ELITE MECH SOLDIER BOSS", Color(0xFF00E5FF)),
+    HEAVY_AIRCRAFT_BOSS("VALKYRIE DREADNOUGHT", "HEAVY AIRCRAFT BOSS", Color(0xFFD500F9))
+}
+
 data class EnemyBarracks(
     val id: String,
     val index: Int, // 1 to 50
@@ -252,13 +271,41 @@ data class PlayerHelo(
 data class TracerBullet(
     var pos: Vector3D,
     var velocity: Vector3D,
-    val damage: Float = 14f,
-    val isPlayer: Boolean = true,
+    var damage: Float = 14f,
+    var isPlayer: Boolean = true,
     var life: Float = 1.6f,
-    val isTankShell: Boolean = false,
-    val isFlakBurst: Boolean = false,
-    val isPlayerPlasma: Boolean = false
-)
+    var isTankShell: Boolean = false,
+    var isFlakBurst: Boolean = false,
+    var isPlayerPlasma: Boolean = false
+) {
+    fun reset(
+        px: Float,
+        py: Float,
+        pz: Float,
+        vx: Float,
+        vy: Float,
+        vz: Float,
+        damage: Float,
+        isPlayer: Boolean,
+        life: Float,
+        isTankShell: Boolean,
+        isFlakBurst: Boolean,
+        isPlayerPlasma: Boolean
+    ) {
+        this.pos.x = px
+        this.pos.y = py
+        this.pos.z = pz
+        this.velocity.x = vx
+        this.velocity.y = vy
+        this.velocity.z = vz
+        this.damage = damage
+        this.isPlayer = isPlayer
+        this.life = life
+        this.isTankShell = isTankShell
+        this.isFlakBurst = isFlakBurst
+        this.isPlayerPlasma = isPlayerPlasma
+    }
+}
 
 data class RocketCluster(
     val id: String,
@@ -282,24 +329,63 @@ data class GuidedMissile(
 )
 
 data class EnemyTarget(
-    val id: String,
-    val empire: EmpireType,
-    val category: EnemyCategory,
+    var id: String,
+    var empire: EmpireType,
+    var category: EnemyCategory,
     var pos: Vector3D,
     var velocity: Vector3D,
     var health: Float,
-    val maxHealth: Float,
-    val scoreValue: Int,
-    val unitName: String,
+    var maxHealth: Float,
+    var scoreValue: Int,
+    var unitName: String,
     var strafePhase: Float = 0f,
     var attackTimer: Float = 0f,
     var turretAngle: Float = 0f,
-    val isGroundUnit: Boolean = false,
+    var isGroundUnit: Boolean = false,
     var rotorAngle: Float = 0f,
     var isAlerted: Boolean = false,
     var hitFlashTimer: Float = 0f,
     var dodgeTimer: Float = 0f
-)
+) {
+    fun reset(
+        id: String,
+        empire: EmpireType,
+        category: EnemyCategory,
+        px: Float,
+        py: Float,
+        pz: Float,
+        vx: Float,
+        vy: Float,
+        vz: Float,
+        maxHealth: Float,
+        scoreValue: Int,
+        unitName: String,
+        isGroundUnit: Boolean,
+        isAlerted: Boolean
+    ) {
+        this.id = id
+        this.empire = empire
+        this.category = category
+        this.pos.x = px
+        this.pos.y = py
+        this.pos.z = pz
+        this.velocity.x = vx
+        this.velocity.y = vy
+        this.velocity.z = vz
+        this.health = maxHealth
+        this.maxHealth = maxHealth
+        this.scoreValue = scoreValue
+        this.unitName = unitName
+        this.strafePhase = 0f
+        this.attackTimer = 0f
+        this.turretAngle = 0f
+        this.isGroundUnit = isGroundUnit
+        this.rotorAngle = 0f
+        this.isAlerted = isAlerted
+        this.hitFlashTimer = 0f
+        this.dodgeTimer = 0f
+    }
+}
 
 data class BossSubsystem(
     val id: String,
@@ -380,7 +466,9 @@ data class BossCombatEntity(
     var evadeTimer: Float = 0f,
     var evadeCooldownTimer: Float = 0f,
     var evadeDirection: Float = 1f,
-    var hitFlashTimer: Float = 0f
+    var hitFlashTimer: Float = 0f,
+    val endlessBossType: EndlessBossType? = null,
+    val bossTier: Int = 1
 ) {
     fun registerHit(hits: Int = 1, isWeakPointHit: Boolean = false): Int {
         if (isInvulnerable) return bossHitsRemaining
@@ -422,11 +510,34 @@ data class BossCombatEntity(
 data class VisualParticle(
     var pos: Vector3D,
     var velocity: Vector3D,
-    val color: Color,
-    val radius: Float,
+    var color: Color,
+    var radius: Float,
     var life: Float,
-    val maxLife: Float
-)
+    var maxLife: Float
+) {
+    fun reset(
+        px: Float,
+        py: Float,
+        pz: Float,
+        vx: Float,
+        vy: Float,
+        vz: Float,
+        color: Color,
+        radius: Float,
+        life: Float
+    ) {
+        this.pos.x = px
+        this.pos.y = py
+        this.pos.z = pz
+        this.velocity.x = vx
+        this.velocity.y = vy
+        this.velocity.z = vz
+        this.color = color
+        this.radius = radius
+        this.life = life
+        this.maxLife = life
+    }
+}
 
 data class ThreatAlert(
     val message: String,

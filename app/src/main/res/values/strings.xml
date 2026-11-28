@@ -4,4 +4,10 @@
     <string name="settings_user_id_copied">USER ID COPIED</string>
     <string name="settings_privacy_ad_consent">PRIVACY &amp; AD CONSENT</string>
     <string name="settings_privacy_ad_consent_updated">Ad privacy preferences updated</string>
+    <string name="settings_global_sound_music_title">GAME SOUND &amp; MUSIC</string>
+    <string name="settings_global_sound_music_subtitle">Enable or disable all game sound effects and music</string>
+    <string name="settings_sfx_title">COMBAT SOUND EFFECTS</string>
+    <string name="settings_sfx_subtitle">30mm Vulcan, missile launch &amp; explosion SFX</string>
+    <string name="settings_music_title">TACTICAL MUSIC</string>
+    <string name="settings_music_subtitle">Looping combat soundtrack during missions</string>
 </resources>

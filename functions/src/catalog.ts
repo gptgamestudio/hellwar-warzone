@@ -56,15 +56,17 @@ export const REWARDED_SUPPLY_DROP_CREDITS = 1000;
 export const MAX_DAILY_REWARDED_CONTINUES = 10;
 export const AD_CONTINUE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-export const ENDLESS_THEATER_CYCLE: readonly EmpireId[] = ["DRAGON", "ALIEN", "ORC", "HUMAN"];
-export const ENDLESS_WAVES_PER_THEATER = 5;
+export const ENDLESS_EMPIRE_KILL_TARGET = 250_000;
+export const ENDLESS_TOTAL_KILL_TARGET = 1_000_000;
 export const MAX_ENDLESS_WAVE = 1000;
 export const MIN_ENDLESS_WAVE_INTERVAL_MS = 3000;
 
-export function endlessEmpireForWave(wave: number): EmpireId {
-  const safeWave = Math.max(1, Math.floor(wave));
-  const idx = Math.floor((safeWave - 1) / ENDLESS_WAVES_PER_THEATER) % ENDLESS_THEATER_CYCLE.length;
-  return ENDLESS_THEATER_CYCLE[idx];
+export function parseValidEmpire(input: unknown): EmpireId | null {
+  if (typeof input !== "string") return null;
+  const normalized = input.trim().toUpperCase();
+  return (VALID_EMPIRES as readonly string[]).includes(normalized)
+    ? (normalized as EmpireId)
+    : null;
 }
 
 export function calculateEndlessWaveCredits(wave: number): number {

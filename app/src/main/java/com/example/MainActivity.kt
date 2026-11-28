@@ -52,6 +52,7 @@ import com.example.game.network.signOutFromGoogle
 import com.example.game.ui.CampaignScreen
 import com.example.game.ui.CommandScreen
 import com.example.game.ui.ConnectionGateScreen
+import com.example.game.ui.EndlessTheaterScreen
 import com.example.game.ui.GamePlayScreen
 import com.example.game.ui.GarageScreen
 import com.example.game.ui.LeaderboardScreen
@@ -66,6 +67,7 @@ import kotlinx.coroutines.launch
 enum class GameScreen {
     CONNECTION_GATE,
     MAIN_MENU,
+    ENDLESS_SELECT,
     GAMEPLAY,
     CAMPAIGN,
     GARAGE,
@@ -239,6 +241,10 @@ private fun AuthenticatedGameNavigation(
     val cloudAuthority = remember(context) {
         CloudAuthorityRepository.getInstance(context.applicationContext)
     }
+    val settingsManager = remember(context) {
+        com.example.game.network.TacticalSettingsManager.getInstance(context.applicationContext)
+    }
+    val tacticalSettings by settingsManager.settings.collectAsState()
     val campaignState by campaignService.campaignState.collectAsState()
     val cloudUiState by cloudAuthority.state.collectAsState()
 
@@ -273,6 +279,7 @@ private fun AuthenticatedGameNavigation(
     var selectedEmpire by rememberSaveable(user.uid) { mutableStateOf(highestUnlockedEmpire) }
     var savedCheckpoint by remember(user.uid) { mutableStateOf(progressionManager.loadCheckpoint(user.uid)) }
     var activeResumeCheckpoint by remember(user.uid) { mutableStateOf<SortieCheckpoint?>(null) }
+    var savedEndlessCheckpoints by remember(user.uid) { mutableStateOf(progressionManager.loadAllEndlessCheckpoints(user.uid)) }
     var savedEndlessCheckpoint by remember(user.uid) { mutableStateOf(progressionManager.loadEndlessCheckpoint(user.uid)) }
     var activeEndlessResumeCheckpoint by remember(user.uid) { mutableStateOf<EndlessCheckpoint?>(null) }
     var localEndlessRecord by remember(user.uid) { mutableStateOf(progressionManager.loadEndlessRecord(user.uid)) }
@@ -285,10 +292,41 @@ private fun AuthenticatedGameNavigation(
     }
 
     val effectiveEndlessRecord = remember(localEndlessRecord, cloudUiState.endlessStats) {
+        val mergedEmpires = EmpireType.entries.associateWith { emp ->
+            val localEmp = localEndlessRecord.progressFor(emp)
+            val cloudEmp = cloudUiState.endlessStats.empireStats[emp]
+            if (cloudEmp == null) {
+                localEmp
+            } else {
+                localEmp.copy(
+                    regularKills = maxOf(localEmp.regularKills, cloudEmp.totalKills),
+                    highestWave = maxOf(localEmp.highestWave, cloudEmp.highestWave),
+                    bestSurvivalScore = maxOf(localEmp.bestSurvivalScore, cloudEmp.bestSurvivalScore),
+                    totalWavesCompleted = maxOf(localEmp.totalWavesCompleted, cloudEmp.totalWavesCompleted)
+                )
+            }
+        }
+        val cappedFourEmpireKills = EmpireType.entries.sumOf { mergedEmpires.getValue(it).cappedChallengeKills }
+        val totalBosses = EmpireType.entries.sumOf { mergedEmpires.getValue(it).bossesDefeated }
         EndlessSurvivalRecord(
-            highestWave = maxOf(localEndlessRecord.highestWave, cloudUiState.endlessStats.highestWave),
-            bestSurvivalScore = maxOf(localEndlessRecord.bestSurvivalScore, cloudUiState.endlessStats.bestSurvivalScore),
-            totalWavesCompleted = maxOf(localEndlessRecord.totalWavesCompleted, cloudUiState.endlessStats.totalWavesCompleted)
+            highestWave = maxOf(
+                localEndlessRecord.highestWave,
+                cloudUiState.endlessStats.highestWave,
+                mergedEmpires.values.maxOfOrNull { it.highestWave } ?: 0
+            ),
+            bestSurvivalScore = maxOf(
+                localEndlessRecord.bestSurvivalScore,
+                cloudUiState.endlessStats.bestSurvivalScore,
+                mergedEmpires.values.maxOfOrNull { it.bestSurvivalScore } ?: 0
+            ),
+            totalWavesCompleted = maxOf(
+                localEndlessRecord.totalWavesCompleted,
+                cloudUiState.endlessStats.totalWavesCompleted,
+                mergedEmpires.values.sumOf { it.totalWavesCompleted }
+            ),
+            totalRegularKills = cappedFourEmpireKills,
+            totalBossesDefeated = totalBosses,
+            empireProgress = mergedEmpires
         )
     }
 
@@ -320,6 +358,7 @@ private fun AuthenticatedGameNavigation(
 
     val refreshProgression: () -> Unit = {
         savedCheckpoint = progressionManager.loadCheckpoint(user.uid)
+        savedEndlessCheckpoints = progressionManager.loadAllEndlessCheckpoints(user.uid)
         savedEndlessCheckpoint = progressionManager.loadEndlessCheckpoint(user.uid)
         localEndlessRecord = progressionManager.loadEndlessRecord(user.uid)
         progressionTick++
@@ -480,12 +519,8 @@ private fun AuthenticatedGameNavigation(
                 },
                 onEmpireCampaign = { currentScreen = GameScreen.CAMPAIGN },
                 onEndlessBattle = {
-                    activeGameMode = GameMode.ENDLESS_SURVIVAL
-                    selectedEmpire = EmpireType.DRAGON
-                    activeResumeCheckpoint = null
-                    activeEndlessResumeCheckpoint = null
-                    sortieSessionId++
-                    currentScreen = GameScreen.GAMEPLAY
+                    savedEndlessCheckpoints = progressionManager.loadAllEndlessCheckpoints(user.uid)
+                    currentScreen = GameScreen.ENDLESS_SELECT
                 },
                 onGarage = {
                     garageInitialTab = 0
@@ -502,6 +537,37 @@ private fun AuthenticatedGameNavigation(
                     triggerRewardedSupplyDrop({}, { msg -> adFeedbackMessage = msg })
                 },
                 supplyAdStatus = adFeedbackMessage,
+                soundAndMusicEnabled = tacticalSettings.soundAndMusicEnabled,
+                onToggleSoundAndMusic = { enabled ->
+                    settingsManager.setSoundAndMusicEnabled(enabled)
+                },
+                modifier = modifier
+            )
+        }
+
+        GameScreen.ENDLESS_SELECT -> {
+            BackHandler { currentScreen = GameScreen.MAIN_MENU }
+            EndlessTheaterScreen(
+                endlessRecord = effectiveEndlessRecord,
+                checkpointsByEmpire = savedEndlessCheckpoints,
+                onDeployEmpire = { empire ->
+                    activeGameMode = GameMode.ENDLESS_SURVIVAL
+                    selectedEmpire = empire
+                    activeResumeCheckpoint = null
+                    activeEndlessResumeCheckpoint = null
+                    sortieSessionId++
+                    currentScreen = GameScreen.GAMEPLAY
+                },
+                onResumeEmpire = { empire ->
+                    val endlessCp = progressionManager.loadEndlessCheckpoint(user.uid, empire)
+                    activeGameMode = GameMode.ENDLESS_SURVIVAL
+                    selectedEmpire = empire
+                    activeResumeCheckpoint = null
+                    activeEndlessResumeCheckpoint = endlessCp
+                    sortieSessionId++
+                    currentScreen = GameScreen.GAMEPLAY
+                },
+                onBack = { currentScreen = GameScreen.MAIN_MENU },
                 modifier = modifier
             )
         }
@@ -548,21 +614,38 @@ private fun AuthenticatedGameNavigation(
                     onSaveEndlessCheckpoint = { endlessCp ->
                         progressionManager.saveEndlessCheckpoint(user.uid, endlessCp)
                         savedEndlessCheckpoint = endlessCp
+                        savedEndlessCheckpoints = progressionManager.loadAllEndlessCheckpoints(user.uid)
                     },
                     onClearEndlessCheckpoint = {
-                        progressionManager.clearEndlessCheckpoint(user.uid)
-                        savedEndlessCheckpoint = null
+                        progressionManager.clearEndlessCheckpoint(user.uid, selectedEmpire)
+                        savedEndlessCheckpoints = progressionManager.loadAllEndlessCheckpoints(user.uid)
+                        savedEndlessCheckpoint = progressionManager.loadEndlessCheckpoint(user.uid)
                     },
-                    onUpdateEndlessRecord = { highestWave, bestScore, wavesCompleted ->
+                    onUpdateEndlessRecord = { highestWave, bestScore, wavesCompleted, totalRegularKills, totalBossesDefeated ->
                         localEndlessRecord = progressionManager.saveEndlessRecord(
                             uid = user.uid,
                             highestWaveReached = highestWave,
                             survivalScore = bestScore,
-                            completedWavesCount = wavesCompleted
+                            completedWavesCount = wavesCompleted,
+                            totalRegularKills = totalRegularKills,
+                            totalBossesDefeated = totalBossesDefeated,
+                            empire = selectedEmpire
                         )
                     },
-                    onStartEndlessSession = {
-                        cloudAuthority.startEndlessSession()
+                    onUpdateEmpireEndlessRecord = { empire, highestWave, bestScore, wavesCompleted, empireKills, cycleKills, empireBosses ->
+                        localEndlessRecord = progressionManager.saveEmpireEndlessRecord(
+                            uid = user.uid,
+                            empire = empire,
+                            highestWaveReached = highestWave,
+                            survivalScore = bestScore,
+                            completedWavesCount = wavesCompleted,
+                            totalRegularKills = empireKills,
+                            cycleKills = cycleKills,
+                            totalBossesDefeated = empireBosses
+                        )
+                    },
+                    onStartEndlessSession = { empire ->
+                        cloudAuthority.startEndlessSession(empire)
                     },
                     onClaimEndlessWave = { sid, waveNumber, waveKills ->
                         val res = cloudAuthority.claimEndlessWaveCompletion(sid, waveNumber, waveKills)

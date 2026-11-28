@@ -2,6 +2,7 @@ package com.example.game.network
 
 import android.content.Context
 import com.example.R
+import com.example.game.model.EmpireType
 import com.example.game.model.HelicopterClass
 import com.example.game.model.HelicopterSkin
 import com.example.game.model.HelicopterUpgrades
@@ -51,11 +52,21 @@ data class RewardedSettlementOutcome(
     val adContinueRemaining: Int
 )
 
+data class EmpireEndlessCloudStats(
+    val empire: EmpireType,
+    val highestWave: Int = 0,
+    val bestSurvivalScore: Int = 0,
+    val totalWavesCompleted: Int = 0,
+    val totalCreditsEarned: Int = 0,
+    val totalKills: Int = 0
+)
+
 data class EndlessCloudStats(
     val highestWave: Int = 0,
     val bestSurvivalScore: Int = 0,
     val totalWavesCompleted: Int = 0,
-    val totalEndlessCreditsEarned: Int = 0
+    val totalEndlessCreditsEarned: Int = 0,
+    val empireStats: Map<EmpireType, EmpireEndlessCloudStats> = emptyMap()
 )
 
 data class EndlessWaveSettlementOutcome(
@@ -184,12 +195,30 @@ class CloudAuthorityRepository private constructor(
                 return@addSnapshotListener
             }
             if (snapshot != null && snapshot.exists()) {
+                val rawEmpireStats = snapshot.get("empireStats") as? Map<*, *>
+                val parsedEmpires = buildMap<EmpireType, EmpireEndlessCloudStats> {
+                    for (emp in EmpireType.entries) {
+                        val rawEmp = rawEmpireStats?.get(emp.name) as? Map<*, *> ?: continue
+                        put(
+                            emp,
+                            EmpireEndlessCloudStats(
+                                empire = emp,
+                                highestWave = ((rawEmp["highestWave"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                                bestSurvivalScore = ((rawEmp["bestSurvivalScore"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                                totalWavesCompleted = ((rawEmp["totalWavesCompleted"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                                totalCreditsEarned = ((rawEmp["totalCreditsEarned"] as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                                totalKills = ((rawEmp["totalKills"] as? Number)?.toInt() ?: 0).coerceAtLeast(0)
+                            )
+                        )
+                    }
+                }
                 _state.value = _state.value.copy(
                     endlessStats = EndlessCloudStats(
                         highestWave = ((snapshot.get("highestWave") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
                         bestSurvivalScore = ((snapshot.get("bestSurvivalScore") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
                         totalWavesCompleted = ((snapshot.get("totalWavesCompleted") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
-                        totalEndlessCreditsEarned = ((snapshot.get("totalEndlessCreditsEarned") as? Number)?.toInt() ?: 0).coerceAtLeast(0)
+                        totalEndlessCreditsEarned = ((snapshot.get("totalEndlessCreditsEarned") as? Number)?.toInt() ?: 0).coerceAtLeast(0),
+                        empireStats = parsedEmpires
                     )
                 )
             }
@@ -317,12 +346,12 @@ class CloudAuthorityRepository private constructor(
         }
     }
 
-    suspend fun startEndlessSession(): Result<String> {
+    suspend fun startEndlessSession(empire: EmpireType = EmpireType.DRAGON): Result<String> {
         auth.currentUser?.uid
             ?: return Result.failure(IllegalStateException("Google Sign-In required"))
         return try {
             val result = functions.getHttpsCallable("startEndlessSession")
-                .call(emptyMap<String, Any>())
+                .call(hashMapOf("empire" to empire.name))
                 .await()
             val map = result.data as? Map<*, *>
                 ?: return Result.failure(IllegalStateException("Empty endless session response"))
@@ -369,12 +398,25 @@ class CloudAuthorityRepository private constructor(
                 bestSurvivalScore = (map["bestSurvivalScore"] as? Number)?.toInt() ?: 0
             )
             val prevStats = _state.value.endlessStats
+            val settledEmpire = EmpireType.entries.find { it.name == outcome.empire } ?: EmpireType.DRAGON
+            val updatedEmpireStats = prevStats.empireStats.toMutableMap()
+            val prevEmp = updatedEmpireStats[settledEmpire] ?: EmpireEndlessCloudStats(empire = settledEmpire)
+            if (!outcome.alreadyClaimed) {
+                updatedEmpireStats[settledEmpire] = prevEmp.copy(
+                    highestWave = maxOf(prevEmp.highestWave, outcome.waveNumber),
+                    bestSurvivalScore = maxOf(prevEmp.bestSurvivalScore, outcome.sessionScore),
+                    totalWavesCompleted = prevEmp.totalWavesCompleted + 1,
+                    totalCreditsEarned = prevEmp.totalCreditsEarned + outcome.creditsAwarded,
+                    totalKills = prevEmp.totalKills + waveKills.coerceAtLeast(0)
+                )
+            }
             _state.value = _state.value.copy(
                 endlessStats = prevStats.copy(
                     highestWave = maxOf(prevStats.highestWave, outcome.highestWave),
                     bestSurvivalScore = maxOf(prevStats.bestSurvivalScore, outcome.bestSurvivalScore),
                     totalWavesCompleted = if (outcome.alreadyClaimed) prevStats.totalWavesCompleted else prevStats.totalWavesCompleted + 1,
-                    totalEndlessCreditsEarned = prevStats.totalEndlessCreditsEarned + outcome.creditsAwarded
+                    totalEndlessCreditsEarned = prevStats.totalEndlessCreditsEarned + outcome.creditsAwarded,
+                    empireStats = updatedEmpireStats
                 )
             )
             Result.success(outcome)

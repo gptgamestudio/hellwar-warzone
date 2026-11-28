@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.FiberManualRecord
@@ -37,6 +39,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -91,6 +94,8 @@ fun MainMenuScreen(
     endlessResumeCheckpoint: EndlessCheckpoint? = null,
     onContinueEndless: () -> Unit = {},
     endlessRecord: EndlessSurvivalRecord = EndlessSurvivalRecord(),
+    soundAndMusicEnabled: Boolean = true,
+    onToggleSoundAndMusic: ((Boolean) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isRewardedReady by AdMobManager.isRewardedReady.collectAsState()
@@ -134,8 +139,12 @@ fun MainMenuScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-            // Top Bar: Player profile, callsign, rank, credits, online indicator
-            PlayerProfileHeader(profile = profile)
+            // Top Bar: Player profile, callsign, rank, credits, online indicator, global audio toggle
+            PlayerProfileHeader(
+                profile = profile,
+                soundAndMusicEnabled = soundAndMusicEnabled,
+                onToggleSoundAndMusic = onToggleSoundAndMusic
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -255,12 +264,12 @@ fun MainMenuScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // 3. ENDLESS BATTLE (Optional Continue + Fresh Endless Survival)
+            // 3. ENDLESS BATTLE (Optional Continue + 4-Empire Selector)
             if (endlessResumeCheckpoint != null) {
                 MenuSecondaryButton(
                     icon = Icons.Default.PlayArrow,
                     title = "CONTINUE ENDLESS — WAVE ${endlessResumeCheckpoint.currentWave}",
-                    subtitle = "${endlessResumeCheckpoint.activeEmpire.name} • HEARTS ${endlessResumeCheckpoint.hearts}/5 • SCORE ${endlessResumeCheckpoint.score}",
+                    subtitle = "${endlessResumeCheckpoint.activeEmpire.name} • KILLS ${endlessResumeCheckpoint.totalRegularKills}/250,000 • BOSSES ${endlessResumeCheckpoint.bossesDefeated}",
                     accentColor = HealthGreen,
                     onClick = onContinueEndless,
                     tag = "menu_continue_endless"
@@ -268,10 +277,10 @@ fun MainMenuScreen(
                 Spacer(modifier = Modifier.height(6.dp))
             }
 
-            val endlessSubtitle = if (endlessRecord.highestWave > 0) {
-                "Best Wave ${endlessRecord.highestWave} • Score ${endlessRecord.bestSurvivalScore} • 4-Empire Cycle"
+            val endlessSubtitle = if (endlessRecord.bestWaveAcrossEmpires > 0 || endlessRecord.cappedFourEmpireKills > 0) {
+                "${endlessRecord.cappedFourEmpireKills}/1,000,000 • ${endlessRecord.conqueredEmpireCount}/4 Empires • Bosses ${endlessRecord.totalBossesAcrossEmpires} • W${endlessRecord.bestWaveAcrossEmpires}"
             } else {
-                "Survive Infinite Waves • 4-Empire 5-Wave Cycle"
+                "4 Empires × 250,000 Kills • Flagship Boss Every 100 Kills"
             }
 
             MenuSecondaryButton(
@@ -369,7 +378,11 @@ fun MainMenuScreen(
 }
 
 @Composable
-private fun PlayerProfileHeader(profile: PlayerProfile) {
+private fun PlayerProfileHeader(
+    profile: PlayerProfile,
+    soundAndMusicEnabled: Boolean = true,
+    onToggleSoundAndMusic: ((Boolean) -> Unit)? = null
+) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = Color(0xDD0D1520),
@@ -417,30 +430,57 @@ private fun PlayerProfileHeader(profile: PlayerProfile) {
                 }
             }
 
-            Column(horizontalAlignment = Alignment.End) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.FiberManualRecord,
-                        contentDescription = "Online",
-                        tint = HealthGreen,
-                        modifier = Modifier.size(8.dp)
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onToggleSoundAndMusic != null) {
+                    IconButton(
+                        onClick = { onToggleSoundAndMusic(!soundAndMusicEnabled) },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("menu_global_audio_toggle")
+                    ) {
+                        Icon(
+                            imageVector = if (soundAndMusicEnabled) {
+                                Icons.AutoMirrored.Filled.VolumeUp
+                            } else {
+                                Icons.AutoMirrored.Filled.VolumeOff
+                            },
+                            contentDescription = if (soundAndMusicEnabled) {
+                                "Disable Game Sound and Music"
+                            } else {
+                                "Enable Game Sound and Music"
+                            },
+                            tint = if (soundAndMusicEnabled) CyberCyan else Color(0xFF78909C),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.FiberManualRecord,
+                            contentDescription = "Online",
+                            tint = HealthGreen,
+                            modifier = Modifier.size(8.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "ONLINE",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = HealthGreen,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
                     Text(
-                        text = "ONLINE",
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = HealthGreen,
+                        text = "${profile.credits} CR",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Black,
+                        color = MilitaryGold,
                         fontFamily = FontFamily.Monospace
                     )
                 }
-                Text(
-                    text = "${profile.credits} CR",
-                    fontSize = 10.5.sp,
-                    fontWeight = FontWeight.Black,
-                    color = MilitaryGold,
-                    fontFamily = FontFamily.Monospace
-                )
             }
         }
     }

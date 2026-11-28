@@ -22,9 +22,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -152,11 +156,33 @@ fun SettingsScreen(
                 )
 
                 SettingToggleItem(
-                    title = "COMBAT SOUND EFFECTS",
-                    subtitle = "30mm Vulcan, missile launch & explosion SFX",
-                    checked = settings.sfxEnabled,
+                    title = stringResource(R.string.settings_global_sound_music_title),
+                    subtitle = stringResource(R.string.settings_global_sound_music_subtitle),
+                    checked = settings.soundAndMusicEnabled,
+                    testTag = "setting_global_audio_toggle",
+                    icon = if (settings.soundAndMusicEnabled) {
+                        Icons.AutoMirrored.Filled.VolumeUp
+                    } else {
+                        Icons.AutoMirrored.Filled.VolumeOff
+                    },
+                    onCheckedChange = { settingsManager.setSoundAndMusicEnabled(it) }
+                )
+                SettingToggleItem(
+                    title = stringResource(R.string.settings_sfx_title),
+                    subtitle = stringResource(R.string.settings_sfx_subtitle),
+                    checked = settings.isSfxActive,
+                    enabled = settings.soundAndMusicEnabled,
                     testTag = "setting_sfx_toggle",
                     onCheckedChange = { settingsManager.setSfxEnabled(it) }
+                )
+                SettingToggleItem(
+                    title = stringResource(R.string.settings_music_title),
+                    subtitle = stringResource(R.string.settings_music_subtitle),
+                    checked = settings.isMusicActive,
+                    enabled = settings.soundAndMusicEnabled,
+                    icon = Icons.Filled.MusicNote,
+                    testTag = "setting_music_toggle",
+                    onCheckedChange = { settingsManager.setMusicEnabled(it) }
                 )
                 SettingToggleItem(
                     title = "WEAPON RECOIL HAPTICS",
@@ -366,29 +392,49 @@ private fun SettingToggleItem(
     subtitle: String,
     checked: Boolean,
     testTag: String,
+    enabled: Boolean = true,
+    icon: ImageVector? = null,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val contentAlpha = if (enabled) 1f else 0.52f
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color(0xFF0F1722), RoundedCornerShape(10.dp))
-            .border(1.dp, Color(0xFF263238), RoundedCornerShape(10.dp))
+            .border(
+                width = 1.dp,
+                color = if (icon != null && checked) CyberCyan.copy(alpha = 0.65f) else Color(0xFF263238),
+                shape = RoundedCornerShape(10.dp)
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (checked && enabled) CyberCyan else Color(0xFF607D8B),
+                modifier = Modifier.padding(end = 10.dp)
+            )
+        }
         Column(modifier = Modifier.weight(1f).padding(end = 10.dp)) {
             Text(
                 text = title,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = Color.White.copy(alpha = contentAlpha),
                 fontFamily = FontFamily.Monospace
             )
-            Text(text = subtitle, fontSize = 9.5.sp, color = Color(0xFF90A4AE))
+            Text(
+                text = subtitle,
+                fontSize = 9.5.sp,
+                color = Color(0xFF90A4AE).copy(alpha = contentAlpha)
+            )
         }
         Switch(
             checked = checked,
+            enabled = enabled,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = AmberWarning,

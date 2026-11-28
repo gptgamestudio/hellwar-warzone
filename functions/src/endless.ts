@@ -5,10 +5,10 @@ import {
   calculateEndlessWaveCredits,
   calculateEndlessWaveScore,
   EmpireId,
-  endlessEmpireForWave,
   MAX_CREDITS,
   MAX_ENDLESS_WAVE,
   MIN_ENDLESS_WAVE_INTERVAL_MS,
+  parseValidEmpire,
   STARTING_CREDITS,
 } from "./catalog";
 import { getHellwarDb, safeLog } from "./db";
@@ -18,15 +18,18 @@ import { getHellwarDb, safeLog } from "./db";
  * Client-reported wave completion counts and timestamps cannot independently prove authentic
  * combat on a rooted/modified APK. Server-side integrity is enforced via:
  *  - Firebase Auth UID isolation on sessions, wave ledgers, and stats
+ *  - Selected Empire immutability per session (no client-side theater spoofing)
  *  - Sequential wave progression (`waveNumber === lastSettledWave + 1`) — cannot skip waves
  *  - Append-only idempotent wave documents (`users/{uid}/endless_waves/{sessionId}_W{wave}`)
  *  - Minimum inter-wave cadence (`MIN_ENDLESS_WAVE_INTERVAL_MS`) and bounded per-wave credits/score
  *  - Atomic Firestore transactions updating `users/{uid}.credits`, `users/{uid}.highScore`,
- *    `users/{uid}/endless/stats`, and `leaderboard/{uid}` (zero direct client writes permitted)
+ *    `users/{uid}/endless/stats` (including per-Empire `empireStats`), and `leaderboard/{uid}`
+ *    (zero direct client writes permitted)
  */
 
 export interface EndlessSessionResult {
   sessionId: string;
+  empire: EmpireId;
   currentEmpire: EmpireId;
   startedAtMs: number;
 }
@@ -47,6 +50,7 @@ export interface EndlessWaveClaimResult {
 export async function startEndlessSessionCore(
   db: Firestore,
   uid: string,
+  empireInput: unknown = "DRAGON",
   nowMs: number = Date.now()
 ): Promise<EndlessSessionResult> {
   const userSnap = await db.collection("users").doc(uid).get();
@@ -54,14 +58,23 @@ export async function startEndlessSessionCore(
     throw new HttpsError("failed-precondition", "Pilot campaign profile not initialized.");
   }
 
+  let selectedEmpire: EmpireId = "DRAGON";
+  if (empireInput !== undefined && empireInput !== null) {
+    const parsed = parseValidEmpire(empireInput);
+    if (!parsed) {
+      throw new HttpsError("invalid-argument", "Invalid Empire selected for Endless session.");
+    }
+    selectedEmpire = parsed;
+  }
+
   const sessionId = `endless_${crypto.randomBytes(12).toString("hex")}`;
-  const initialEmpire = endlessEmpireForWave(1);
 
   await db.collection("endless_sessions").doc(sessionId).set({
     sessionId,
     userId: uid,
     status: "ACTIVE",
-    currentEmpire: initialEmpire,
+    empire: selectedEmpire,
+    currentEmpire: selectedEmpire,
     startedAtMs: nowMs,
     lastClaimedAtMs: nowMs,
     lastSettledWave: 0,
@@ -74,7 +87,8 @@ export async function startEndlessSessionCore(
 
   return {
     sessionId,
-    currentEmpire: initialEmpire,
+    empire: selectedEmpire,
+    currentEmpire: selectedEmpire,
     startedAtMs: nowMs,
   };
 }
@@ -152,8 +166,12 @@ export async function claimEndlessWaveCompletionCore(
     const prevTotalWaves = Number(statsData.totalWavesCompleted ?? 0);
     const prevTotalEndlessCredits = Number(statsData.totalEndlessCreditsEarned ?? 0);
 
-    const empire = endlessEmpireForWave(waveNumber);
-    const nextEmpire = endlessEmpireForWave(waveNumber + 1);
+    // Selected Empire stays fixed for the entire Endless sortie session.
+    const empire: EmpireId =
+      parseValidEmpire(sessionData.empire) ??
+      parseValidEmpire(sessionData.currentEmpire) ??
+      "DRAGON";
+    const nextEmpire: EmpireId = empire;
 
     // Idempotent duplicate wave claim guard
     if (waveSnap.exists || waveNumber <= lastSettledWave) {
@@ -195,6 +213,17 @@ export async function claimEndlessWaveCompletionCore(
     const nextBestWave = Math.max(prevBestWave, waveNumber);
     const nextBestScore = Math.max(prevBestScore, nextSessionScore);
 
+    const prevEmpireStatsMap =
+      typeof statsData.empireStats === "object" && statsData.empireStats !== null
+        ? (statsData.empireStats as Record<string, Record<string, unknown>>)
+        : {};
+    const prevEmpRaw = prevEmpireStatsMap[empire] ?? {};
+    const prevEmpBestWave = Number(prevEmpRaw.highestWave ?? 0);
+    const prevEmpBestScore = Number(prevEmpRaw.bestSurvivalScore ?? 0);
+    const prevEmpWaves = Number(prevEmpRaw.totalWavesCompleted ?? 0);
+    const prevEmpCredits = Number(prevEmpRaw.totalCreditsEarned ?? 0);
+    const prevEmpKills = Number(prevEmpRaw.totalKills ?? 0);
+
     tx.set(waveRef, {
       userId: uid,
       sessionId,
@@ -212,6 +241,7 @@ export async function claimEndlessWaveCompletionCore(
       sessionCreditsAwarded: prevSessionCredits + creditsAwarded,
       sessionScore: nextSessionScore,
       lastClaimedAtMs: nowMs,
+      empire,
       currentEmpire: nextEmpire,
       updatedAt: FieldValue.serverTimestamp(),
     });
@@ -220,10 +250,22 @@ export async function claimEndlessWaveCompletionCore(
       statsRef,
       {
         userId: uid,
+        lastActiveEmpire: empire,
         highestWave: nextBestWave,
         bestSurvivalScore: nextBestScore,
         totalWavesCompleted: prevTotalWaves + 1,
         totalEndlessCreditsEarned: Math.min(MAX_CREDITS, prevTotalEndlessCredits + creditsAwarded),
+        empireStats: {
+          ...prevEmpireStatsMap,
+          [empire]: {
+            empire,
+            highestWave: Math.max(prevEmpBestWave, waveNumber),
+            bestSurvivalScore: Math.max(prevEmpBestScore, nextSessionScore),
+            totalWavesCompleted: prevEmpWaves + 1,
+            totalCreditsEarned: Math.min(MAX_CREDITS, prevEmpCredits + creditsAwarded),
+            totalKills: Math.min(MAX_CREDITS, prevEmpKills + waveKills),
+          },
+        },
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -273,7 +315,8 @@ export const startEndlessSession = onCall(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Authentication required.");
   try {
-    return await startEndlessSessionCore(getHellwarDb(), uid);
+    const data = (request.data ?? {}) as Record<string, unknown>;
+    return await startEndlessSessionCore(getHellwarDb(), uid, data.empire);
   } catch (err) {
     safeLog("warn", `startEndlessSession failed: ${(err as Error).message}`);
     throw err;

@@ -57,8 +57,9 @@ fun GamePlayScreen(
     initialEndlessRecord: EndlessSurvivalRecord = EndlessSurvivalRecord(),
     onSaveEndlessCheckpoint: (EndlessCheckpoint) -> Unit = {},
     onClearEndlessCheckpoint: () -> Unit = {},
-    onUpdateEndlessRecord: (highestWave: Int, bestScore: Int, wavesCompleted: Int) -> Unit = { _, _, _ -> },
-    onStartEndlessSession: (suspend () -> Result<String>)? = null,
+    onUpdateEndlessRecord: (highestWave: Int, bestScore: Int, wavesCompleted: Int, totalRegularKills: Int, totalBossesDefeated: Int) -> Unit = { _, _, _, _, _ -> },
+    onUpdateEmpireEndlessRecord: ((empire: EmpireType, highestWave: Int, bestScore: Int, wavesCompleted: Int, empireRegularKills: Int, cycleKills: Int, empireBossesDefeated: Int) -> Unit)? = null,
+    onStartEndlessSession: (suspend (EmpireType) -> Result<String>)? = null,
     onClaimEndlessWave: (suspend (sessionId: String, waveNumber: Int, waveKills: Int) -> Result<EndlessWaveSettlementOutcome>)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -77,8 +78,15 @@ fun GamePlayScreen(
     val isFullScreenAdShowing by AdMobManager.isFullScreenAdShowing.collectAsState()
     val audioSystem = remember(context) { com.example.game.audio.CombatAudioSystem(context.applicationContext) }
 
-    LaunchedEffect(tacticalSettings.sfxEnabled, isFullScreenAdShowing) {
-        audioSystem.isMuted = !tacticalSettings.sfxEnabled || isFullScreenAdShowing
+    LaunchedEffect(
+        tacticalSettings.isSfxActive,
+        tacticalSettings.isMusicActive,
+        isFullScreenAdShowing
+    ) {
+        audioSystem.setAudioEnabled(
+            sfxEnabled = tacticalSettings.isSfxActive && !isFullScreenAdShowing,
+            musicEnabled = tacticalSettings.isMusicActive && !isFullScreenAdShowing
+        )
     }
 
     DisposableEffect(audioSystem) {
@@ -89,27 +97,65 @@ fun GamePlayScreen(
     val coroutineScope = rememberCoroutineScope()
     val activeUpgradesSnapshot = profile.getUpgrades(profile.selectedHelicopterClass).copy()
 
-    var endlessSessionId by remember(gameMode) { mutableStateOf(resumeEndlessCheckpoint?.endlessSessionId) }
-    val settledWaves = remember(gameMode) {
+    val initialEmpireProgress = remember(initialEndlessRecord, selectedEmpire) {
+        initialEndlessRecord.progressFor(selectedEmpire)
+    }
+    val otherEmpiresCappedKills = remember(initialEndlessRecord, selectedEmpire) {
+        EmpireType.entries
+            .filter { it != selectedEmpire }
+            .sumOf { initialEndlessRecord.progressFor(it).cappedChallengeKills }
+    }
+
+    var endlessSessionId by remember(gameMode, selectedEmpire) { mutableStateOf(resumeEndlessCheckpoint?.endlessSessionId) }
+    val settledWaves = remember(gameMode, selectedEmpire) {
         mutableSetOf<Int>().apply {
             resumeEndlessCheckpoint?.settledWaves?.let { addAll(it) }
         }
     }
-    val pendingClaimWaves = remember(gameMode) {
+    val pendingClaimWaves = remember(gameMode, selectedEmpire) {
         mutableMapOf<Int, Int>().apply {
             resumeEndlessCheckpoint?.pendingClaimWaves?.let { putAll(it) }
         }
     }
-    val inFlightWaves = remember(gameMode) { mutableSetOf<Int>() }
-    var bestEndlessWave by remember(initialEndlessRecord) { mutableStateOf(initialEndlessRecord.highestWave) }
-    var bestEndlessScore by remember(initialEndlessRecord) { mutableStateOf(initialEndlessRecord.bestSurvivalScore) }
-    var endlessSyncStatus by remember(gameMode) {
+    val inFlightWaves = remember(gameMode, selectedEmpire) { mutableSetOf<Int>() }
+    var bestEndlessWave by remember(initialEmpireProgress, initialEndlessRecord) {
+        mutableStateOf(maxOf(initialEmpireProgress.highestWave, if (initialEndlessRecord.empireProgress.isEmpty()) initialEndlessRecord.highestWave else 0))
+    }
+    var bestEndlessScore by remember(initialEmpireProgress, initialEndlessRecord) {
+        mutableStateOf(maxOf(initialEmpireProgress.bestSurvivalScore, if (initialEndlessRecord.empireProgress.isEmpty()) initialEndlessRecord.bestSurvivalScore else 0))
+    }
+    var bestTotalRegularKills by remember(initialEmpireProgress) { mutableStateOf(initialEmpireProgress.regularKills) }
+    var bestBossesDefeated by remember(initialEmpireProgress) { mutableStateOf(initialEmpireProgress.bossesDefeated) }
+    var endlessSyncStatus by remember(gameMode, selectedEmpire) {
         mutableStateOf(
             if (pendingClaimWaves.isNotEmpty()) EndlessSyncStatus.PENDING_OFFLINE else EndlessSyncStatus.IDLE
         )
     }
 
     val engineRef = remember { mutableStateOf<GameEngine?>(null) }
+
+    fun publishEndlessProgress(targetEngine: GameEngine, wavesDone: Int = targetEngine.wavesCompleted) {
+        bestEndlessWave = maxOf(bestEndlessWave, targetEngine.currentWave)
+        bestEndlessScore = maxOf(bestEndlessScore, targetEngine.score)
+        bestTotalRegularKills = maxOf(bestTotalRegularKills, targetEngine.endlessTotalRegularKills)
+        bestBossesDefeated = maxOf(bestBossesDefeated, targetEngine.endlessBossesDefeated)
+        onUpdateEndlessRecord(
+            bestEndlessWave,
+            bestEndlessScore,
+            wavesDone,
+            bestTotalRegularKills,
+            bestBossesDefeated
+        )
+        onUpdateEmpireEndlessRecord?.invoke(
+            selectedEmpire,
+            bestEndlessWave,
+            bestEndlessScore,
+            wavesDone,
+            bestTotalRegularKills,
+            targetEngine.endlessCycleKills,
+            bestBossesDefeated
+        )
+    }
 
     fun snapshotEndlessCheckpoint(targetEngine: GameEngine): EndlessCheckpoint {
         return targetEngine.exportEndlessCheckpoint(
@@ -130,7 +176,7 @@ fun GamePlayScreen(
         }
         var sid = endlessSessionId
         if (sid.isNullOrBlank()) {
-            val sessionResult = onStartEndlessSession()
+            val sessionResult = onStartEndlessSession(selectedEmpire)
             sid = sessionResult.getOrNull()
             if (!sid.isNullOrBlank()) {
                 endlessSessionId = sid
@@ -163,7 +209,7 @@ fun GamePlayScreen(
                     }
                     bestEndlessWave = maxOf(bestEndlessWave, outcome.highestWave)
                     bestEndlessScore = maxOf(bestEndlessScore, outcome.bestSurvivalScore)
-                    onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, targetEngine.wavesCompleted)
+                    publishEndlessProgress(targetEngine, targetEngine.wavesCompleted)
                 }.onFailure {
                     encounteredFailure = true
                 }
@@ -193,7 +239,7 @@ fun GamePlayScreen(
     ) {
         GameEngine(
             selectedEmpire = if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-                GameEngine.endlessEmpireForWave(resumeEndlessCheckpoint?.currentWave ?: 1)
+                resumeEndlessCheckpoint?.activeEmpire ?: selectedEmpire
             } else {
                 selectedEmpire
             },
@@ -205,15 +251,19 @@ fun GamePlayScreen(
             initialScreenShakeEnabled = tacticalSettings.screenShakeEnabled,
             initialAutoFire = tacticalSettings.autoFireByDefault,
             gameMode = gameMode,
+            initialEndlessRegularKills = if (gameMode == GameMode.ENDLESS_SURVIVAL) initialEmpireProgress.regularKills else 0,
+            initialEndlessCycleKills = if (gameMode == GameMode.ENDLESS_SURVIVAL) initialEmpireProgress.cycleKills else 0,
+            initialEndlessBossesDefeated = if (gameMode == GameMode.ENDLESS_SURVIVAL) initialEmpireProgress.bossesDefeated else 0,
+            otherEmpiresCappedKills = if (gameMode == GameMode.ENDLESS_SURVIVAL) otherEmpiresCappedKills else 0,
             onEndlessWaveCompleted = { event ->
                 if (!settledWaves.contains(event.waveNumber) && !pendingClaimWaves.containsKey(event.waveNumber)) {
                     pendingClaimWaves[event.waveNumber] = event.waveKills
                 }
                 bestEndlessWave = maxOf(bestEndlessWave, event.waveNumber + 1)
                 bestEndlessScore = maxOf(bestEndlessScore, event.survivalScore)
-                onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, event.waveNumber)
                 val activeEngine = engineRef.value
                 if (activeEngine != null) {
+                    publishEndlessProgress(activeEngine, event.waveNumber)
                     activeEngine.updateEndlessMetadata(bestEndlessWave, bestEndlessScore, endlessSyncStatus)
                     if (!activeEngine.isGameOver) {
                         onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(activeEngine))
@@ -221,6 +271,30 @@ fun GamePlayScreen(
                     coroutineScope.launch {
                         settlePendingWaves(activeEngine)
                     }
+                }
+            },
+            onEndlessBossDefeated = { event ->
+                bestEndlessScore = maxOf(bestEndlessScore, event.survivalScore)
+                val activeEngine = engineRef.value
+                if (activeEngine != null) {
+                    publishEndlessProgress(activeEngine, activeEngine.wavesCompleted)
+                    activeEngine.updateEndlessMetadata(bestEndlessWave, bestEndlessScore, endlessSyncStatus)
+                    if (!activeEngine.isGameOver) {
+                        onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(activeEngine))
+                    }
+                } else {
+                    bestTotalRegularKills = maxOf(bestTotalRegularKills, event.totalRegularKills)
+                    bestBossesDefeated = maxOf(bestBossesDefeated, event.bossNumber)
+                    onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, 0, bestTotalRegularKills, bestBossesDefeated)
+                    onUpdateEmpireEndlessRecord?.invoke(
+                        selectedEmpire,
+                        bestEndlessWave,
+                        bestEndlessScore,
+                        0,
+                        bestTotalRegularKills,
+                        0,
+                        bestBossesDefeated
+                    )
                 }
             }
         ).also { engineRef.value = it }
@@ -237,6 +311,27 @@ fun GamePlayScreen(
     var isLandscapeViewportStable by remember { mutableStateOf(false) }
     var frameTick by remember { mutableLongStateOf(0L) }
     var isBannerVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(
+        isPaused,
+        isFullScreenAdShowing,
+        isExitingBattle,
+        hudState.isGameOver,
+        hudState.isVictory,
+        tacticalSettings.isMusicActive
+    ) {
+        if (tacticalSettings.isMusicActive &&
+            !isPaused &&
+            !isFullScreenAdShowing &&
+            !isExitingBattle &&
+            !hudState.isGameOver &&
+            !hudState.isVictory
+        ) {
+            audioSystem.startMusic()
+        } else {
+            audioSystem.pauseMusic()
+        }
+    }
 
     LaunchedEffect(viewportSize) {
         val isLandscape = viewportSize.width > viewportSize.height && viewportSize.width > 0 && viewportSize.height > 0
@@ -266,9 +361,11 @@ fun GamePlayScreen(
             }
             bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
             bestEndlessScore = maxOf(bestEndlessScore, engine.score)
+            bestTotalRegularKills = maxOf(bestTotalRegularKills, engine.endlessTotalRegularKills)
+            bestBossesDefeated = maxOf(bestBossesDefeated, engine.endlessBossesDefeated)
             engine.updateEndlessMetadata(bestEndlessWave, bestEndlessScore, endlessSyncStatus)
             if (endlessSessionId.isNullOrBlank() && onStartEndlessSession != null) {
-                val res = onStartEndlessSession()
+                val res = onStartEndlessSession(selectedEmpire)
                 res.onSuccess { sid ->
                     endlessSessionId = sid
                     if (pendingClaimWaves.isNotEmpty()) {
@@ -290,12 +387,20 @@ fun GamePlayScreen(
     }
 
     // Periodic milestone checkpoint auto-save while combat is active
-    LaunchedEffect(engine, gameMode, hudState.barracksDestroyedCount, hudState.isHqBossDefeated, hudState.currentWave, hudState.wavesCompleted) {
+    LaunchedEffect(
+        engine,
+        gameMode,
+        hudState.barracksDestroyedCount,
+        hudState.isHqBossDefeated,
+        hudState.currentWave,
+        hudState.wavesCompleted,
+        hudState.endlessBossesDefeated,
+        hudState.bossEncounterState,
+        hudState.endlessTotalRegularKills / 10
+    ) {
         if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-            if (!engine.isGameOver && (hudState.currentWave > 1 || hudState.wavesCompleted > 0 || hudState.score > 0)) {
-                bestEndlessWave = maxOf(bestEndlessWave, hudState.currentWave)
-                bestEndlessScore = maxOf(bestEndlessScore, hudState.score)
-                onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, hudState.wavesCompleted)
+            if (!engine.isGameOver && (hudState.currentWave > 1 || hudState.wavesCompleted > 0 || hudState.score > 0 || hudState.endlessTotalRegularKills > 0 || hudState.endlessBossesDefeated > 0)) {
+                publishEndlessProgress(engine, hudState.wavesCompleted)
                 onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(engine))
             }
         } else {
@@ -319,9 +424,7 @@ fun GamePlayScreen(
     LaunchedEffect(hudState.isGameOver) {
         if (hudState.isGameOver) {
             if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-                bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
-                bestEndlessScore = maxOf(bestEndlessScore, engine.score)
-                onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
+                publishEndlessProgress(engine, engine.wavesCompleted)
                 engine.updateEndlessMetadata(bestEndlessWave, bestEndlessScore, endlessSyncStatus)
                 onClearEndlessCheckpoint()
             }
@@ -333,9 +436,7 @@ fun GamePlayScreen(
     DisposableEffect(engine, gameMode) {
         onDispose {
             if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-                bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
-                bestEndlessScore = maxOf(bestEndlessScore, engine.score)
-                onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
+                publishEndlessProgress(engine, engine.wavesCompleted)
                 if (!engine.isGameOver) {
                     onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(engine))
                 } else {
@@ -393,9 +494,7 @@ fun GamePlayScreen(
             isPaused = true
             engine.clearMovementInputs()
             if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-                bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
-                bestEndlessScore = maxOf(bestEndlessScore, engine.score)
-                onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
+                publishEndlessProgress(engine, engine.wavesCompleted)
                 if (!engine.isGameOver) {
                     onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(engine))
                 } else {
@@ -474,9 +573,7 @@ fun GamePlayScreen(
                 onPauseStateChange = { paused ->
                     isPaused = paused
                     if (paused && gameMode == GameMode.ENDLESS_SURVIVAL && !engine.isGameOver) {
-                        bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
-                        bestEndlessScore = maxOf(bestEndlessScore, engine.score)
-                        onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
+                        publishEndlessProgress(engine, engine.wavesCompleted)
                         onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(engine))
                     }
                 },
@@ -487,9 +584,7 @@ fun GamePlayScreen(
                         isPaused = true
                         engine.clearMovementInputs()
                         if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-                            bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
-                            bestEndlessScore = maxOf(bestEndlessScore, engine.score)
-                            onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
+                            publishEndlessProgress(engine, engine.wavesCompleted)
                             onClearEndlessCheckpoint()
                         } else {
                             onClearCheckpoint()
@@ -509,11 +604,11 @@ fun GamePlayScreen(
                         endlessSyncStatus = EndlessSyncStatus.IDLE
                         AdMobManager.showInterstitialIfReady(activity) {
                             isPaused = false
-                            engine.resetBattle()
+                            engine.resetBattle(preserveEndlessCumulative = true)
                             engine.updateEndlessMetadata(bestEndlessWave, bestEndlessScore, endlessSyncStatus)
                             if (onStartEndlessSession != null) {
                                 coroutineScope.launch {
-                                    val res = onStartEndlessSession()
+                                    val res = onStartEndlessSession(selectedEmpire)
                                     res.onSuccess { sid ->
                                         endlessSessionId = sid
                                         endlessSyncStatus = EndlessSyncStatus.SYNCED
@@ -559,7 +654,11 @@ fun GamePlayScreen(
                     }
                 } else null,
                 onClaimDebriefAdBonus = onClaimDebriefAdBonus,
-                hapticsEnabled = tacticalSettings.hapticsEnabled
+                hapticsEnabled = tacticalSettings.hapticsEnabled,
+                soundAndMusicEnabled = tacticalSettings.soundAndMusicEnabled,
+                onToggleSoundAndMusic = { enabled ->
+                    settingsManager.setSoundAndMusicEnabled(enabled)
+                }
             )
             }
         }

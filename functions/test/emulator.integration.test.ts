@@ -274,66 +274,90 @@ test("Server campaign progression: sortie -> 50 barracks -> HQ unlock -> HQ vict
   assert.equal(lbDoc.get("highScore"), 50 * 1000 + 15000);
 });
 
-test("Endless Survival Cloud Functions: 5-wave theater cycling, escalating rewards, anti-duplicate, sequential check, and leaderboard sync", async () => {
+test("Endless Survival Cloud Functions: selected-Empire sessions, escalating rewards, anti-duplicate, sequential check, empireStats, and leaderboard sync", async () => {
   const aliceUid = "pilot_endless_alice";
   const bobUid = "pilot_endless_bob";
   await seedPilot(aliceUid, 18500, "SKY-ACE");
   await seedPilot(bobUid, 18500, "ROGUE-2");
 
   const startTime = 1_700_001_000_000;
-  const session = await startEndlessSessionCore(db, aliceUid, startTime);
-  assert.equal(session.currentEmpire, "DRAGON");
+
+  // Invalid Empire MUST be rejected
+  await assert.rejects(
+    () => startEndlessSessionCore(db, aliceUid, "MARTIAN", startTime),
+    /Invalid Empire/i
+  );
+
+  // Start an ALIEN Endless session — must stay ALIEN across all waves without 5-wave auto-rotation
+  const alienSession = await startEndlessSessionCore(db, aliceUid, "ALIEN", startTime);
+  assert.equal(alienSession.empire, "ALIEN");
+  assert.equal(alienSession.currentEmpire, "ALIEN");
 
   // Submitting wave 2 before wave 1 MUST be rejected
   await assert.rejects(
-    () => claimEndlessWaveCompletionCore(db, aliceUid, session.sessionId, 2, 6, startTime + 5000),
+    () => claimEndlessWaveCompletionCore(db, aliceUid, alienSession.sessionId, 2, 6, startTime + 5000),
     /sequential wave 1/i
   );
 
   // Submitting faster than MIN_ENDLESS_WAVE_INTERVAL_MS MUST be rejected
   await assert.rejects(
-    () => claimEndlessWaveCompletionCore(db, aliceUid, session.sessionId, 1, 4, startTime + 500),
+    () => claimEndlessWaveCompletionCore(db, aliceUid, alienSession.sessionId, 1, 4, startTime + 500),
     /minimum combat interval/i
   );
 
   // Cross-user session hijack MUST be rejected
   await assert.rejects(
-    () => claimEndlessWaveCompletionCore(db, bobUid, session.sessionId, 1, 4, startTime + 5000),
+    () => claimEndlessWaveCompletionCore(db, bobUid, alienSession.sessionId, 1, 4, startTime + 5000),
     /mismatch/i
   );
 
-  // Run 16 sequential waves verifying 5-wave theater cycle: DRAGON (1-5) -> ALIEN (6-10) -> ORC (11-15) -> HUMAN (16+)
+  // Run 8 sequential waves verifying ALIEN stays locked without rotating to ORC at wave 6
   let now = startTime + 5000;
   let expectedCredits = 18500;
   let previousWaveCredits = 0;
-  const observedEmpires: string[] = [];
+  let expectedAlienKills = 0;
 
-  for (let w = 1; w <= 16; w++) {
-    const res = await claimEndlessWaveCompletionCore(db, aliceUid, session.sessionId, w, 4 + w, now);
+  for (let w = 1; w <= 8; w++) {
+    const waveKills = 4 + w;
+    const res = await claimEndlessWaveCompletionCore(db, aliceUid, alienSession.sessionId, w, waveKills, now);
     assert.equal(res.alreadyClaimed, false);
+    assert.equal(res.empire, "ALIEN");
+    assert.equal(res.nextEmpire, "ALIEN");
     assert.ok(res.creditsAwarded > previousWaveCredits, `Wave ${w} credits should escalate`);
     previousWaveCredits = res.creditsAwarded;
     expectedCredits += res.creditsAwarded;
+    expectedAlienKills += waveKills;
     assert.equal(res.newTotalCredits, expectedCredits);
-    observedEmpires.push(res.empire);
     now += 5000;
   }
 
-  assert.deepEqual(observedEmpires.slice(0, 5), ["DRAGON", "DRAGON", "DRAGON", "DRAGON", "DRAGON"]);
-  assert.deepEqual(observedEmpires.slice(5, 10), ["ALIEN", "ALIEN", "ALIEN", "ALIEN", "ALIEN"]);
-  assert.deepEqual(observedEmpires.slice(10, 15), ["ORC", "ORC", "ORC", "ORC", "ORC"]);
-  assert.equal(observedEmpires[15], "HUMAN");
-
   // Duplicate wave 5 claim is idempotent and awards 0 extra credits
-  const dup = await claimEndlessWaveCompletionCore(db, aliceUid, session.sessionId, 5, 10, now);
+  const dup = await claimEndlessWaveCompletionCore(db, aliceUid, alienSession.sessionId, 5, 10, now);
   assert.equal(dup.alreadyClaimed, true);
   assert.equal(dup.creditsAwarded, 0);
   assert.equal(dup.newTotalCredits, expectedCredits);
 
-  // Authoritative stats & leaderboard updated without altering campaign barracks/HQ counters
+  // Start a second session in ORC — must preserve ALIEN stats while updating ORC independently
+  const orcSession = await startEndlessSessionCore(db, aliceUid, "ORC", now);
+  assert.equal(orcSession.empire, "ORC");
+  const orcWave1 = await claimEndlessWaveCompletionCore(db, aliceUid, orcSession.sessionId, 1, 10, now + 5000);
+  assert.equal(orcWave1.empire, "ORC");
+  assert.equal(orcWave1.nextEmpire, "ORC");
+  expectedCredits += orcWave1.creditsAwarded;
+
+  // Authoritative stats & per-Empire empireStats updated without altering campaign barracks/HQ counters
   const statsDoc = await db.collection("users").doc(aliceUid).collection("endless").doc("stats").get();
-  assert.equal(statsDoc.get("highestWave"), 16);
-  assert.equal(statsDoc.get("totalWavesCompleted"), 16);
+  assert.equal(statsDoc.get("lastActiveEmpire"), "ORC");
+  assert.equal(statsDoc.get("highestWave"), 8);
+  assert.equal(statsDoc.get("totalWavesCompleted"), 9);
+
+  const empireStats = statsDoc.get("empireStats") as Record<string, Record<string, unknown>>;
+  assert.equal(empireStats.ALIEN.highestWave, 8);
+  assert.equal(empireStats.ALIEN.totalWavesCompleted, 8);
+  assert.equal(empireStats.ALIEN.totalKills, expectedAlienKills);
+  assert.equal(empireStats.ORC.highestWave, 1);
+  assert.equal(empireStats.ORC.totalWavesCompleted, 1);
+  assert.equal(empireStats.ORC.totalKills, 10);
 
   const userDoc = await db.collection("users").doc(aliceUid).get();
   assert.equal(userDoc.get("credits"), expectedCredits);
