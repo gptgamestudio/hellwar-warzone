@@ -22,6 +22,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -76,10 +77,23 @@ enum class GameScreen {
 class MainActivity : ComponentActivity() {
 
     private lateinit var networkMonitor: NetworkMonitor
+    private var isInGameplayMode: Boolean = false
+
+    internal fun updateScreenOrientation(isGameplay: Boolean) {
+        isInGameplayMode = isGameplay
+        val targetOrientation = if (isGameplay) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        if (requestedOrientation != targetOrientation) {
+            requestedOrientation = targetOrientation
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        updateScreenOrientation(isGameplay = false)
         enableEdgeToEdge()
 
         networkMonitor = NetworkMonitor(applicationContext)
@@ -134,6 +148,9 @@ class MainActivity : ComponentActivity() {
                         flowUser ?: Firebase.auth.currentUser
                     }
                     if (signedInUser == null || onlineStatus !is OnlineStatus.Connected) {
+                        LaunchedEffect(Unit) {
+                            updateScreenOrientation(isGameplay = false)
+                        }
                         ConnectionGateScreen(
                             onlineStatus = onlineStatus,
                             currentUser = signedInUser,
@@ -169,6 +186,9 @@ class MainActivity : ComponentActivity() {
                                         manualAuthTick++
                                     }
                                 },
+                                onScreenOrientationChange = { isGameplay ->
+                                    updateScreenOrientation(isGameplay = isGameplay)
+                                },
                                 modifier = Modifier.padding(innerPadding)
                             )
                         }
@@ -180,8 +200,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        val expectedOrientation = if (isInGameplayMode) {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        if (requestedOrientation != expectedOrientation) {
+            requestedOrientation = expectedOrientation
         }
     }
 
@@ -197,6 +222,7 @@ private fun AuthenticatedGameNavigation(
     onlineStatus: OnlineStatus,
     onRetryConnection: () -> Unit,
     onSignOut: () -> Unit,
+    onScreenOrientationChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -236,23 +262,27 @@ private fun AuthenticatedGameNavigation(
         }
     }
 
-    var currentScreen by remember { mutableStateOf(GameScreen.MAIN_MENU) }
-    var activeGameMode by remember(user.uid) { mutableStateOf(GameMode.CAMPAIGN) }
-    var garageInitialTab by remember { mutableIntStateOf(0) }
+    var currentScreen by rememberSaveable(user.uid) { mutableStateOf(GameScreen.MAIN_MENU) }
+    var activeGameMode by rememberSaveable(user.uid) { mutableStateOf(GameMode.CAMPAIGN) }
+    var garageInitialTab by rememberSaveable(user.uid) { mutableIntStateOf(0) }
     var progressionTick by remember { mutableIntStateOf(0) }
     val highestUnlockedEmpire = remember(campaignState, progressionTick, user.uid) {
         progressionManager.getHighestUnlockedEmpire(campaignState, user.uid)
     }
     val highestStageNumber = progressionManager.getStageNumber(highestUnlockedEmpire)
-    var selectedEmpire by remember { mutableStateOf(highestUnlockedEmpire) }
+    var selectedEmpire by rememberSaveable(user.uid) { mutableStateOf(highestUnlockedEmpire) }
     var savedCheckpoint by remember(user.uid) { mutableStateOf(progressionManager.loadCheckpoint(user.uid)) }
     var activeResumeCheckpoint by remember(user.uid) { mutableStateOf<SortieCheckpoint?>(null) }
     var savedEndlessCheckpoint by remember(user.uid) { mutableStateOf(progressionManager.loadEndlessCheckpoint(user.uid)) }
     var activeEndlessResumeCheckpoint by remember(user.uid) { mutableStateOf<EndlessCheckpoint?>(null) }
     var localEndlessRecord by remember(user.uid) { mutableStateOf(progressionManager.loadEndlessRecord(user.uid)) }
-    var sortieSessionId by remember(user.uid) { mutableIntStateOf(0) }
+    var sortieSessionId by rememberSaveable(user.uid) { mutableIntStateOf(0) }
     var localHangarCache by remember(user.uid) { mutableStateOf(hangarPersistence.loadState(user.uid)) }
     var adFeedbackMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(currentScreen) {
+        onScreenOrientationChange(currentScreen == GameScreen.GAMEPLAY)
+    }
 
     val effectiveEndlessRecord = remember(localEndlessRecord, cloudUiState.endlessStats) {
         EndlessSurvivalRecord(

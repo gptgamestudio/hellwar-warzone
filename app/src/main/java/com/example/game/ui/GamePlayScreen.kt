@@ -13,7 +13,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import com.example.game.ads.AdConsentManager
 import com.example.game.ads.AdMobManager
 import com.example.game.ads.findActivity
@@ -231,9 +232,21 @@ fun GamePlayScreen(
     val renderer = remember { Renderer3D() }
     val hudState by engine.hudState.collectAsState()
     var isPaused by remember { mutableStateOf(false) }
+    var isExitingBattle by remember { mutableStateOf(false) }
+    var viewportSize by remember { mutableStateOf(IntSize.Zero) }
+    var isLandscapeViewportStable by remember { mutableStateOf(false) }
     var frameTick by remember { mutableLongStateOf(0L) }
     var isBannerVisible by remember { mutableStateOf(true) }
-    var extraZoneLiftDp by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(viewportSize) {
+        val isLandscape = viewportSize.width > viewportSize.height && viewportSize.width > 0 && viewportSize.height > 0
+        if (!isLandscape) {
+            isLandscapeViewportStable = false
+        } else {
+            withFrameNanos { }
+            isLandscapeViewportStable = true
+        }
+    }
 
     val nextStageEmpire = remember(selectedEmpire, gameMode) {
         if (gameMode == GameMode.ENDLESS_SURVIVAL) {
@@ -343,10 +356,12 @@ fun GamePlayScreen(
             AdMobManager.ensureAdsLoaded(context)
         }
     }
-    DisposableEffect(lifecycleOwner, context, canRequestAds, activity) {
-        activity?.let { act ->
-            if (act.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
-                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    DisposableEffect(lifecycleOwner, context, canRequestAds, activity, isExitingBattle) {
+        if (!isExitingBattle) {
+            activity?.let { act ->
+                if (act.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                }
             }
         }
         if (canRequestAds) {
@@ -354,9 +369,11 @@ fun GamePlayScreen(
         }
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                activity?.let { act ->
-                    if (act.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
-                        act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                if (!isExitingBattle) {
+                    activity?.let { act ->
+                        if (act.requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+                            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                        }
                     }
                 }
                 if (AdConsentManager.canRequestAds.value) {
@@ -371,24 +388,29 @@ fun GamePlayScreen(
     }
 
     val saveAndReturnToDashboard: () -> Unit = {
-        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-            bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
-            bestEndlessScore = maxOf(bestEndlessScore, engine.score)
-            onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
-            if (!engine.isGameOver) {
-                onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(engine))
+        if (!isExitingBattle) {
+            isExitingBattle = true
+            isPaused = true
+            engine.clearMovementInputs()
+            if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
+                bestEndlessScore = maxOf(bestEndlessScore, engine.score)
+                onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
+                if (!engine.isGameOver) {
+                    onSaveEndlessCheckpoint(snapshotEndlessCheckpoint(engine))
+                } else {
+                    onClearEndlessCheckpoint()
+                }
             } else {
-                onClearEndlessCheckpoint()
+                if (!engine.isVictory && !engine.isGameOver) {
+                    onSaveCheckpoint(engine.exportCheckpoint())
+                } else {
+                    onClearCheckpoint()
+                }
             }
-        } else {
-            if (!engine.isVictory && !engine.isGameOver) {
-                onSaveCheckpoint(engine.exportCheckpoint())
-            } else {
-                onClearCheckpoint()
+            AdMobManager.showInterstitialIfReady(activity) {
+                onReturnToMenu()
             }
-        }
-        AdMobManager.showInterstitialIfReady(activity) {
-            onReturnToMenu()
         }
     }
 
@@ -397,9 +419,11 @@ fun GamePlayScreen(
         saveAndReturnToDashboard()
     }
 
-    // High performance 60 FPS game loop with delta timing and true pause / ad freeze
-    LaunchedEffect(engine, isPaused, isFullScreenAdShowing) {
-        if (isPaused || isFullScreenAdShowing) return@LaunchedEffect
+    // High performance 60 FPS game loop gated on stable landscape viewport & active battle state
+    LaunchedEffect(engine, isPaused, isFullScreenAdShowing, isLandscapeViewportStable, isExitingBattle) {
+        if (isPaused || isFullScreenAdShowing || !isLandscapeViewportStable || isExitingBattle) {
+            return@LaunchedEffect
+        }
         var lastFrameTime = 0L
         while (true) {
             withFrameNanos { frameTimeNanos ->
@@ -418,19 +442,29 @@ fun GamePlayScreen(
             .fillMaxSize()
             .background(Color(0xFF090D14))
     ) {
-        // Movable Game Zone: shifts up/down smoothly as the bottom banner dock adjusts
+        // Dedicated Upper Horizontal AdMob Banner Strip (separate from battlefield and HUD controls)
+        com.example.game.ads.UpperGameplayBannerDock(
+            isBannerVisible = isBannerVisible,
+            onSetBannerVisible = { isBannerVisible = it }
+        )
+
+        // Weighted Landscape Battlefield Zone
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
                 .background(Color(0xFF0E1621))
+                .onSizeChanged { viewportSize = it }
         ) {
-            // 3D Canvas Rendering (reads frameTick so every simulation step triggers a crisp redraw)
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                @Suppress("UNUSED_VARIABLE")
-                val currentTick = frameTick
-                renderer.render(this, engine, size.width, size.height)
-            }
+            if (isLandscapeViewportStable) {
+                // 3D Canvas Rendering (reads frameTick so every simulation step triggers a crisp redraw)
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    @Suppress("UNUSED_VARIABLE")
+                    val currentTick = frameTick
+                    if (size.width > size.height && size.width > 0f && size.height > 0f) {
+                        renderer.render(this, engine, size.width, size.height)
+                    }
+                }
 
             // Full Military HUD Overlay
             HudOverlay(
@@ -448,16 +482,21 @@ fun GamePlayScreen(
                 },
                 onSaveAndReturnToDashboard = saveAndReturnToDashboard,
                 onReturnToMenu = {
-                    if (gameMode == GameMode.ENDLESS_SURVIVAL) {
-                        bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
-                        bestEndlessScore = maxOf(bestEndlessScore, engine.score)
-                        onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
-                        onClearEndlessCheckpoint()
-                    } else {
-                        onClearCheckpoint()
-                    }
-                    AdMobManager.showInterstitialIfReady(activity) {
-                        onReturnToMenu()
+                    if (!isExitingBattle) {
+                        isExitingBattle = true
+                        isPaused = true
+                        engine.clearMovementInputs()
+                        if (gameMode == GameMode.ENDLESS_SURVIVAL) {
+                            bestEndlessWave = maxOf(bestEndlessWave, engine.currentWave)
+                            bestEndlessScore = maxOf(bestEndlessScore, engine.score)
+                            onUpdateEndlessRecord(bestEndlessWave, bestEndlessScore, engine.wavesCompleted)
+                            onClearEndlessCheckpoint()
+                        } else {
+                            onClearCheckpoint()
+                        }
+                        AdMobManager.showInterstitialIfReady(activity) {
+                            onReturnToMenu()
+                        }
                     }
                 },
                 onRestartSortie = {
@@ -522,14 +561,7 @@ fun GamePlayScreen(
                 onClaimDebriefAdBonus = onClaimDebriefAdBonus,
                 hapticsEnabled = tacticalSettings.hapticsEnabled
             )
+            }
         }
-
-        // Smallest AdMob Banner (320x50) at the very bottom with movable up/down Game Zone handle
-        com.example.game.ads.MovableBottomBannerDock(
-            isBannerVisible = isBannerVisible,
-            extraZoneLiftDp = extraZoneLiftDp,
-            onSetBannerVisible = { isBannerVisible = it },
-            onExtraZoneLiftChange = { extraZoneLiftDp = it }
-        )
     }
 }

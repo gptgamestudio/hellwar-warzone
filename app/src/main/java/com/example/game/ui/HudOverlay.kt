@@ -1,11 +1,5 @@
 package com.example.game.ui
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,7 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
@@ -55,11 +48,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -87,8 +78,6 @@ import com.example.ui.theme.HealthGreen
 import com.example.ui.theme.MilitaryGold
 import com.example.ui.theme.ThreatRed
 import kotlinx.coroutines.delay
-import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.math.sqrt
 
 @Composable
@@ -119,13 +108,11 @@ fun HudOverlay(
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-        val compactVertical = maxHeight < 310.dp
-        val joystickSize = if (compactVertical) 92.dp else 104.dp
-        val overdriveButtonSize = if (compactVertical) 56.dp else 64.dp
-        val missileButtonSize = if (compactVertical) 56.dp else 64.dp
-        val radarSize = if (compactVertical) 56.dp else 64.dp
+        val compactVertical = maxHeight < 290.dp
+        val joystickSize = if (compactVertical) 86.dp else 96.dp
+        val missileButtonSize = if (compactVertical) 58.dp else 64.dp
 
-        // UPPER-LEFT COMPACT HUD: Hearts + Health Counter Only
+        // UPPER-LEFT COMPACT HUD: Compact Hearts + Health Counter (positioned slightly downward)
         CompactHealthHud(
             hearts = hudState.hearts,
             maxHearts = hudState.maxHearts,
@@ -134,43 +121,31 @@ fun HudOverlay(
             compactVertical = compactVertical,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(start = 16.dp, top = 12.dp)
+                .padding(start = 16.dp, top = if (compactVertical) 18.dp else 22.dp)
         )
 
-        // UPPER-RIGHT: Radar + Pause Button
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        // UPPER-RIGHT: Pause Button Only (aligned with lower-right LOCKED button)
+        IconButton(
+            onClick = {
+                engine.clearMovementInputs()
+                showPauseDialog = true
+                onPauseClick()
+                onPauseStateChange(true)
+            },
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 10.dp, end = 14.dp)
+                .padding(top = 12.dp, end = 16.dp)
+                .size(48.dp)
+                .background(Color(0xCC0D1B2A), RoundedCornerShape(14.dp))
+                .border(1.2.dp, Color(0xFF287D9C), RoundedCornerShape(14.dp))
+                .testTag("pause_button")
         ) {
-            TacticalRadarMinimap(
-                engine = engine,
-                sizeDp = radarSize,
-                modifier = Modifier.testTag("tactical_radar_minimap")
+            Icon(
+                imageVector = Icons.Default.Pause,
+                contentDescription = "Pause Game",
+                tint = Color.White,
+                modifier = Modifier.size(24.dp)
             )
-
-            IconButton(
-                onClick = {
-                    engine.clearMovementInputs()
-                    showPauseDialog = true
-                    onPauseClick()
-                    onPauseStateChange(true)
-                },
-                modifier = Modifier
-                    .size(if (compactVertical) 48.dp else 52.dp)
-                    .background(Color(0xCC0D1B2A), RoundedCornerShape(14.dp))
-                    .border(1.2.dp, Color(0xFF287D9C), RoundedCornerShape(14.dp))
-                    .testTag("pause_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Pause,
-                    contentDescription = "Pause Game",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
         }
 
         // LOWER-LEFT: Single Compact Circular 360-Degree Virtual Joystick
@@ -180,27 +155,17 @@ fun HudOverlay(
             isEnabled = !showPauseDialog && !hudState.isGameOver && !hudState.isVictory,
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 18.dp, bottom = 12.dp)
+                .padding(start = 16.dp, bottom = 14.dp)
         )
 
-        // LOWER-RIGHT: Only Two Circular Action Buttons (OVER above LOCKED)
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+        // LOWER-RIGHT: LOCKED Bomb / Guided Missile Circular Button Only
+        Box(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 16.dp, bottom = 12.dp)
-                .testTag("right_action_buttons")
+                .padding(end = 16.dp, bottom = 14.dp)
+                .testTag("right_action_buttons"),
+            contentAlignment = Alignment.Center
         ) {
-            OverdriveWeaponButton(
-                hudState = hudState,
-                sizeDp = overdriveButtonSize,
-                onActivate = {
-                    pulseHaptic()
-                    engine.activateOverdriveBeam()
-                }
-            )
-
             DedicatedMissileButton(
                 hudState = hudState,
                 sizeDp = missileButtonSize,
@@ -279,7 +244,7 @@ private fun CompactHealthHud(
     compactVertical: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val heartSize = if (compactVertical) 12.dp else 14.dp
+    val heartSize = if (compactVertical) 10.dp else 12.dp
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -298,11 +263,11 @@ private fun CompactHealthHud(
                 modifier = Modifier.size(heartSize)
             )
         }
-        Spacer(modifier = Modifier.width(6.dp))
+        Spacer(modifier = Modifier.width(5.dp))
         Text(
             text = "$hitsRemainingInHeart/$hitsPerHeart",
             color = Color.White,
-            fontSize = if (compactVertical) 11.sp else 12.sp,
+            fontSize = if (compactVertical) 10.5.sp else 11.5.sp,
             fontWeight = FontWeight.SemiBold,
             style = TextStyle(
                 shadow = Shadow(
@@ -313,122 +278,6 @@ private fun CompactHealthHud(
             ),
             modifier = Modifier.testTag("hud_health_counter")
         )
-    }
-}
-
-@Composable
-private fun TacticalRadarMinimap(
-    engine: GameEngine,
-    sizeDp: Dp = 66.dp,
-    modifier: Modifier = Modifier
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "radar_sweep")
-    val sweepAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2800, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "radar_sweep_angle"
-    )
-
-    Box(
-        modifier = modifier
-            .size(sizeDp)
-            .background(Color(0xD80A1522), CircleShape)
-            .border(1.5.dp, Color(0xFF287D9C), CircleShape)
-            .padding(3.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val center = Offset(size.width / 2, size.height / 2)
-            val radius = size.width / 2
-
-            // Subdued military tactical range rings
-            drawCircle(Color(0x284E7D63), radius * 0.48f, center, style = Stroke(1f))
-            drawCircle(Color(0x384E7D63), radius * 0.90f, center, style = Stroke(1.2f))
-
-            // Crosshair guidelines (subtle)
-            drawLine(Color(0x224E7D63), Offset(center.x, 3f), Offset(center.x, size.height - 3f), 1f)
-            drawLine(Color(0x224E7D63), Offset(3f, center.y), Offset(size.width - 3f, center.y), 1f)
-
-            // Cardinal North indicator at top
-            drawCircle(Color(0xFFFFB300), 2.5f, Offset(center.x, 5f))
-
-            // Rotating radar sweep line
-            val sweepRad = Math.toRadians(sweepAngle.toDouble())
-            val sweepEnd = Offset(
-                center.x + (radius * 0.88f * cos(sweepRad)).toFloat(),
-                center.y + (radius * 0.88f * sin(sweepRad)).toFloat()
-            )
-            drawLine(
-                Color(0x664E7D63),
-                center,
-                sweepEnd,
-                1.5f,
-                StrokeCap.Round
-            )
-
-            // Player Helicopter icon in center facing UP
-            drawLine(Color(0xFF00E676), Offset(center.x, center.y + 4f), Offset(center.x, center.y - 5f), 2.5f, StrokeCap.Round)
-            drawLine(Color(0xFF00E676), Offset(center.x - 4f, center.y - 1f), Offset(center.x + 4f, center.y - 1f), 2f, StrokeCap.Round)
-            drawCircle(Color.White, 1.5f, center)
-
-            val camY = engine.camera.y
-            val camX = engine.camera.x
-
-            // Discovered Barracks on radar (Gold Diamond blips)
-            for (barracks in engine.allBarracks) {
-                if (barracks.isDiscovered && !barracks.isDestroyed) {
-                    val relX = ((barracks.pos.x - camX) / 45f) * (radius * 0.8f)
-                    val relY = -((barracks.pos.y - (camY + 12f)) / 55f) * (radius * 0.8f)
-                    val blipPos = Offset(
-                        (center.x + relX).coerceIn(4f, size.width - 4f),
-                        (center.y + relY).coerceIn(4f, size.height - 4f)
-                    )
-                    drawRect(Color(0xFFFFD600), Offset(blipPos.x - 2.5f, blipPos.y - 2.5f), Size(5f, 5f))
-                }
-            }
-
-            // Unlocked Headquarters on radar
-            engine.enemyHeadquarters?.let { hq ->
-                if (hq.isUnlocked && !hq.isDestroyed) {
-                    val relX = ((hq.pos.x - camX) / 60f) * (radius * 0.8f)
-                    val relY = -((hq.pos.y - (camY + 12f)) / 70f) * (radius * 0.8f)
-                    val blipPos = Offset(
-                        (center.x + relX).coerceIn(5f, size.width - 5f),
-                        (center.y + relY).coerceIn(5f, size.height - 5f)
-                    )
-                    drawCircle(Color(0xFFFF1744), 5f, blipPos)
-                    drawCircle(Color.White, 2f, blipPos)
-                }
-            }
-
-            // Enemies on radar
-            for (enemy in engine.enemies) {
-                val relX = ((enemy.pos.x - camX) / 28f) * (radius * 0.8f)
-                val relY = -((enemy.pos.y - (camY + 16f)) / 40f) * (radius * 0.8f)
-                val blipPos = Offset(
-                    (center.x + relX).coerceIn(4f, size.width - 4f),
-                    (center.y + relY).coerceIn(4f, size.height - 4f)
-                )
-                if (enemy.isGroundUnit) {
-                    drawRect(Color(0xFFFF9100), Offset(blipPos.x - 2f, blipPos.y - 2f), Size(4f, 4f))
-                } else {
-                    drawCircle(Color(0xFFFF1744), 2.8f, blipPos)
-                }
-            }
-
-            // Active Boss entity
-            engine.activeBoss?.let { boss ->
-                val relX = (boss.pos.x / 14f) * (radius * 0.8f)
-                val relY = -((boss.pos.y - (camY + 16f)) / 32f) * (radius * 0.8f)
-                val blipPos = Offset((center.x + relX).coerceIn(4f, size.width - 4f), (center.y + relY).coerceIn(4f, size.height - 4f))
-                drawCircle(Color(0xFFFF1744), 5.5f, blipPos)
-                drawCircle(Color(0xFFFFD600), 2.5f, blipPos)
-            }
-        }
     }
 }
 
@@ -578,78 +427,6 @@ private fun VirtualCircularJoystick(
                 radius = knobRadius,
                 center = knobCenter,
                 style = Stroke(width = 2f)
-            )
-        }
-    }
-}
-
-/**
- * Overdrive Plasma Beam / Bullet Overdrive Button (Blue Circular Button)
- */
-@Composable
-private fun OverdriveWeaponButton(
-    hudState: GameHudState,
-    sizeDp: Dp = 64.dp,
-    onActivate: () -> Unit
-) {
-    val isReady = hudState.isOverdriveReady
-    val fillBrush = if (isReady) {
-        Brush.verticalGradient(
-            colors = listOf(Color(0xFF22CCFF), Color(0xFF0088F5))
-        )
-    } else {
-        Brush.verticalGradient(
-            colors = listOf(Color(0xD90E7490), Color(0xD90B4F7A))
-        )
-    }
-
-    Box(
-        modifier = Modifier
-            .size(sizeDp)
-            .clip(CircleShape)
-            .background(fillBrush)
-            .border(
-                width = 2.dp,
-                color = if (isReady) Color.White else Color.White.copy(alpha = 0.85f),
-                shape = CircleShape
-            )
-            .semantics {
-                contentDescription = if (isReady) {
-                    "Overdrive ready"
-                } else {
-                    "Overdrive ${(hudState.overdriveChargePercent * 100).toInt()} percent"
-                }
-            }
-            .pointerInput(isReady) {
-                if (isReady) {
-                    detectTapGestures(onTap = { onActivate() })
-                }
-            }
-            .testTag("overdrive_button"),
-        contentAlignment = Alignment.Center
-    ) {
-        if (!isReady) {
-            CircularProgressIndicator(
-                progress = { hudState.overdriveChargePercent },
-                modifier = Modifier.fillMaxSize().padding(3.dp),
-                color = CyberCyan,
-                trackColor = Color(0x28FFFFFF),
-                strokeWidth = 2.5.dp
-            )
-        }
-
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                imageVector = Icons.Default.Bolt,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(22.dp)
-            )
-            Text(
-                text = "OVER",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
             )
         }
     }

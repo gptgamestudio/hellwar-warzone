@@ -32,32 +32,32 @@ class Renderer3D {
     private val samWheelFactors = floatArrayOf(-0.35f, 0f, 0.35f)
 
     internal fun playerModelScale(heloClass: HelicopterClass): Float = when (heloClass) {
-        HelicopterClass.SCOUT -> 1.32f
-        HelicopterClass.HEAVY_GUNSHIP -> 1.22f
-        HelicopterClass.STEALTH -> 1.28f
-        HelicopterClass.ULTIMATE_WAR -> 1.25f
+        HelicopterClass.SCOUT -> 1.78f
+        HelicopterClass.HEAVY_GUNSHIP -> 1.64f
+        HelicopterClass.STEALTH -> 1.72f
+        HelicopterClass.ULTIMATE_WAR -> 1.68f
     }
 
     internal fun enemyVisualScale(category: EnemyCategory): Float = when (category) {
-        EnemyCategory.INFANTRY_SOLDIER -> 1.65f
-        EnemyCategory.ROCKET_SOLDIER -> 1.60f
-        EnemyCategory.WATCHTOWER_SNIPER -> 1.45f
-        EnemyCategory.AA_TURRET -> 1.40f
-        EnemyCategory.MISSILE_LAUNCHER -> 1.35f
-        EnemyCategory.GROUND_TANK -> 1.35f
-        EnemyCategory.ATTACK_HELICOPTER -> 1.35f
-        EnemyCategory.FIGHTER_AIRCRAFT -> 1.35f
+        EnemyCategory.INFANTRY_SOLDIER -> 2.45f
+        EnemyCategory.ROCKET_SOLDIER -> 2.35f
+        EnemyCategory.WATCHTOWER_SNIPER -> 2.05f
+        EnemyCategory.AA_TURRET -> 1.95f
+        EnemyCategory.MISSILE_LAUNCHER -> 1.85f
+        EnemyCategory.GROUND_TANK -> 1.85f
+        EnemyCategory.ATTACK_HELICOPTER -> 1.85f
+        EnemyCategory.FIGHTER_AIRCRAFT -> 1.85f
     }
 
     internal fun enemyHealthBarOffset(category: EnemyCategory): Float = when (category) {
-        EnemyCategory.INFANTRY_SOLDIER -> 40f
-        EnemyCategory.ROCKET_SOLDIER -> 42f
-        EnemyCategory.WATCHTOWER_SNIPER -> 46f
-        EnemyCategory.AA_TURRET -> 54f
-        EnemyCategory.MISSILE_LAUNCHER -> 58f
-        EnemyCategory.GROUND_TANK -> 56f
-        EnemyCategory.ATTACK_HELICOPTER -> 60f
-        EnemyCategory.FIGHTER_AIRCRAFT -> 60f
+        EnemyCategory.INFANTRY_SOLDIER -> 58f
+        EnemyCategory.ROCKET_SOLDIER -> 64f
+        EnemyCategory.WATCHTOWER_SNIPER -> 64f
+        EnemyCategory.AA_TURRET -> 68f
+        EnemyCategory.MISSILE_LAUNCHER -> 74f
+        EnemyCategory.GROUND_TANK -> 76f
+        EnemyCategory.ATTACK_HELICOPTER -> 78f
+        EnemyCategory.FIGHTER_AIRCRAFT -> 74f
     }
 
     fun render(
@@ -1024,14 +1024,15 @@ class Renderer3D {
         )
         val proj = camera.project(shadowPos, width, height)
         if (proj != null) {
+            val mScale = playerModelScale(engine.player.heloClass)
             val (baseRx, baseRy) = when (engine.player.heloClass) {
-                HelicopterClass.SCOUT -> 2.40f to 1.42f
-                HelicopterClass.HEAVY_GUNSHIP -> 2.65f to 1.55f
-                HelicopterClass.STEALTH -> 2.50f to 1.48f
-                HelicopterClass.ULTIMATE_WAR -> 2.60f to 1.52f
+                HelicopterClass.SCOUT -> 1.85f to 1.10f
+                HelicopterClass.HEAVY_GUNSHIP -> 2.15f to 1.26f
+                HelicopterClass.STEALTH -> 1.95f to 1.16f
+                HelicopterClass.ULTIMATE_WAR -> 2.08f to 1.22f
             }
-            val rx = proj.scale * baseRx * playerShadowSpread
-            val ry = proj.scale * baseRy * playerShadowSpread
+            val rx = proj.scale * baseRx * mScale * playerShadowSpread
+            val ry = proj.scale * baseRy * mScale * playerShadowSpread
             // Soft outer penumbra + dense inner umbra
             scope.drawOval(
                 Color.Black.copy(alpha = playerShadowAlpha * 0.45f),
@@ -1646,7 +1647,7 @@ class Renderer3D {
         }
 
         // High-Contrast Threat Health Bar & Identity Indicator (offset scaled per enlarged sprite)
-        val barW = 54f * unitScale * (1f + (eScale - 1f) * 0.45f)
+        val barW = 54f * unitScale * (1f + (eScale - 1f) * 0.35f)
         val barH = 6f
         val barY = cy - enemyHealthBarOffset(enemy.category) * unitScale
         val hpPct = (enemy.health / enemy.maxHealth).coerceIn(0f, 1f)
@@ -1979,7 +1980,7 @@ class Renderer3D {
         val s = proj.scale
         val cx = proj.screenPos.x
         val cy = proj.screenPos.y
-        val rSize = 28f * (s / 20f)
+        val rSize = 38f * (s / 20f)
 
         val lockColor = if (engine.player.lockProgress >= 0.9f) Color(0xFFFF1744) else Color(0xFFFF9100)
         // 4 corner brackets

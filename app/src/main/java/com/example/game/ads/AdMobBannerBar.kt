@@ -412,3 +412,190 @@ fun MovableBottomBannerDock(
         }
     }
 }
+
+/**
+ * Dedicated Upper Horizontal AdMob Banner Strip for active landscape gameplay.
+ * - Uses the smallest official AdMob banner size (AdSize.BANNER, 320x50).
+ * - Anchored cleanly ABOVE the weighted Battlefield Box so it never covers hearts, Pause, or combat visuals.
+ * - Preserves AdView load, retry, pause/resume, and hide/show lifecycle.
+ */
+@Composable
+fun UpperGameplayBannerDock(
+    isBannerVisible: Boolean,
+    onSetBannerVisible: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    adUnitId: String = AdMobManager.BANNER_AD_UNIT_ID
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val canRequestAds by AdConsentManager.canRequestAds.collectAsState()
+    var adViewRef by remember { mutableStateOf<AdView?>(null) }
+    var needsReload by remember { mutableStateOf(false) }
+    var lastRetryAtMs by remember { mutableLongStateOf(0L) }
+
+    val animatedBannerHeight by animateDpAsState(
+        targetValue = if (isBannerVisible && canRequestAds) 52.dp else 0.dp,
+        animationSpec = tween(durationMillis = 180),
+        label = "upper_banner_dock_height"
+    )
+
+    LaunchedEffect(needsReload, isBannerVisible, adViewRef, canRequestAds) {
+        val view = adViewRef ?: return@LaunchedEffect
+        if (needsReload && isBannerVisible && canRequestAds) {
+            delay(12_000L)
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (needsReload && isBannerVisible && canRequestAds && now - lastRetryAtMs >= 10_000L) {
+                lastRetryAtMs = now
+                needsReload = false
+                try {
+                    view.loadAd(AdMobManager.buildAdRequest())
+                } catch (_: Throwable) {
+                    needsReload = true
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(isBannerVisible, adViewRef, canRequestAds) {
+        val view = adViewRef ?: return@LaunchedEffect
+        if (isBannerVisible && canRequestAds) {
+            view.visibility = View.VISIBLE
+            view.resume()
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (needsReload && now - lastRetryAtMs >= 10_000L) {
+                lastRetryAtMs = now
+                needsReload = false
+                try {
+                    view.loadAd(AdMobManager.buildAdRequest())
+                } catch (_: Throwable) {
+                    needsReload = true
+                }
+            }
+        } else {
+            view.pause()
+            view.visibility = View.GONE
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, adViewRef, isBannerVisible, canRequestAds) {
+        val view = adViewRef
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    if (isBannerVisible && canRequestAds && view != null) {
+                        view.resume()
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        if (needsReload && now - lastRetryAtMs >= 10_000L) {
+                            lastRetryAtMs = now
+                            needsReload = false
+                            try {
+                                view.loadAd(AdMobManager.buildAdRequest())
+                            } catch (_: Throwable) {
+                                needsReload = true
+                            }
+                        }
+                    }
+                }
+                Lifecycle.Event.ON_PAUSE -> view?.pause()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            view?.destroy()
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color(0xFF090D14))
+            .testTag("movable_banner_dock")
+    ) {
+        // Dedicated Top AdMob Banner Slot (320x50) separate from battlefield and HUD
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(animatedBannerHeight)
+                .clipToBounds()
+                .background(Color(0xFF090D14))
+                .testTag("gameplay_admob_banner_slot"),
+            contentAlignment = Alignment.Center
+        ) {
+            if (canRequestAds) {
+                AndroidView(
+                    modifier = Modifier.wrapContentSize(),
+                    factory = { ctx ->
+                        AdMobManager.initialize(ctx)
+                        AdView(ctx).apply {
+                            setAdSize(AdSize.BANNER)
+                            this.adUnitId = adUnitId
+                            visibility = if (isBannerVisible) View.VISIBLE else View.GONE
+                            adListener = object : AdListener() {
+                                override fun onAdLoaded() {
+                                    needsReload = false
+                                }
+
+                                override fun onAdFailedToLoad(error: LoadAdError) {
+                                    needsReload = true
+                                }
+                            }
+                            try {
+                                loadAd(AdMobManager.buildAdRequest())
+                            } catch (_: Throwable) {
+                                needsReload = true
+                            }
+                            adViewRef = this
+                        }
+                    }
+                )
+            }
+        }
+
+        // Slim Upper Strip Divider & Ad Toggle Bar
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(22.dp)
+                .background(Color(0xFF0D1520))
+                .border(width = 1.dp, color = Color(0xFF1E2D40))
+                .clickable { onSetBannerVisible(!isBannerVisible) }
+                .padding(horizontal = 12.dp)
+                .testTag("banner_dock_handle"),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = if (isBannerVisible) "TACTICAL COMMS BANNER" else "FULL COMBAT MODE",
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                color = if (isBannerVisible) CyberCyan else Color(0xFF94A3B8)
+            )
+
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF172334))
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (isBannerVisible) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isBannerVisible) "Hide Banner Ad" else "Show Banner Ad",
+                    tint = AmberWarning,
+                    modifier = Modifier.size(13.dp)
+                )
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = if (isBannerVisible) "HIDE AD" else "SHOW AD",
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    color = AmberWarning
+                )
+            }
+        }
+    }
+}
+
